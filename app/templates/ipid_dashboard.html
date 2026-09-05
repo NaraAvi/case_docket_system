@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <section class="page-hero">
+    <div>
+      <p class="eyebrow">IPID Review Workspace</p>
+      <h1>Escalation queue and accountability review.</h1>
+    </div>
+  </section>
+
+  <div class="cards-grid multi-panel">
+    <div class="panel-card wide-card">
+      <h3>Escalation Queue</h3>
+      <div id="ipidQueueList" class="stack-list"></div>
+    </div>
+
+    <div class="panel-card">
+      <h3>Decision Actions</h3>
+      <div class="warning-banner">Internal findings and notes remain restricted to IPID review only.</div>
+      <div class="stack-row" style="margin-top:16px; flex-direction:column; align-items:stretch;">
+        <button class="secondary-btn full-width" type="button" data-open-reauth>Dismiss</button>
+        <button class="primary-btn full-width" type="button" data-open-reauth>Uphold</button>
+      </div>
+    </div>
+  </div>
+{% endblock %}

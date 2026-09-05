@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <section class="file-step-shell">
+    <div class="step-header">
+      <button class="icon-btn" type="button" id="backToCitizenDashboard">←</button>
+      <h2>New Docket</h2>
+      <span class="step-indicator">STEP 2 / 2</span>
+    </div>
+
+    <div class="wizard-card">
+      <div class="wizard-row">
+        <label>Crime Type</label>
+        <input id="crimeType" type="text" value="Theft / Property Damage" />
+      </div>
+      <div class="wizard-row">
+        <label>Location</label>
+        <input id="incidentLocation" type="text" value="123 Main St, Springfield Sector 4" />
+      </div>
+      <div class="wizard-row">
+        <label>Incident Date</label>
+        <input id="incidentDate" type="date" />
+      </div>
+      <div class="wizard-row">
+        <label>Description</label>
+        <textarea id="description" rows="5" placeholder="Provide the key facts of the incident..."></textarea>
+      </div>
+
+      <div class="evidence-box">
+        <div class="mini-title">Evidence</div>
+        <div class="upload-area">
+          <div class="upload-icon">◌</div>
+          <div class="upload-copy">
+            <strong>Tap to upload</strong>
+            <span>JPEG, PNG, MP4, PDF up to 50MB</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="victims-box">
+        <div class="mini-title">Victims</div>
+        <div class="victim-row">
+          <span>Victim 1</span>
+          <input type="text" placeholder="Full Name" value="Jane Doe" />
+          <input type="text" placeholder="Contact (Phone/Email)" value="jane.doe@example.com" />
+        </div>
+      </div>
+
+      <div class="submit-row">
+        <button class="primary-btn large-btn" type="button" id="submitCitizenDocket">Submit Docket</button>
+      </div>
+    </div>
+  </section>
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <section class="detail-shell">
+    <div class="page-head-row">
+      <div>
+        <p class="eyebrow">Case Reference</p>
+        <h1>{{ case_reference }}</h1>
+      </div>
+      <button class="secondary-btn" type="button" id="escalateCaseBtn">Escalate Case</button>
+    </div>
+
+    <div class="detail-grid">
+      <div class="detail-card">
+        <h3>Case Information</h3>
+        <dl class="meta-list" id="citizenCaseMeta">
+          <dt>Status</dt><dd>Loading…</dd>
+          <dt>Location</dt><dd>Loading…</dd>
+          <dt>Incident Date</dt><dd>Loading…</dd>
+        </dl>
+      </div>
+
+      <div class="detail-card">
+        <h3>Timeline</h3>
+        <ul class="timeline-list" id="citizenCaseTimeline">
+          <li><span class="timeline-dot"></span><div><strong>Loading case timeline</strong><small>Please wait…</small></div></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+{% endblock %}

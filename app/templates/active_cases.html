@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <section class="page-hero">
+    <div>
+      <p class="eyebrow">Operational Overview</p>
+      <h1>Active Cases</h1>
+    </div>
+  </section>
+
+  <section class="panel-block">
+    <div class="panel-head">
+      <h2>Current Case Load</h2>
+      <span class="badge badge-muted">Live docket inventory</span>
+    </div>
+
+    <div id="activeCaseList" class="case-grid"></div>
+  </section>
+{% endblock %}

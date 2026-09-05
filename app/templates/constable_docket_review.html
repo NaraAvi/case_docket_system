@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <section class="detail-shell">
+    <div class="page-head-row">
+      <div>
+        <p class="eyebrow">Constable Review</p>
+        <h1>{{ case_reference }}</h1>
+      </div>
+      <div class="stack-row">
+        <span class="badge badge-warning">Awaiting Registration</span>
+        <button class="secondary-btn" type="button" data-open-reauth>Flag Concern</button>
+      </div>
+    </div>
+
+    <div class="detail-grid">
+      <div class="detail-card">
+        <h3>Citizen Submission</h3>
+        <dl class="meta-list" id="constableCaseMeta">
+          <dt>Title</dt><dd>Loading…</dd>
+          <dt>Location</dt><dd>Loading…</dd>
+          <dt>Incident Date</dt><dd>Loading…</dd>
+          <dt>Status</dt><dd>Loading…</dd>
+        </dl>
+        <div class="statement-box" style="margin-top:14px;">
+          <strong>Statement</strong>
+          <p>Loading latest citizen statement…</p>
+        </div>
+      </div>
+
+      <div class="detail-card">
+        <h3>Potential Invalidity</h3>
+        <div class="statement-box">
+          <p><strong>Category:</strong> INSUFFICIENT_INFORMATION</p>
+          <p><strong>Notes:</strong> The citizen account is incomplete; confirm whether the damage affects only the access gate.</p>
+          <p><strong>Status:</strong> OPEN</p>
+        </div>
+        <div class="stack-row" style="margin-top:16px;">
+          <button class="secondary-btn" type="button">Update Flag</button>
+          <button class="primary-btn" type="button" id="continueToInterview">Continue to Interview</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="cards-grid" style="margin-top:18px;">
+      <div class="panel-card">
+        <h3>Evidence</h3>
+        <ul class="timeline-list" id="constableCaseEvidence">
+          <li><span class="timeline-dot"></span><div><strong>Loading evidence</strong><small>Please wait…</small></div></li>
+        </ul>
+      </div>
+
+      <div class="panel-card">
+        <h3>Related Cases</h3>
+        <div class="statement-box">
+          <p>No direct related case links detected.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+{% endblock %}

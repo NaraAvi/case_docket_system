@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <section class="page-hero">
+    <div>
+      <p class="eyebrow">Station Commander Portal</p>
+      <h1>Operational oversight, freeze status, and reassignment controls.</h1>
+    </div>
+  </section>
+
+  <div class="cards-grid multi-panel">
+    <div class="panel-card">
+      <h3>Operational Dashboard</h3>
+      <div id="stationCommanderCaseList" class="stack-list"></div>
+    </div>
+
+    <div class="panel-card">
+      <h3>Assignment Controls</h3>
+      <div class="wizard-row">
+        <label>Current Officer</label>
+        <input type="text" value="Detective One" />
+      </div>
+      <div class="wizard-row">
+        <label>Target Officer</label>
+        <input type="text" placeholder="Officer ID" />
+      </div>
+      <div class="wizard-row">
+        <label>Reason</label>
+        <textarea rows="3" placeholder="Mandatory reason for reassignment..."></textarea>
+      </div>
+      <button class="primary-btn full-width" type="button">Confirm Reassignment</button>
+    </div>
+  </div>
+{% endblock %}
