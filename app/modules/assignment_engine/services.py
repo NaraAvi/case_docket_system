@@ -56,6 +56,18 @@ class AssignmentService:
             raise ValueError("Target officer is not an eligible operational officer.")
         return resolved_role
 
+    def _assert_assignable_status(self, case, resolved_role):
+        status = case.get("status")
+        if status == "REGISTERED":
+            return
+        if status == "AWAITING_CONSTABLE_REGISTRATION" and resolved_role == "constable":
+            # A station commander can hand an unregistered docket to a specific
+            # constable to take hold of before triage/registration happens.
+            return
+        raise ValueError(
+            "Assignment requires a registered case, or a constable assignment to a docket still awaiting constable registration."
+        )
+
     def get_current_assignment_for_case(self, case_reference):
         return self.repository.get_current_assignment_for_case(case_reference)
 
@@ -107,10 +119,11 @@ class AssignmentService:
         case = self._get_case(case_reference)
         if case is None:
             raise ValueError("Case not found.")
-        if case.get("status") != "REGISTERED":
-            raise ValueError("Assignment requires a registered case.")
         if self.freeze_service and self.freeze_service.is_case_frozen(case_reference):
             raise ValueError("Case is frozen and operational mutation is restricted.")
+
+        resolved_role = self._resolve_target_officer(officer_id, officer_role)
+        self._assert_assignable_status(case, resolved_role)
 
         current = self.get_current_assignment_for_case(case_reference)
         if current and current.get("status") == "ACTIVE":
@@ -118,7 +131,6 @@ class AssignmentService:
                 raise ValueError("This case is already assigned to this officer.")
             raise ValueError("An active assignment already exists for this case. Use create_replacement_assignment.")
 
-        resolved_role = self._resolve_target_officer(officer_id, officer_role)
         trusted_assigner = assigned_by if override_authority else None
         trusted_assigner_role = assigned_by_role if override_authority else None
 
@@ -167,10 +179,11 @@ class AssignmentService:
         case = self._get_case(case_reference)
         if case is None:
             raise ValueError("Case not found.")
-        if case.get("status") != "REGISTERED":
-            raise ValueError("Assignment requires a registered case.")
         if self.freeze_service and self.freeze_service.is_case_frozen(case_reference):
             raise ValueError("Case is frozen and operational mutation is restricted.")
+
+        resolved_role = self._resolve_target_officer(officer_id, officer_role)
+        self._assert_assignable_status(case, resolved_role)
 
         current = self.get_current_assignment_for_case(case_reference)
         if current and current.get("status") == "ACTIVE":
@@ -178,7 +191,6 @@ class AssignmentService:
                 raise ValueError("The case is already assigned to this officer.")
             previous_assignment_id = previous_assignment_id or current.get("assignment_id")
 
-        resolved_role = self._resolve_target_officer(officer_id, officer_role)
         trusted_assigner = assigned_by if override_authority else None
         trusted_assigner_role = assigned_by_role if override_authority else None
 

@@ -2,8 +2,8 @@
  * Constable triage queue and individual docket review workspace.
  */
 
-import { fetchJson } from '../core/api.js';
-import { buildStatusBadge, renderDocketCardList, renderEvidenceTable, setEmptyState } from '../core/ui.js';
+import { fetchJson, postForm } from '../core/api.js';
+import { bindFilePreview, bindMediaViewButtons, buildStatusBadge, flashToast, renderDocketCardList, renderEvidenceTable, renderMediaViewButton, setEmptyState, showToast } from '../core/ui.js';
 
 export function getConstableCaseReference() {
   const match = window.location.pathname.match(/\/constable\/dockets\/([^/]+)/);
@@ -68,18 +68,32 @@ function renderInterviewStatus(container, interview) {
   }
   const citizenDone = Boolean(interview.citizen_recording && interview.citizen_recording.status === 'SUBMITTED');
   const constableDone = Boolean(interview.constable_recording && interview.constable_recording.status === 'SUBMITTED');
+
+  let summary;
+  if (interview.status === 'COMPLETED') {
+    summary = '✓ Both recordings submitted. You can now register the docket below.';
+  } else if (constableDone && !citizenDone) {
+    summary = '✓ Your recording is submitted. Waiting on the citizen to submit theirs before you can register this docket.';
+  } else if (!constableDone && citizenDone) {
+    summary = 'The citizen has submitted their recording. Submit yours below to complete the interview.';
+  } else {
+    summary = 'Submit your recording below. The citizen will submit theirs separately from their docket page.';
+  }
+
   container.innerHTML = `
+    <p>${summary}</p>
     <p><strong>Interview status:</strong> ${interview.status}</p>
-    <p>Citizen recording: ${citizenDone ? 'Submitted' : 'Awaiting citizen'}</p>
-    <p>Constable recording: ${constableDone ? 'Submitted' : 'Awaiting constable'}</p>
+    <p>Citizen recording: ${citizenDone ? 'Submitted' : 'Awaiting citizen'} ${citizenDone ? renderMediaViewButton(interview.citizen_recording?.storage_reference) : ''}</p>
+    <p>Constable recording: ${constableDone ? 'Submitted' : 'Awaiting constable'} ${constableDone ? renderMediaViewButton(interview.constable_recording?.storage_reference) : ''}</p>
   `;
+  bindMediaViewButtons(container);
 }
 
 async function hydrateInterview(caseReference, interviewId) {
   const panel = document.getElementById('constableInterviewPanel');
   const continueButton = document.getElementById('continueToInterview');
   const statusBox = document.getElementById('constableInterviewStatus');
-  const filenameField = document.getElementById('constableRecordingFilename');
+  const fileInput = document.getElementById('constableRecordingFile');
   const submitButton = document.getElementById('submitConstableRecording');
   const errorEl = document.getElementById('constableRecordingError');
   const registerButton = document.getElementById('registerDocketBtn');
@@ -91,6 +105,7 @@ async function hydrateInterview(caseReference, interviewId) {
   if (continueButton) {
     continueButton.classList.add('hidden');
   }
+  bindFilePreview('constableRecordingFile', 'constableRecordingFilePreview');
 
   async function refreshInterview() {
     const interview = await fetchJson(`/api/v1/constable/interviews/${interviewId}`);
@@ -99,8 +114,8 @@ async function hydrateInterview(caseReference, interviewId) {
     if (submitButton) {
       submitButton.disabled = constableDone;
     }
-    if (filenameField) {
-      filenameField.disabled = constableDone;
+    if (fileInput) {
+      fileInput.disabled = constableDone;
     }
     if (registerButton) {
       registerButton.disabled = interview.status !== 'COMPLETED';
@@ -117,22 +132,24 @@ async function hydrateInterview(caseReference, interviewId) {
   }
 
   submitButton?.addEventListener('click', async () => {
-    const filename = filenameField ? filenameField.value.trim() : '';
+    const file = fileInput?.files && fileInput.files[0];
     errorEl.classList.add('hidden');
-    if (!filename) {
-      errorEl.textContent = 'A recording file name is required.';
+    if (!file) {
+      errorEl.textContent = 'A recording file is required.';
       errorEl.classList.remove('hidden');
       return;
     }
     try {
-      await fetchJson(`/api/v1/constable/interviews/${interviewId}/recording`, {
-        method: 'POST',
-        body: { filename },
-      });
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('recording_type', 'constable_recording');
+      await postForm(`/api/v1/constable/interviews/${interviewId}/recording`, formData);
       await refreshInterview();
+      showToast('Recording submitted.');
     } catch (error) {
       errorEl.textContent = error.message || 'Unable to submit recording.';
       errorEl.classList.remove('hidden');
+      showToast(error.message || 'Unable to submit recording.', { type: 'error' });
     }
   });
 
@@ -142,10 +159,12 @@ async function hydrateInterview(caseReference, interviewId) {
       // The docket is REGISTERED now, which constable/open_docket rejects
       // (constable access is scoped to AWAITING_CONSTABLE_REGISTRATION) --
       // send the constable back to their queue instead of this now-inaccessible page.
+      flashToast(`Docket ${caseReference} registered successfully.`);
       window.location.href = '/constable';
     } catch (error) {
       errorEl.textContent = error.message || 'Unable to register docket.';
       errorEl.classList.remove('hidden');
+      showToast(error.message || 'Unable to register docket.', { type: 'error' });
     }
   });
 }
@@ -198,9 +217,11 @@ function bindFlagModal(caseReference, { onSaved } = {}) {
       if (onSaved) {
         await onSaved();
       }
+      showToast(editingFlagId ? 'Flag updated.' : 'Flag recorded.');
     } catch (error) {
       errorEl.textContent = error.message || 'Unable to save flag.';
       errorEl.classList.remove('hidden');
+      showToast(error.message || 'Unable to save flag.', { type: 'error' });
     }
   });
 
@@ -263,8 +284,13 @@ export async function hydrateConstableReview() {
       const continueButton = document.getElementById('continueToInterview');
       if (continueButton) {
         continueButton.addEventListener('click', async () => {
-          const interview = await fetchJson(`/api/v1/constable/dockets/${caseReference}/interview`, { method: 'POST' });
-          await hydrateInterview(caseReference, interview.interview_id);
+          try {
+            const interview = await fetchJson(`/api/v1/constable/dockets/${caseReference}/interview`, { method: 'POST' });
+            await hydrateInterview(caseReference, interview.interview_id);
+            showToast('Interview started. Submit your recording below once ready.');
+          } catch (error) {
+            showToast(error.message || 'Unable to start interview.', { type: 'error' });
+          }
         });
       }
     }

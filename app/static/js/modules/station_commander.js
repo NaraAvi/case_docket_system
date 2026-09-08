@@ -3,7 +3,7 @@
  */
 
 import { fetchJson } from '../core/api.js';
-import { buildStatusBadge, populateSelect, renderDocketCardList, renderSlaMeter, renderTimelineList, setEmptyState } from '../core/ui.js';
+import { buildStatusBadge, flashToast, populateSelect, renderDocketCardList, renderSlaMeter, renderTimelineList, setEmptyState, showToast } from '../core/ui.js';
 
 export function getStationCommanderCaseReference() {
   const match = window.location.pathname.match(/\/station-commander\/dockets\/([^/]+)/);
@@ -40,20 +40,39 @@ function bindReassignment(caseReference, docket) {
     currentOfficerField.value = docket.assigned_officer_id || 'Not assigned';
   }
 
-  const canReassign = docket.status === 'REGISTERED' && !docket.is_frozen;
+  const assignableStatuses = new Set(['REGISTERED', 'AWAITING_CONSTABLE_REGISTRATION']);
+  const canReassign = assignableStatuses.has(docket.status) && !docket.is_frozen;
+
+  if (blockedNotice) {
+    if (docket.is_frozen) {
+      blockedNotice.textContent = 'This docket is frozen; reassignment is restricted until it is released.';
+    } else if (docket.status === 'AWAITING_CONSTABLE_REGISTRATION') {
+      blockedNotice.textContent = 'This docket has not been registered yet — a constable can be assigned to take hold of it.';
+    } else if (!assignableStatuses.has(docket.status)) {
+      blockedNotice.textContent = 'Reassignment is available once the citizen has submitted this docket for review.';
+    } else {
+      blockedNotice.textContent = '';
+    }
+  }
+
   if (!canReassign) {
-    if (select) select.disabled = true;
+    if (select) {
+      select.innerHTML = '<option value="">Unavailable</option>';
+      select.disabled = true;
+    }
     if (reasonField) reasonField.disabled = true;
     if (confirmButton) confirmButton.disabled = true;
-    if (blockedNotice) {
-      blockedNotice.textContent = docket.is_frozen
-        ? 'This docket is frozen; reassignment is restricted until it is released.'
-        : 'Reassignment requires a registered docket.';
-    }
     return;
   }
 
-  fetchJson('/api/v1/station-commander/officers')
+  // Only a constable can take hold of a docket before it's registered; once
+  // registered either role is a valid target (matches the backend's rule).
+  const roleFilter = docket.status === 'AWAITING_CONSTABLE_REGISTRATION' ? 'constable' : null;
+  const officersUrl = roleFilter
+    ? `/api/v1/station-commander/officers?role=${roleFilter}`
+    : '/api/v1/station-commander/officers';
+
+  fetchJson(officersUrl)
     .then((officers) => {
       populateSelect(select, officers, {
         valueKey: 'test_id',
@@ -87,10 +106,12 @@ function bindReassignment(caseReference, docket) {
         method: 'POST',
         body: { officer_id: officerId, reason },
       });
+      flashToast('Docket reassigned successfully.');
       window.location.reload();
     } catch (error) {
       errorEl.textContent = error.message || 'Unable to reassign docket.';
       errorEl.classList.remove('hidden');
+      showToast(error.message || 'Unable to reassign docket.', { type: 'error' });
     }
   });
 }

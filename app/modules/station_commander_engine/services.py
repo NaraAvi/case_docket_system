@@ -273,4 +273,13 @@ class StationCommanderService:
                 },
             }
         )
+
+        if assignment.get("officer_role") == "detective" and self.investigation_service is not None:
+            # Otherwise the previously-assigned detective keeps sole access to
+            # any investigation already opened on this case, and the newly
+            # assigned detective is denied access to it.
+            self.investigation_service.reassign_active_investigation(
+                case_reference, assignment.get("officer_id"), actor_id, reason=reason
+            )
+
         return assignment

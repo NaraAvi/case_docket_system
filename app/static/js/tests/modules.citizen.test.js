@@ -19,6 +19,15 @@ function setLocation(pathname) {
   window.location = { pathname, href: '' };
 }
 
+function setFileInputValue(inputId, filename, content = 'file bytes', type = 'image/jpeg') {
+  const input = document.getElementById(inputId);
+  const file = new File([content], filename, { type });
+  // jsdom has no DataTransfer constructor; override the read-only `files`
+  // property directly instead (a standard jsdom testing workaround).
+  Object.defineProperty(input, 'files', { value: [file], writable: false, configurable: true });
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
 describe('modules/citizen.js (integration: module + core/api + core/ui + DOM)', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
@@ -124,7 +133,8 @@ describe('modules/citizen.js (integration: module + core/api + core/ui + DOM)', 
         <p id="citizenStatementError" class="hidden"></p>
         <table><tbody id="citizenCaseEvidence"></tbody></table>
         <select id="citizenEvidenceType"><option value="PHOTO">Photo</option></select>
-        <input id="citizenEvidenceFilename" />
+        <input type="file" id="citizenEvidenceFile" />
+        <p id="citizenEvidenceFilePreview" class="hidden"></p>
         <textarea id="citizenEvidenceDescription"></textarea>
         <button id="addCitizenEvidence"></button>
         <p id="citizenEvidenceError" class="hidden"></p>
@@ -140,10 +150,12 @@ describe('modules/citizen.js (integration: module + core/api + core/ui + DOM)', 
         </div>
         <div id="citizenInterviewPanel" class="hidden">
           <div id="citizenInterviewStatus"></div>
-          <input id="citizenRecordingFilename" />
+          <input type="file" id="citizenRecordingFile" />
+          <p id="citizenRecordingFilePreview" class="hidden"></p>
           <button id="submitCitizenRecording"></button>
           <p id="citizenRecordingError" class="hidden"></p>
         </div>
+        <div class="toast-container" id="toastContainer"></div>
       `;
     }
 
@@ -179,15 +191,17 @@ describe('modules/citizen.js (integration: module + core/api + core/ui + DOM)', 
       document.getElementById('saveCitizenStatement').click();
 
       await vi.waitFor(() => expect(document.getElementById('submitCitizenDocketForReview').disabled).toBe(false));
+      expect(document.getElementById('toastContainer').textContent).toContain('Statement saved');
     });
 
-    it('adds evidence and re-renders the evidence table', async () => {
+    it('uploads a real evidence file and re-renders the evidence table, showing a confirmation toast', async () => {
       document.body.innerHTML = draftDetailMarkup();
       setLocation('/citizen/dockets/CD-1');
       let evidenceAdded = false;
       const fetchMock = vi.fn((url, options = {}) => {
         if (url.endsWith('/evidence') && options.method === 'POST') {
           evidenceAdded = true;
+          expect(options.body).toBeInstanceOf(FormData);
           return Promise.resolve({ ok: true, json: () => Promise.resolve({ evidence_id: 1 }) });
         }
         if (url.endsWith('/evidence')) {
@@ -204,11 +218,30 @@ describe('modules/citizen.js (integration: module + core/api + core/ui + DOM)', 
       vi.stubGlobal('fetch', fetchMock);
 
       await hydrateCitizenDetail();
-      document.getElementById('citizenEvidenceFilename').value = 'window.jpg';
+      setFileInputValue('citizenEvidenceFile', 'window.jpg');
+      expect(document.getElementById('citizenEvidenceFilePreview').classList.contains('hidden')).toBe(false);
       document.getElementById('citizenEvidenceDescription').value = 'Broken window photo';
       document.getElementById('addCitizenEvidence').click();
 
       await vi.waitFor(() => expect(document.getElementById('citizenCaseEvidence').textContent).toContain('Broken window photo'));
+      expect(document.getElementById('toastContainer').textContent).toContain('uploaded');
+    });
+
+    it('rejects adding evidence with no file selected', async () => {
+      document.body.innerHTML = draftDetailMarkup();
+      setLocation('/citizen/dockets/CD-1');
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ status: 'DRAFT', timeline: [], statements: [], evidence: [] }),
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await hydrateCitizenDetail();
+      document.getElementById('citizenEvidenceDescription').value = 'Broken window photo';
+      document.getElementById('addCitizenEvidence').click();
+
+      expect(document.getElementById('citizenEvidenceError').classList.contains('hidden')).toBe(false);
+      expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining('/evidence'), expect.objectContaining({ method: 'POST' }));
     });
 
     it('submits the docket for review and reloads', async () => {
@@ -233,6 +266,7 @@ describe('modules/citizen.js (integration: module + core/api + core/ui + DOM)', 
       await vi.waitFor(() =>
         expect(fetchMock).toHaveBeenCalledWith('/api/v1/citizen/dockets/CD-1/submit', expect.objectContaining({ method: 'POST' }))
       );
+      await vi.waitFor(() => expect(sessionStorage.getItem('pdasFlashMessage')).toContain('submitted for constable review'));
     });
 
     it('disables statement editing and submit once the docket has left DRAFT', async () => {
@@ -303,7 +337,7 @@ describe('modules/citizen.js (integration: module + core/api + core/ui + DOM)', 
             json: () =>
               Promise.resolve({
                 status: citizenSubmitted ? 'AWAITING_AUDIO' : 'STARTED',
-                citizen_recording: citizenSubmitted ? { status: 'SUBMITTED' } : null,
+                citizen_recording: citizenSubmitted ? { status: 'SUBMITTED', storage_reference: 'recordings/abc_my_statement.wav' } : null,
                 constable_recording: null,
               }),
           });
@@ -325,13 +359,15 @@ describe('modules/citizen.js (integration: module + core/api + core/ui + DOM)', 
       await hydrateCitizenDetail();
 
       expect(document.getElementById('citizenInterviewPanel').classList.contains('hidden')).toBe(false);
-      expect(document.getElementById('citizenInterviewStatus').textContent).toContain('Not yet submitted');
+      expect(document.getElementById('citizenInterviewStatus').textContent).toContain('Submit your recording below');
 
-      document.getElementById('citizenRecordingFilename').value = 'my_statement.wav';
+      setFileInputValue('citizenRecordingFile', 'my_statement.wav', 'audio bytes', 'audio/wav');
       document.getElementById('submitCitizenRecording').click();
 
       await vi.waitFor(() => expect(document.getElementById('submitCitizenRecording').disabled).toBe(true));
-      expect(document.getElementById('citizenInterviewStatus').textContent).toContain('Submitted');
+      expect(document.getElementById('citizenInterviewStatus').textContent).toContain('Waiting on the constable');
+      expect(document.getElementById('toastContainer').textContent).toContain('Recording submitted');
+      expect(document.getElementById('citizenInterviewStatus').querySelector('[data-view-media="recordings/abc_my_statement.wav"]')).not.toBeNull();
     });
   });
 

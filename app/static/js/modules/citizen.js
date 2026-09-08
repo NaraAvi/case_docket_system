@@ -2,8 +2,8 @@
  * Citizen dashboard, docket detail timeline, and new-docket submission form.
  */
 
-import { fetchJson } from '../core/api.js';
-import { buildStatusBadge, renderEvidenceTable, setEmptyState, bindCaseLinks } from '../core/ui.js';
+import { fetchJson, postForm } from '../core/api.js';
+import { bindCaseLinks, bindFilePreview, bindMediaViewButtons, buildStatusBadge, flashToast, renderEvidenceTable, renderMediaViewButton, setEmptyState, showToast } from '../core/ui.js';
 
 export function getCitizenCaseReference() {
   const match = window.location.pathname.match(/^\/citizen\/dockets\/(?!new(?:\/)?$)([^/]+)/);
@@ -81,9 +81,11 @@ function bindCitizenStatement(caseReference, existingStatement) {
         saveButton.textContent = 'Save Statement';
       }, 1500);
       updateSubmitAvailability(true);
+      showToast('Statement saved.');
     } catch (error) {
       errorEl.textContent = error.message || 'Unable to save statement.';
       errorEl.classList.remove('hidden');
+      showToast(error.message || 'Unable to save statement.', { type: 'error' });
     }
   });
 }
@@ -104,33 +106,40 @@ function bindCitizenEvidence(caseReference) {
   const addButton = document.getElementById('addCitizenEvidence');
   const errorEl = document.getElementById('citizenEvidenceError');
   const evidenceBody = document.getElementById('citizenCaseEvidence');
+  const fileInput = document.getElementById('citizenEvidenceFile');
   if (!addButton) {
     return;
   }
 
+  bindFilePreview('citizenEvidenceFile', 'citizenEvidenceFilePreview');
+
   addButton.addEventListener('click', async () => {
     const evidenceType = document.getElementById('citizenEvidenceType')?.value;
-    const filename = document.getElementById('citizenEvidenceFilename')?.value.trim();
     const description = document.getElementById('citizenEvidenceDescription')?.value.trim();
+    const file = fileInput?.files && fileInput.files[0];
     errorEl.classList.add('hidden');
-    if (!filename || !description) {
-      errorEl.textContent = 'File name and description are required.';
+    if (!file || !description) {
+      errorEl.textContent = 'A file and description are required.';
       errorEl.classList.remove('hidden');
       return;
     }
     try {
-      const evidence = await fetchJson(`/api/v1/citizen/dockets/${caseReference}/evidence`, {
-        method: 'POST',
-        body: { evidence_type: evidenceType, filename, description },
-      });
-      document.getElementById('citizenEvidenceFilename').value = '';
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('evidence_type', evidenceType);
+      formData.append('description', description);
+      await postForm(`/api/v1/citizen/dockets/${caseReference}/evidence`, formData);
+
+      fileInput.value = '';
+      document.getElementById('citizenEvidenceFilePreview').classList.add('hidden');
       document.getElementById('citizenEvidenceDescription').value = '';
       const items = await fetchJson(`/api/v1/citizen/dockets/${caseReference}/evidence`);
       renderEvidenceTable(evidenceBody, items);
-      void evidence;
+      showToast(`Evidence "${file.name}" uploaded.`);
     } catch (error) {
       errorEl.textContent = error.message || 'Unable to add evidence.';
       errorEl.classList.remove('hidden');
+      showToast(error.message || 'Unable to upload evidence.', { type: 'error' });
     }
   });
 }
@@ -143,12 +152,14 @@ function bindCitizenSubmit(caseReference) {
   submitButton.addEventListener('click', async () => {
     try {
       await fetchJson(`/api/v1/citizen/dockets/${caseReference}/submit`, { method: 'POST' });
+      flashToast('Docket submitted for constable review.');
       window.location.reload();
     } catch (error) {
       const hint = document.getElementById('submitDocketHint');
       if (hint) {
         hint.textContent = error.message || 'Unable to submit docket.';
       }
+      showToast(error.message || 'Unable to submit docket.', { type: 'error' });
     }
   });
 }
@@ -156,27 +167,34 @@ function bindCitizenSubmit(caseReference) {
 async function hydrateCitizenInterview(caseReference, interviewId) {
   const panel = document.getElementById('citizenInterviewPanel');
   const statusBox = document.getElementById('citizenInterviewStatus');
-  const filenameField = document.getElementById('citizenRecordingFilename');
+  const fileInput = document.getElementById('citizenRecordingFile');
   const submitButton = document.getElementById('submitCitizenRecording');
   const errorEl = document.getElementById('citizenRecordingError');
   if (!panel) {
     return;
   }
   panel.classList.remove('hidden');
+  bindFilePreview('citizenRecordingFile', 'citizenRecordingFilePreview');
 
   async function refreshInterview() {
     const interview = await fetchJson(`/api/v1/citizen/interviews/${interviewId}`);
     const citizenDone = Boolean(interview.citizen_recording && interview.citizen_recording.status === 'SUBMITTED');
     const constableDone = Boolean(interview.constable_recording && interview.constable_recording.status === 'SUBMITTED');
     if (statusBox) {
-      statusBox.innerHTML = `
-        <p><strong>Interview status:</strong> ${interview.status}</p>
-        <p>Your recording: ${citizenDone ? 'Submitted' : 'Not yet submitted'}</p>
-        <p>Constable recording: ${constableDone ? 'Submitted' : 'Awaiting constable'}</p>
-      `;
+      const viewYours = citizenDone ? renderMediaViewButton(interview.citizen_recording?.storage_reference, 'View your recording') : '';
+      if (interview.status === 'COMPLETED') {
+        statusBox.innerHTML = `<p>✓ Both recordings submitted. The constable can now register this docket. ${viewYours}</p>`;
+      } else if (citizenDone && !constableDone) {
+        statusBox.innerHTML = `<p>✓ Your recording is submitted. Waiting on the constable to submit theirs — nothing more for you to do here. ${viewYours}</p>`;
+      } else if (!citizenDone && constableDone) {
+        statusBox.innerHTML = '<p>The constable has submitted their recording. Submit yours below to complete the interview.</p>';
+      } else {
+        statusBox.innerHTML = '<p>Submit your recording below. The constable will submit theirs separately.</p>';
+      }
+      bindMediaViewButtons(statusBox);
     }
     if (submitButton) submitButton.disabled = citizenDone;
-    if (filenameField) filenameField.disabled = citizenDone;
+    if (fileInput) fileInput.disabled = citizenDone;
     return interview;
   }
 
@@ -189,22 +207,24 @@ async function hydrateCitizenInterview(caseReference, interviewId) {
   }
 
   submitButton?.addEventListener('click', async () => {
-    const filename = filenameField ? filenameField.value.trim() : '';
+    const file = fileInput?.files && fileInput.files[0];
     errorEl.classList.add('hidden');
-    if (!filename) {
-      errorEl.textContent = 'A recording file name is required.';
+    if (!file) {
+      errorEl.textContent = 'A recording file is required.';
       errorEl.classList.remove('hidden');
       return;
     }
     try {
-      await fetchJson(`/api/v1/citizen/interviews/${interviewId}/recording`, {
-        method: 'POST',
-        body: { filename },
-      });
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('recording_type', 'citizen_recording');
+      await postForm(`/api/v1/citizen/interviews/${interviewId}/recording`, formData);
       await refreshInterview();
+      showToast('Recording submitted.');
     } catch (error) {
       errorEl.textContent = error.message || 'Unable to submit recording.';
       errorEl.classList.remove('hidden');
+      showToast(error.message || 'Unable to submit recording.', { type: 'error' });
     }
   });
 }
@@ -241,10 +261,12 @@ function bindCitizenEscalation(caseReference) {
         body: { category: categorySelect.value, description },
       });
       modal.classList.add('hidden');
+      flashToast('Escalation submitted to IPID for independent review.');
       window.location.reload();
     } catch (error) {
       errorEl.textContent = error.message || 'Unable to submit escalation.';
       errorEl.classList.remove('hidden');
+      showToast(error.message || 'Unable to submit escalation.', { type: 'error' });
     }
   });
 }
@@ -342,6 +364,7 @@ export function hydrateCitizenForm() {
           location,
         },
       });
+      flashToast('Docket created. Add a statement and evidence, then submit it for review.');
       window.location.href = `/citizen/dockets/${result.case_reference}`;
     } catch (error) {
       const errorBlock = document.getElementById('citizenFormError');
@@ -349,6 +372,7 @@ export function hydrateCitizenForm() {
         errorBlock.textContent = error.message;
         errorBlock.classList.remove('hidden');
       }
+      showToast(error.message || 'Unable to create docket.', { type: 'error' });
     }
   });
 }

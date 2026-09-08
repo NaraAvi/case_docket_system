@@ -391,6 +391,12 @@ class ConstableRegistrationService:
         )
         return dict(interview)
 
+    def find_recording_by_storage_reference(self, storage_reference):
+        for recording in self._recordings.values():
+            if recording.get("storage_reference") == storage_reference:
+                return dict(recording)
+        return None
+
     def get_interview_by_id(self, interview_id):
         interview = self._interviews.get(interview_id)
         if interview is None:
@@ -453,11 +459,24 @@ class ConstableRegistrationService:
             raise ValueError("Docket not found.")
 
         filename = (payload.get("filename") if isinstance(payload, dict) else None) or f"{recording_type}.wav"
-        storage_reference = payload.get("storage_reference") if isinstance(payload, dict) else None
-        if storage_reference is None:
-            storage_reference = filename
 
-        media = self.media_manager.register_file(filename, {"storage_reference": storage_reference, "recording_type": recording_type})
+        if isinstance(payload, dict) and payload.get("sha256_hash"):
+            # A real file was already streamed to disk by the route handler via
+            # MediaManager.save_upload(); its metadata arrives ready-made.
+            storage_reference = payload.get("storage_reference")
+            content_type = payload.get("content_type")
+            size_bytes = payload.get("size_bytes")
+            sha256_hash = payload.get("sha256_hash")
+        else:
+            storage_reference = payload.get("storage_reference") if isinstance(payload, dict) else None
+            if storage_reference is None:
+                storage_reference = filename
+            media = self.media_manager.register_file(filename, {"storage_reference": storage_reference, "recording_type": recording_type})
+            storage_reference = media["storage_reference"]
+            content_type = None
+            size_bytes = None
+            sha256_hash = None
+
         recording = {
             "recording_id": f"REC-{interview_id}-{len(self._recordings) + 1:04d}",
             "interview_id": interview_id,
@@ -466,8 +485,11 @@ class ConstableRegistrationService:
             "recorder_role": actor_role,
             "recording_type": recording_type,
             "status": "SUBMITTED",
-            "filename": media["filename"],
-            "storage_reference": media["storage_reference"],
+            "filename": filename,
+            "storage_reference": storage_reference,
+            "content_type": content_type,
+            "size_bytes": size_bytes,
+            "sha256_hash": sha256_hash,
             "created_at": self._utc_now(),
             "submitted_at": self._utc_now(),
         }

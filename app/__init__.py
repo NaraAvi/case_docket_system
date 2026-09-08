@@ -1,3 +1,6 @@
+import os
+import tempfile
+
 from flask import Flask
 
 from app import models  # noqa: F401  (registers all models with SQLAlchemy metadata)
@@ -34,7 +37,7 @@ from app.modules.station_commander_engine.services import StationCommanderServic
 from app.services.case_service import CaseService
 
 
-def create_app(testing: bool = False, database_uri: str | None = None):
+def create_app(testing: bool = False, database_uri: str | None = None, upload_storage_root: str | None = None):
     app = Flask(__name__)
     config = get_config()
     app.config.from_object(config)
@@ -70,7 +73,13 @@ def create_app(testing: bool = False, database_uri: str | None = None):
         audit_service=audit_service,
         escalation_service=EscalationService(audit_service=audit_service),
     )
-    media_manager = MediaManager()
+    if upload_storage_root:
+        storage_root = upload_storage_root
+    elif testing:
+        storage_root = tempfile.mkdtemp(prefix="pdas_uploads_")
+    else:
+        storage_root = os.path.join(app.instance_path, "uploads")
+    media_manager = MediaManager(storage_root=storage_root)
     evidence_service = EvidenceManagementService()
     compliance_service = ComplianceService(
         rule_service=regulatory_rule_service,

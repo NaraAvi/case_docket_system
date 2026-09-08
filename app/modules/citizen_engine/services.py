@@ -221,6 +221,10 @@ class CitizenDocketService:
             "evidence_type": evidence_type,
             "description": description,
             "filename": filename,
+            "storage_reference": payload.get("storage_reference"),
+            "content_type": payload.get("content_type"),
+            "size_bytes": payload.get("size_bytes"),
+            "sha256_hash": payload.get("sha256_hash"),
             "created_at": self._utc_timestamp(),
         }
         case.setdefault("evidence", []).append(evidence)

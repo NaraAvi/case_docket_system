@@ -266,6 +266,44 @@ class InvestigationService:
         )
         return dict(investigation)
 
+    def reassign_active_investigation(self, case_reference, new_detective_id, actor_id, reason=None):
+        """Transfer ownership of a case's active investigation (if one exists)
+        to a newly assigned detective. Called when a station commander or IPID
+        reviewer force-reassigns a case that already has an OPEN/IN_PROGRESS
+        investigation, so the new detective isn't denied access to it."""
+        investigation = self._get_investigation_by_case(case_reference)
+        if investigation is None or investigation.get("detective_id") == new_detective_id:
+            return investigation
+
+        previous_detective_id = investigation.get("detective_id")
+        investigation["detective_id"] = new_detective_id
+        investigation["updated_at"] = self._utc_now()
+        investigation.setdefault("timeline", []).append(
+            {
+                "event_type": "investigation_reassigned",
+                "actor_id": actor_id,
+                "actor_role": "station_commander",
+                "timestamp": self._utc_now(),
+                "details": {"previous_detective_id": previous_detective_id, "new_detective_id": new_detective_id, "reason": reason},
+            }
+        )
+        self.repository.update(investigation["id"], investigation)
+        self.audit_service.log(
+            {
+                "actor_id": actor_id,
+                "actor_role": "station_commander",
+                "action": "investigation_reassigned",
+                "case_reference": case_reference,
+                "details": {
+                    "investigation_id": investigation.get("investigation_id"),
+                    "previous_detective_id": previous_detective_id,
+                    "new_detective_id": new_detective_id,
+                    "reason": reason,
+                },
+            }
+        )
+        return dict(investigation)
+
     def update_notes(self, investigation_id, detective_id, payload=None):
         investigation = self.repository.get_by_investigation_id(investigation_id)
         if investigation is None:

@@ -12,6 +12,13 @@ function setLocation(pathname) {
   window.location = { pathname, href: '' };
 }
 
+function setFileInputValue(inputId, filename, content = 'file bytes', type = 'audio/wav') {
+  const input = document.getElementById(inputId);
+  const file = new File([content], filename, { type });
+  Object.defineProperty(input, 'files', { value: [file], writable: false, configurable: true });
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+}
+
 describe('modules/constable.js (integration)', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
@@ -72,11 +79,13 @@ describe('modules/constable.js (integration)', () => {
       </div>
       <div id="constableInterviewPanel" class="hidden">
         <div id="constableInterviewStatus"></div>
-        <input id="constableRecordingFilename" />
+        <input type="file" id="constableRecordingFile" />
+        <p id="constableRecordingFilePreview" class="hidden"></p>
         <button id="submitConstableRecording"></button>
         <p id="constableRecordingError" class="hidden"></p>
         <button id="registerDocketBtn" disabled></button>
       </div>
+      <div class="toast-container" id="toastContainer"></div>
     `;
   }
 
@@ -150,8 +159,8 @@ describe('modules/constable.js (integration)', () => {
           json: () =>
             Promise.resolve({
               status: constableSubmitted ? 'COMPLETED' : 'STARTED',
-              citizen_recording: { status: 'SUBMITTED' },
-              constable_recording: constableSubmitted ? { status: 'SUBMITTED' } : null,
+              citizen_recording: { status: 'SUBMITTED', storage_reference: 'recordings/xyz_citizen.wav' },
+              constable_recording: constableSubmitted ? { status: 'SUBMITTED', storage_reference: 'recordings/xyz_constable.wav' } : null,
             }),
         });
       }
@@ -181,11 +190,15 @@ describe('modules/constable.js (integration)', () => {
     expect(document.getElementById('constableInterviewPanel').classList.contains('hidden')).toBe(false);
     expect(document.getElementById('registerDocketBtn').disabled).toBe(true);
 
-    document.getElementById('constableRecordingFilename').value = 'constable.wav';
+    setFileInputValue('constableRecordingFile', 'constable.wav');
     document.getElementById('submitConstableRecording').click();
 
     await vi.waitFor(() => expect(document.getElementById('registerDocketBtn').disabled).toBe(false));
     expect(document.getElementById('constableInterviewStatus').textContent).toContain('COMPLETED');
+    expect(document.getElementById('toastContainer').textContent).toContain('Recording submitted');
+    const statusBox = document.getElementById('constableInterviewStatus');
+    expect(statusBox.querySelector('[data-view-media="recordings/xyz_citizen.wav"]')).not.toBeNull();
+    expect(statusBox.querySelector('[data-view-media="recordings/xyz_constable.wav"]')).not.toBeNull();
   });
 
   it('registering the docket redirects to the constable dashboard, not the now-inaccessible detail page', async () => {
@@ -217,6 +230,7 @@ describe('modules/constable.js (integration)', () => {
     document.getElementById('registerDocketBtn').click();
 
     await vi.waitFor(() => expect(window.location.href).toBe('/constable'));
+    expect(sessionStorage.getItem('pdasFlashMessage')).toContain('registered successfully');
   });
 
   it('the flag modal creates a new flag and refreshes the list', async () => {
@@ -238,6 +252,7 @@ describe('modules/constable.js (integration)', () => {
         <button id="closeFlagModal"></button>
         <button id="submitFlagModal"></button>
       </div>
+      <div class="toast-container" id="toastContainer"></div>
     `;
     setLocation('/constable/dockets/CD-1');
     let flagCreated = false;
@@ -273,6 +288,7 @@ describe('modules/constable.js (integration)', () => {
 
     await vi.waitFor(() => expect(document.getElementById('constableFlagList').textContent).toContain('New concern.'));
     expect(document.getElementById('flagModal').classList.contains('hidden')).toBe(true);
+    expect(document.getElementById('toastContainer').textContent).toContain('Flag recorded');
   });
 
   it('init only hydrates the dashboard when both the role and container match', () => {

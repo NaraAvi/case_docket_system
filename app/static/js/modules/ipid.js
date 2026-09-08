@@ -3,7 +3,7 @@
  */
 
 import { fetchJson } from '../core/api.js';
-import { buildStatusBadge, configureReauthModal, renderDocketCardList, renderTimelineList, setEmptyState } from '../core/ui.js';
+import { buildStatusBadge, configureReauthModal, flashToast, renderDocketCardList, renderTimelineList, setEmptyState } from '../core/ui.js';
 
 export function getIpidEscalationId() {
   const match = window.location.pathname.match(/\/ipid\/escalations\/([^/]+)/);
@@ -75,6 +75,7 @@ function bindDecisionButtons(escalationId, escalation) {
       confirmLabel: 'Confirm Dismissal',
       onConfirm: async (reason) => {
         await fetchJson(`/api/v1/ipid/escalations/${escalationId}/dismiss`, { method: 'POST', body: { reason } });
+        flashToast('Escalation dismissed.');
         window.location.reload();
       },
     });
@@ -89,6 +90,7 @@ function bindDecisionButtons(escalationId, escalation) {
       confirmLabel: 'Confirm Uphold',
       onConfirm: async (reason) => {
         await fetchJson(`/api/v1/ipid/escalations/${escalationId}/uphold`, { method: 'POST', body: { reason } });
+        flashToast('Escalation upheld — docket frozen and officer access revoked.');
         window.location.reload();
       },
     });

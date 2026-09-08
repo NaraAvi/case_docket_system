@@ -37,14 +37,14 @@
       <div class="statement-box" id="citizenInterviewStatus">
         <p>Loading interview status…</p>
       </div>
-      <div class="wizard-row" style="margin-top:14px;">
-        <label>Recording File Name</label>
-        <input type="text" id="citizenRecordingFilename" placeholder="e.g. my_statement.wav" />
+      <div class="file-input-row" style="margin-top:14px;">
+        <label class="input-label">Recording File</label>
+        <input type="file" id="citizenRecordingFile" accept="audio/*,video/*" />
+        <p class="file-name-preview hidden" id="citizenRecordingFilePreview"></p>
       </div>
-      <div class="stack-row" style="justify-content:flex-end;">
+      <div class="stack-row" style="justify-content:flex-end; margin-top:10px;">
         <button class="secondary-btn" type="button" id="submitCitizenRecording">Submit My Recording</button>
       </div>
-      <p class="field-hint">Real audio capture and upload is a later milestone; for now, the recording is registered by file name.</p>
       <p class="inline-error hidden" id="citizenRecordingError"></p>
     </div>
 
@@ -71,9 +71,10 @@
             <option value="OTHER">Other</option>
           </select>
         </div>
-        <div class="wizard-row">
-          <label>File Name</label>
-          <input type="text" id="citizenEvidenceFilename" placeholder="e.g. broken_window.jpg" />
+        <div class="file-input-row">
+          <label class="input-label">File</label>
+          <input type="file" id="citizenEvidenceFile" />
+          <p class="file-name-preview hidden" id="citizenEvidenceFilePreview"></p>
         </div>
         <div class="wizard-row">
           <label>Description</label>
@@ -82,7 +83,7 @@
         <div class="stack-row" style="justify-content:flex-end;">
           <button class="secondary-btn" type="button" id="addCitizenEvidence">Add Evidence</button>
         </div>
-        <p class="field-hint">Real file upload with SHA-256 chain-of-custody hashing is a later milestone; for now, evidence is recorded by description.</p>
+        <p class="field-hint">Every uploaded file is hashed with SHA-256 for chain-of-custody (CPA §212) when it's saved.</p>
         <p class="inline-error hidden" id="citizenEvidenceError"></p>
       </div>
     </div>

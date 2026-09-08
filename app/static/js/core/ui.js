@@ -4,6 +4,64 @@
  */
 
 import { getUser } from './auth.js';
+import { openMediaFile } from './api.js';
+
+const FLASH_STORAGE_KEY = 'pdasFlashMessage';
+
+/**
+ * Show a transient toast notification (base.html#toastContainer). Used for
+ * immediate confirmation of an action taken on the current page.
+ */
+export function showToast(message, { type = 'success', duration = 4000 } = {}) {
+  const container = document.getElementById('toastContainer');
+  if (!container || !message) {
+    return;
+  }
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+
+  requestAnimationFrame(() => toast.classList.add('toast-visible'));
+  setTimeout(() => {
+    toast.classList.remove('toast-visible');
+    setTimeout(() => toast.remove(), 300);
+  }, duration);
+}
+
+/**
+ * Queue a toast to show after a redirect/reload (sessionStorage survives
+ * navigation within the tab). Call showFlashedToast() on the next page's
+ * load to display and clear it -- pdas_app.js does this automatically.
+ */
+export function flashToast(message, { type = 'success' } = {}) {
+  try {
+    sessionStorage.setItem(FLASH_STORAGE_KEY, JSON.stringify({ message, type }));
+  } catch (error) {
+    // sessionStorage unavailable (private mode, etc.) -- the toast is skipped, not fatal.
+  }
+}
+
+export function showFlashedToast() {
+  let stored;
+  try {
+    stored = sessionStorage.getItem(FLASH_STORAGE_KEY);
+    if (stored) {
+      sessionStorage.removeItem(FLASH_STORAGE_KEY);
+    }
+  } catch (error) {
+    return;
+  }
+  if (!stored) {
+    return;
+  }
+  try {
+    const { message, type } = JSON.parse(stored);
+    showToast(message, { type });
+  } catch (error) {
+    // malformed stored value -- nothing to show.
+  }
+}
 
 export function buildStatusBadge(status) {
   const value = (status || 'UNKNOWN').toString().toUpperCase();
@@ -200,27 +258,68 @@ export function renderTimelineList(container, items, { titleKey = 'event_type', 
  * structure produced by components/_evidence_table.html. SHA-256 hashing is
  * Milestone 6 scope, so the hash column reads a placeholder until then.
  */
+
+/**
+ * A small "View" link for one uploaded file (evidence or a recording),
+ * given its `storage_reference` (e.g. "recordings/<uuid>_name.wav"). Pair
+ * with bindMediaViewButtons() after inserting the returned HTML into the DOM.
+ */
+export function renderMediaViewButton(storageReference, label = 'View recording') {
+  if (!storageReference) {
+    return '';
+  }
+  return `<button type="button" class="link-btn" data-view-media="${storageReference}">${label}</button>`;
+}
+
+export function bindMediaViewButtons(container) {
+  if (!container) {
+    return;
+  }
+  container.querySelectorAll('[data-view-media]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      try {
+        await openMediaFile(`/api/v1/media/${button.dataset.viewMedia}`);
+      } catch (error) {
+        showToast(error.message || 'Unable to open file.', { type: 'error' });
+      }
+    });
+  });
+}
+
 export function renderEvidenceTable(body, items) {
   if (!body) {
     return;
   }
   if (!Array.isArray(items) || !items.length) {
-    body.innerHTML = '<tr><td colspan="5">No evidence has been submitted yet.</td></tr>';
+    body.innerHTML = '<tr><td colspan="6">No evidence has been submitted yet.</td></tr>';
     return;
   }
   body.innerHTML = items
-    .map(
-      (item) => `
+    .map((item, index) => {
+      const hasFile = Boolean(item.storage_reference);
+      return `
         <tr>
           <td>${item.description || item.filename || 'Evidence record'}</td>
           <td>${item.evidence_type || 'Unspecified'}</td>
           <td>${item.source || item.submitted_by_role || 'Unknown'}</td>
           <td><span class="${buildStatusBadge(item.status)}">${item.status || 'SUBMITTED'}</span></td>
-          <td class="hash-cell">${item.sha256_hash || 'Not yet computed'}</td>
+          <td class="hash-cell">${item.sha256_hash ? item.sha256_hash.slice(0, 16) + '…' : 'Not yet computed'}</td>
+          <td>${hasFile ? `<button type="button" class="link-btn" data-view-evidence-index="${index}">View</button>` : '—'}</td>
         </tr>
-      `
-    )
+      `;
+    })
     .join('');
+
+  body.querySelectorAll('[data-view-evidence-index]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const item = items[Number(button.dataset.viewEvidenceIndex)];
+      try {
+        await openMediaFile(`/api/v1/media/${item.storage_reference}`);
+      } catch (error) {
+        showToast(error.message || 'Unable to open file.', { type: 'error' });
+      }
+    });
+  });
 }
 
 /**
@@ -278,4 +377,25 @@ export function renderSlaMeter(container, sla) {
 
   paint();
   return setInterval(paint, 60000);
+}
+
+/**
+ * Show the chosen file's name/size under a file input as it's picked.
+ */
+export function bindFilePreview(inputId, previewId) {
+  const input = document.getElementById(inputId);
+  const preview = document.getElementById(previewId);
+  if (!input || !preview) {
+    return;
+  }
+  input.addEventListener('change', () => {
+    const file = input.files && input.files[0];
+    if (!file) {
+      preview.classList.add('hidden');
+      return;
+    }
+    const sizeKb = Math.max(1, Math.round(file.size / 1024));
+    preview.textContent = `${file.name} (${sizeKb} KB)`;
+    preview.classList.remove('hidden');
+  });
 }

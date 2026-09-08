@@ -2,14 +2,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../core/auth.js', () => ({
   getUser: vi.fn(),
+  getToken: vi.fn().mockReturnValue(null),
 }));
 
 import { getUser } from '../core/auth.js';
 import {
   bindCaseLinks,
+  bindFilePreview,
   bindReauthModal,
   buildStatusBadge,
   configureReauthModal,
+  flashToast,
   populateSelect,
   refreshUserBadge,
   renderDocketCardList,
@@ -17,6 +20,8 @@ import {
   renderSlaMeter,
   renderTimelineList,
   setEmptyState,
+  showFlashedToast,
+  showToast,
 } from '../core/ui.js';
 
 describe('core/ui.js', () => {
@@ -203,6 +208,19 @@ describe('core/ui.js', () => {
       renderEvidenceTable(body, []);
       expect(body.textContent).toContain('No evidence has been submitted yet.');
     });
+
+    it('shows the real (truncated) hash and a View button for a file-backed item, and "—" without one', () => {
+      const body = document.createElement('tbody');
+      renderEvidenceTable(body, [
+        { description: 'Broken window photo', sha256_hash: 'a'.repeat(64), storage_reference: 'evidence/abc.jpg' },
+        { description: 'No file attached', sha256_hash: null, storage_reference: null },
+      ]);
+      const rows = body.querySelectorAll('tr');
+      expect(rows[0].textContent).toContain('a'.repeat(16));
+      expect(rows[0].querySelector('[data-view-evidence-index]')).not.toBeNull();
+      expect(rows[1].querySelector('[data-view-evidence-index]')).toBeNull();
+      expect(rows[1].textContent).toContain('Not yet computed');
+    });
   });
 
   describe('populateSelect (unit)', () => {
@@ -229,6 +247,63 @@ describe('core/ui.js', () => {
       const handle = renderSlaMeter(container, null);
       expect(handle).toBeNull();
       expect(container.textContent).toContain('unavailable');
+    });
+  });
+
+  describe('showToast / flashToast / showFlashedToast (integration: DOM + sessionStorage)', () => {
+    beforeEach(() => {
+      sessionStorage.clear();
+    });
+
+    it('appends a toast with the right type class into #toastContainer', () => {
+      document.body.innerHTML = '<div id="toastContainer"></div>';
+      showToast('Statement saved.', { type: 'success' });
+      const toast = document.querySelector('.toast');
+      expect(toast.textContent).toBe('Statement saved.');
+      expect(toast.classList.contains('toast-success')).toBe(true);
+    });
+
+    it('is a no-op when the container is missing', () => {
+      document.body.innerHTML = '';
+      expect(() => showToast('ignored')).not.toThrow();
+    });
+
+    it('flashToast queues a message that showFlashedToast displays and clears exactly once', () => {
+      document.body.innerHTML = '<div id="toastContainer"></div>';
+      flashToast('Docket registered successfully.', { type: 'success' });
+      expect(sessionStorage.getItem('pdasFlashMessage')).toContain('Docket registered successfully.');
+
+      showFlashedToast();
+      expect(document.querySelector('.toast').textContent).toBe('Docket registered successfully.');
+      expect(sessionStorage.getItem('pdasFlashMessage')).toBeNull();
+
+      document.body.innerHTML = '<div id="toastContainer"></div>';
+      showFlashedToast();
+      expect(document.querySelector('.toast')).toBeNull();
+    });
+  });
+
+  describe('bindFilePreview (integration: DOM)', () => {
+    it('shows the selected file name and size, and hides the preview when cleared', () => {
+      document.body.innerHTML = `
+        <input type="file" id="evidenceFile" />
+        <p id="evidenceFilePreview" class="hidden"></p>
+      `;
+      bindFilePreview('evidenceFile', 'evidenceFilePreview');
+
+      const input = document.getElementById('evidenceFile');
+      const file = new File(['x'.repeat(2048)], 'window.jpg', { type: 'image/jpeg' });
+      Object.defineProperty(input, 'files', { value: [file], writable: false, configurable: true });
+      input.dispatchEvent(new Event('change'));
+
+      const preview = document.getElementById('evidenceFilePreview');
+      expect(preview.classList.contains('hidden')).toBe(false);
+      expect(preview.textContent).toContain('window.jpg');
+      expect(preview.textContent).toContain('2 KB');
+
+      Object.defineProperty(input, 'files', { value: [], writable: false, configurable: true });
+      input.dispatchEvent(new Event('change'));
+      expect(preview.classList.contains('hidden')).toBe(true);
     });
   });
 });

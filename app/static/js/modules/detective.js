@@ -3,7 +3,7 @@
  */
 
 import { fetchJson } from '../core/api.js';
-import { buildStatusBadge, renderDocketCardList, renderEvidenceTable, renderTimelineList, setEmptyState } from '../core/ui.js';
+import { buildStatusBadge, flashToast, renderDocketCardList, renderEvidenceTable, renderTimelineList, setEmptyState, showToast } from '../core/ui.js';
 
 export function getDetectiveCaseReference() {
   const match = window.location.pathname.match(/\/detective\/dockets\/([^/]+)/);
@@ -101,9 +101,11 @@ function bindFindingModal(investigationId, { onSaved } = {}) {
       if (onSaved) {
         await onSaved();
       }
+      showToast('Finding recorded.');
     } catch (error) {
       errorEl.textContent = error.message || 'Unable to save finding.';
       errorEl.classList.remove('hidden');
+      showToast(error.message || 'Unable to save finding.', { type: 'error' });
     }
   });
 }
@@ -136,9 +138,11 @@ function bindNoteSaving(investigationId) {
       setTimeout(() => {
         saveButton.textContent = 'Save Note';
       }, 1500);
+      showToast('Investigation notes saved.');
     } catch (error) {
       errorEl.textContent = error.message || 'Unable to save notes.';
       errorEl.classList.remove('hidden');
+      showToast(error.message || 'Unable to save notes.', { type: 'error' });
     }
   });
 }
@@ -200,11 +204,16 @@ export async function hydrateDetectiveCase() {
       } else {
         startInvestigation.addEventListener('click', async () => {
           const notes = notesField ? notesField.value.trim() : '';
-          await fetchJson(`/api/v1/detective/dockets/${caseReference}/investigation`, {
-            method: 'POST',
-            body: { notes: notes || 'Investigation opened from the browser workflow.' },
-          });
-          window.location.href = `/detective/dockets/${caseReference}`;
+          try {
+            await fetchJson(`/api/v1/detective/dockets/${caseReference}/investigation`, {
+              method: 'POST',
+              body: { notes: notes || 'Investigation opened from the browser workflow.' },
+            });
+            flashToast('Investigation started.');
+            window.location.href = `/detective/dockets/${caseReference}`;
+          } catch (error) {
+            showToast(error.message || 'Unable to start investigation.', { type: 'error' });
+          }
         });
       }
     }

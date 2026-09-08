@@ -1,11 +1,43 @@
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify, request, send_file
 from flask_jwt_extended import create_access_token, get_jwt, get_jwt_identity, jwt_required
 
 api_v1_bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
 
+# Roles with broad, cross-case operational visibility (as opposed to citizens,
+# who are scoped to their own dockets). Used by endpoints -- like the docket
+# list backing the shared Active Cases / Evidence Vault pages, and the
+# detective dashboard's registered-case queue -- that every operational role
+# needs to read, not just station commanders.
+OPERATIONAL_ROLES = {"constable", "detective", "station_commander", "ipid"}
+
 
 def get_identity_registry():
     return current_app.extensions["identity_registry"]
+
+
+def get_media_manager():
+    return current_app.extensions["media_manager"]
+
+
+def get_case_service():
+    return current_app.extensions["case_service"]
+
+
+def _recording_payload_from_request():
+    """Build a submit_recording() payload from either a real multipart file
+    upload or a JSON body, raising ValueError on a bad upload."""
+    uploaded_file = request.files.get("file")
+    if uploaded_file is not None:
+        media = get_media_manager().save_upload(uploaded_file, subdir="recordings")
+        return {
+            "recording_type": request.form.get("recording_type"),
+            "filename": media["filename"],
+            "storage_reference": media["storage_reference"],
+            "content_type": media["content_type"],
+            "size_bytes": media["size_bytes"],
+            "sha256_hash": media["sha256_hash"],
+        }
+    return request.get_json(silent=True) or {}
 
 
 def get_citizen_auth_service():
@@ -231,7 +263,24 @@ def add_docket_evidence(case_reference):
         return jsonify({"error": "Forbidden."}), 403
 
     citizen_id = get_jwt_identity()
-    payload = request.get_json(silent=True) or {}
+    uploaded_file = request.files.get("file")
+    if uploaded_file is not None:
+        try:
+            media = get_media_manager().save_upload(uploaded_file, subdir="evidence")
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        payload = {
+            "evidence_type": request.form.get("evidence_type", ""),
+            "description": request.form.get("description", ""),
+            "filename": media["filename"],
+            "storage_reference": media["storage_reference"],
+            "content_type": media["content_type"],
+            "size_bytes": media["size_bytes"],
+            "sha256_hash": media["sha256_hash"],
+        }
+    else:
+        payload = request.get_json(silent=True) or {}
+
     try:
         evidence = get_citizen_docket_service().add_evidence(citizen_id, case_reference, payload)
     except ValueError as exc:
@@ -520,7 +569,7 @@ def station_commander_me():
 @jwt_required()
 def list_station_commander_dockets():
     claims = get_jwt()
-    if claims.get("role") != "station_commander":
+    if claims.get("role") not in OPERATIONAL_ROLES:
         return jsonify({"error": "Forbidden."}), 403
 
     dockets = get_station_commander_service().list_dockets()
@@ -812,8 +861,8 @@ def submit_constable_recording(interview_id):
         return jsonify({"error": "Forbidden."}), 403
 
     constable_id = get_jwt_identity()
-    payload = request.get_json(silent=True) or {}
     try:
+        payload = _recording_payload_from_request()
         recording = get_constable_registration_service().submit_recording(constable_id, "constable", interview_id, payload)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400 if "not found" not in str(exc).lower() else 404
@@ -1071,9 +1120,63 @@ def submit_citizen_recording(interview_id):
         return jsonify({"error": "Forbidden."}), 403
 
     citizen_id = get_jwt_identity()
-    payload = request.get_json(silent=True) or {}
     try:
+        payload = _recording_payload_from_request()
         recording = get_constable_registration_service().submit_recording(citizen_id, "citizen", interview_id, payload)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400 if "not found" not in str(exc).lower() else 404
     return jsonify(recording), 201
+
+
+def _find_evidence_by_storage_reference(storage_reference):
+    for case in get_case_service().get_all_cases():
+        for item in case.get("evidence", []):
+            if item.get("storage_reference") == storage_reference:
+                return case.get("citizen_id"), item
+    return None, None
+
+
+@api_v1_bp.get("/media/evidence/<path:stored_filename>")
+@jwt_required()
+def get_evidence_file(stored_filename):
+    claims = get_jwt()
+    storage_reference = f"evidence/{stored_filename}"
+    owning_citizen_id, evidence = _find_evidence_by_storage_reference(storage_reference)
+    if evidence is None:
+        return jsonify({"error": "File not found."}), 404
+    if claims.get("role") == "citizen" and str(owning_citizen_id) != str(get_jwt_identity()):
+        return jsonify({"error": "Forbidden."}), 403
+
+    path = get_media_manager().resolve_path(storage_reference)
+    if path is None:
+        return jsonify({"error": "File not found."}), 404
+    return send_file(
+        path,
+        mimetype=evidence.get("content_type") or "application/octet-stream",
+        download_name=evidence.get("filename") or stored_filename,
+        as_attachment=False,
+    )
+
+
+@api_v1_bp.get("/media/recordings/<path:stored_filename>")
+@jwt_required()
+def get_recording_file(stored_filename):
+    claims = get_jwt()
+    storage_reference = f"recordings/{stored_filename}"
+    recording = get_constable_registration_service().find_recording_by_storage_reference(storage_reference)
+    if recording is None:
+        return jsonify({"error": "File not found."}), 404
+    if claims.get("role") == "citizen":
+        interview = get_constable_registration_service().get_interview_by_id(recording.get("interview_id"))
+        if interview is None or str(interview.get("citizen_id")) != str(get_jwt_identity()):
+            return jsonify({"error": "Forbidden."}), 403
+
+    path = get_media_manager().resolve_path(storage_reference)
+    if path is None:
+        return jsonify({"error": "File not found."}), 404
+    return send_file(
+        path,
+        mimetype=recording.get("content_type") or "application/octet-stream",
+        download_name=recording.get("filename") or stored_filename,
+        as_attachment=False,
+    )

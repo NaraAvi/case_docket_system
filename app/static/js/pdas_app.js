@@ -4,7 +4,7 @@
  */
 
 import { bindLoginForm, bindLogoutButton } from './core/auth.js';
-import { refreshUserBadge, bindReauthModal } from './core/ui.js';
+import { refreshUserBadge, bindReauthModal, showFlashedToast } from './core/ui.js';
 
 export const ROLE_MODULE_LOADERS = {
   citizen: () => import('./modules/citizen.js'),
@@ -30,6 +30,7 @@ export async function init({ loadShared = () => import('./modules/shared.js') } 
 
   refreshUserBadge();
   bindReauthModal();
+  showFlashedToast();
 }
 
 /* istanbul ignore next -- executed only in the browser, not under test */

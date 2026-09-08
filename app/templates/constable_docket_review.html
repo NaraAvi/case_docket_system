@@ -60,14 +60,14 @@
         <div class="statement-box" id="constableInterviewStatus">
           <p>Loading interview status…</p>
         </div>
-        <div class="wizard-row" style="margin-top:14px;">
-          <label>Recording File Name</label>
-          <input type="text" id="constableRecordingFilename" placeholder="e.g. constable_interview.wav" />
+        <div class="file-input-row" style="margin-top:14px;">
+          <label class="input-label">Recording File</label>
+          <input type="file" id="constableRecordingFile" accept="audio/*,video/*" />
+          <p class="file-name-preview hidden" id="constableRecordingFilePreview"></p>
         </div>
-        <div class="stack-row" style="justify-content:flex-end;">
+        <div class="stack-row" style="justify-content:flex-end; margin-top:10px;">
           <button class="secondary-btn" type="button" id="submitConstableRecording">Submit My Recording</button>
         </div>
-        <p class="field-hint">Real audio capture and upload is a later milestone; for now, the recording is registered by file name.</p>
         <p class="inline-error hidden" id="constableRecordingError"></p>
         <div class="stack-row" style="margin-top:16px; justify-content:flex-end;">
           <button class="primary-btn" type="button" id="registerDocketBtn" disabled>Register Docket</button>

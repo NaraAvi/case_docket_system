@@ -88,6 +88,81 @@ describe('modules/station_commander.js (integration)', () => {
     expect(document.getElementById('confirmReassignment').disabled).toBe(true);
   });
 
+  function reassignmentMarkup() {
+    return `
+      <dl id="stationCommanderCaseMeta"></dl>
+      <span id="stationCommanderFreezeBadge"></span>
+      <div id="stationCommanderSlaMeter"></div>
+      <ul id="stationCommanderAuditList"></ul>
+      <div id="stationCommanderInvestigationInfo"></div>
+      <p id="reassignmentBlockedNotice"></p>
+      <input id="currentOfficerField" />
+      <select id="targetOfficerSelect"><option value="">Loading officers…</option></select>
+      <textarea id="reassignmentReason"></textarea>
+      <p id="reassignmentError" class="hidden"></p>
+      <button id="confirmReassignment"></button>
+    `;
+  }
+
+  it('populates the officer dropdown filtered to constables for a docket awaiting registration, instead of leaving it stuck on "Loading officers…"', async () => {
+    document.body.innerHTML = reassignmentMarkup();
+    setLocation('/station-commander/dockets/CD-5');
+    const fetchMock = vi.fn((url) => {
+      if (url.endsWith('/audit')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      if (url.includes('/officers')) {
+        expect(url).toContain('role=constable');
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([{ test_id: 'CON-1', full_name: 'Constable One', role: 'constable' }]),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            assigned_officer_id: null,
+            status: 'AWAITING_CONSTABLE_REGISTRATION',
+            freeze_status: 'NOT_FROZEN',
+            is_frozen: false,
+          }),
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await hydrateStationCommanderDetail();
+
+    const select = document.getElementById('targetOfficerSelect');
+    await vi.waitFor(() => expect(select.options.length).toBeGreaterThan(1));
+    expect(select.disabled).toBe(false);
+    expect(document.getElementById('confirmReassignment').disabled).toBeFalsy();
+    expect(document.getElementById('reassignmentBlockedNotice').textContent).toContain('not been registered yet');
+  });
+
+  it('disables reassignment with an "Unavailable" dropdown for a docket that is neither registered nor awaiting registration', async () => {
+    document.body.innerHTML = reassignmentMarkup();
+    setLocation('/station-commander/dockets/CD-5');
+    const fetchMock = vi.fn((url) => {
+      if (url.endsWith('/audit')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ assigned_officer_id: null, status: 'DRAFT', freeze_status: 'NOT_FROZEN', is_frozen: false }),
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await hydrateStationCommanderDetail();
+
+    const select = document.getElementById('targetOfficerSelect');
+    expect(select.disabled).toBe(true);
+    expect(select.textContent).toContain('Unavailable');
+    expect(select.textContent).not.toContain('Loading officers');
+    expect(document.getElementById('confirmReassignment').disabled).toBe(true);
+  });
+
   it('init does not hydrate the dashboard for a different role', () => {
     document.body.innerHTML = '<div id="stationCommanderCaseList"></div>';
     document.body.dataset.role = 'ipid';
