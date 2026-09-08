@@ -715,10 +715,4 @@ document.addEventListener('DOMContentLoaded', () => {
       window.location.href = '/citizen';
     });
   }
-  if (window.location.pathname === '/login' && getStoredToken()) {
-    const user = getUser();
-    if (user && user.role) {
-      routeByRole(user.role);
-    }
-  }
 });
