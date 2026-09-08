@@ -1,4 +1,7 @@
 {% extends 'base.html' %}
+{% from 'components/_timeline.html' import timeline_skeleton %}
+{% from 'components/_evidence_table.html' import evidence_table_skeleton %}
+{% from 'components/_statutory_badge.html' import statutory_badge %}
 
 {% block content %}
   <section class="detail-shell">
@@ -7,7 +10,7 @@
         <p class="eyebrow">Active Investigation</p>
         <h1>{{ case_reference }}</h1>
       </div>
-      <span class="badge badge-verified">Registered</span>
+      <span class="badge badge-verified" id="detectiveStatusBadge">Registered</span>
     </div>
 
     <div class="detail-grid">
@@ -23,7 +26,7 @@
 
       <div class="detail-card">
         <h3>Initial Deposition</h3>
-        <div class="statement-box">
+        <div class="statement-box" id="detectiveDeposition">
           <p>Loading docket description and witness information…</p>
         </div>
       </div>
@@ -32,12 +35,16 @@
     <div class="cards-grid" style="margin-top:18px;">
       <div class="panel-card">
         <h3>Investigation Notes</h3>
-        <textarea rows="7" placeholder="Document note chronology and witness follow-ups..."></textarea>
+        <textarea rows="7" placeholder="Document note chronology and witness follow-ups..." id="investigationNotes"></textarea>
+        <div class="stack-row" style="margin-top:10px; justify-content:flex-end;">
+          <button class="secondary-btn" type="button" id="saveInvestigationNote">Save Note</button>
+        </div>
+        <p class="inline-error hidden" id="investigationNotesError"></p>
       </div>
 
       <div class="panel-card">
         <h3>Statements</h3>
-        <div class="statement-box">
+        <div class="statement-box" id="detectiveStatementBox">
           <strong>Citizen Statement</strong>
           <p>Loading the latest citizen statement…</p>
         </div>
@@ -45,22 +52,52 @@
 
       <div class="panel-card">
         <h3>Evidence</h3>
-        <ul class="timeline-list" id="detectiveCaseEvidence">
-          <li><span class="timeline-dot"></span><div><strong>Loading evidence</strong><small>Please wait…</small></div></li>
-        </ul>
+        {{ evidence_table_skeleton('detectiveCaseEvidence') }}
       </div>
 
       <div class="panel-card">
         <h3>Audit Timeline</h3>
-        <ul class="timeline-list" id="detectiveCaseTimeline">
-          <li><span class="timeline-dot"></span><div><strong>Loading audit timeline</strong><small>Please wait…</small></div></li>
-        </ul>
+        {{ timeline_skeleton('detectiveCaseTimeline', 'Loading audit timeline') }}
+      </div>
+
+      <div class="panel-card wide-card">
+        <h3>Findings {{ statutory_badge('CPA §212', 'Evidence and findings must be recorded with an auditable chain of reasoning.') }}</h3>
+        <div class="stack-list" id="detectiveFindingsList">
+          <div class="empty-state">Loading findings…</div>
+        </div>
       </div>
     </div>
 
     <div class="stack-row" style="margin-top:18px; justify-content:flex-end;">
-      <button class="secondary-btn" type="button">Add Finding</button>
+      <button class="secondary-btn" type="button" id="openFindingModal" disabled>Add Finding</button>
       <button class="primary-btn" type="button" id="startInvestigation">Start Investigation</button>
     </div>
   </section>
+
+  <div class="reauth-modal hidden" id="findingModal" aria-hidden="true">
+    <div class="reauth-card">
+      <div class="reauth-header">
+        <span class="lock-icon">🔎</span>
+        <span>Add Investigation Finding</span>
+      </div>
+      <p class="reauth-subtitle">Findings form the auditable basis for the investigation's eventual outcome.</p>
+
+      <label class="input-label">Finding Type</label>
+      <select class="field-select" id="findingType">
+        <option value="VALID">Valid</option>
+        <option value="INVALID">Invalid</option>
+        <option value="GUILTY">Guilty</option>
+        <option value="NOT_GUILTY">Not Guilty</option>
+      </select>
+
+      <label class="input-label" style="margin-top:12px; display:block;">Notes</label>
+      <textarea rows="4" placeholder="Describe the finding and supporting reasoning..." id="findingNotes"></textarea>
+      <p class="inline-error hidden" id="findingModalError"></p>
+
+      <div class="modal-actions">
+        <button type="button" class="secondary-btn" id="closeFindingModal">Cancel</button>
+        <button type="button" class="primary-btn" id="submitFindingModal">Save Finding</button>
+      </div>
+    </div>
+  </div>
 {% endblock %}

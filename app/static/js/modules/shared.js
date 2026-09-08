@@ -4,7 +4,7 @@
  */
 
 import { fetchJson } from '../core/api.js';
-import { buildStatusBadge, setEmptyState } from '../core/ui.js';
+import { renderDocketCardList, setEmptyState } from '../core/ui.js';
 
 export async function hydrateActiveCases() {
   const container = document.getElementById('activeCaseList');
@@ -14,20 +14,10 @@ export async function hydrateActiveCases() {
 
   try {
     const dockets = await fetchJson('/api/v1/station-commander/dockets');
-    container.innerHTML = dockets
-      .slice(0, 6)
-      .map((item) => `
-        <article class="docket-card">
-          <div class="meta-wrap">
-            <strong>${item.case_reference}</strong>
-            <span>${item.title || 'Operational review required'}</span>
-          </div>
-          <div class="stack-row">
-            <span class="${buildStatusBadge(item.status)}">${item.status || 'UNKNOWN'}</span>
-          </div>
-        </article>
-      `)
-      .join('');
+    renderDocketCardList(container, dockets.slice(0, 6), {
+      title: (item) => item.title || 'Operational review required',
+      emptyMessage: 'No active cases are currently tracked.',
+    });
   } catch (error) {
     setEmptyState(container, error.message || 'Unable to load active case inventory.');
   }

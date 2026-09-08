@@ -122,3 +122,50 @@ non-citizen role.
 Full suite still green: **101 tests total** — pytest: 28 passed, 1 skipped
 across 2 files; Vitest: 72 passed across 10 files. The Milestone 1
 persistence tests were untouched by this refactor.
+
+## Milestone 3: Template Finalization & Interactive UX Completion
+
+Goal: fix broken, mocked, or hardcoded templates and make every button,
+input, and modal fully operational.
+
+### What changed
+
+Found and fixed a pre-existing bug first: every child template's
+`{% block content %}` was **replacing**, not filling, `base.html`'s block —
+so the entire sidebar/topbar/footer shell never rendered, on any page, for
+any role, since the UI was first scaffolded. Fixed by moving the shell
+markup outside the block. Also fixed `/active-cases` and `/evidence-vault`
+hardcoding `role="station_commander"` regardless of who was logged in.
+
+Added four Jinja macros under `app/templates/components/` for the
+initial-paint loading skeleton every dashboard/detail page needs (dockets,
+timelines, evidence tables, statutory-citation badges) — the actual
+per-item rendering stays in JS (`core/ui.js`'s new `renderDocketCard`,
+`renderTimelineList`, `renderEvidenceTable`, `populateSelect`,
+`renderSlaMeter` helpers) since Milestone 2 made every page fully
+client-hydrated with nothing for a macro to loop over server-side.
+
+Wired up every previously-hardcoded control: the high-accountability
+modal is now parameter-driven per action instead of a fixed
+`CAS-2023-BB1`; constable "Flag Concern" opens a real create/edit modal;
+detective "Save Note" and "Add Finding" persist via a **new**
+`PATCH /detective/investigations/<id>/notes` endpoint and the existing
+findings endpoint; station commander reassignment uses a real officer
+picker from a **new** `GET /station-commander/officers` endpoint and shows
+a live 72-hour SLA countdown; IPID Dismiss/Uphold collect a mandatory
+statutory rationale and hydrate from the richer review-workspace endpoint.
+
+Also untracked 53 stray `__pycache__/*.pyc` files that had been committed
+before `.gitignore` existed.
+
+### Tests
+
+`tests/test_milestone3.py` (new, 21 tests): the two new endpoints, the
+active-cases/evidence-vault role-bug regression, and full-stack renders of
+all four reworked detail pages via a real citizen→constable→detective HTTP
+lifecycle. Vitest suites for constable/detective/station_commander/ipid
+rewritten against the real new markup and endpoints, plus new coverage in
+`core.ui.test.js` for every shared render helper.
+
+Full suite green: **133 tests total** — pytest: 49 passed, 1 skipped across
+3 files; Vitest: 84 passed across 10 files.

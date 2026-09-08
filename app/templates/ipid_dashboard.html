@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from 'components/_docket_card.html' import docket_list_skeleton %}
 
 {% block content %}
   <section class="page-hero">
@@ -11,15 +12,14 @@
   <div class="cards-grid multi-panel">
     <div class="panel-card wide-card">
       <h3>Escalation Queue</h3>
-      <div id="ipidQueueList" class="stack-list"></div>
+      {{ docket_list_skeleton('ipidQueueList', 'stack-list', 'Loading escalation queue…') }}
     </div>
 
     <div class="panel-card">
       <h3>Decision Actions</h3>
       <div class="warning-banner">Internal findings and notes remain restricted to IPID review only.</div>
-      <div class="stack-row" style="margin-top:16px; flex-direction:column; align-items:stretch;">
-        <button class="secondary-btn full-width" type="button" data-open-reauth>Dismiss</button>
-        <button class="primary-btn full-width" type="button" data-open-reauth>Uphold</button>
+      <div class="statement-box" style="margin-top:16px;">
+        <p>Dismiss and Uphold decisions require a mandatory statutory rationale and are made from within a specific escalation's review workspace. Select an escalation above to proceed.</p>
       </div>
     </div>
   </div>

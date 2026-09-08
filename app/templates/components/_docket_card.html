@@ -1,0 +1,16 @@
+{#
+  Docket/case card-list loading skeleton. Every dashboard queue (constable,
+  detective, station commander, IPID, active cases) renders its actual cards
+  client-side from a fetched list via core/ui.js::renderDocketCard, but
+  previously started from a bare empty <div> with no feedback during the
+  fetch. This macro gives every queue container the same initial-paint state
+  instead of each template omitting it or hand-rolling its own.
+
+  Usage: {% from 'components/_docket_card.html' import docket_list_skeleton %}
+         {{ docket_list_skeleton('constableQueueState', 'stack-list', 'Loading triage queue…') }}
+#}
+{% macro docket_list_skeleton(container_id, container_class='stack-list', message='Loading cases…') %}
+  <div class="{{ container_class }}" id="{{ container_id }}">
+    <div class="empty-state">{{ message }}</div>
+  </div>
+{% endmacro %}

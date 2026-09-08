@@ -1,4 +1,7 @@
 {% extends 'base.html' %}
+{% from 'components/_timeline.html' import timeline_skeleton %}
+{% from 'components/_evidence_table.html' import evidence_table_skeleton %}
+{% from 'components/_statutory_badge.html' import statutory_badge %}
 
 {% block content %}
   <section class="detail-shell">
@@ -8,8 +11,8 @@
         <h1>{{ case_reference }}</h1>
       </div>
       <div class="stack-row">
-        <span class="badge badge-warning">Awaiting Registration</span>
-        <button class="secondary-btn" type="button" data-open-reauth>Flag Concern</button>
+        <span class="badge badge-warning" id="constableStatusBadge">Awaiting Registration</span>
+        <button class="secondary-btn" type="button" id="openFlagModal">Flag Concern</button>
       </div>
     </div>
 
@@ -22,21 +25,18 @@
           <dt>Incident Date</dt><dd>Loading…</dd>
           <dt>Status</dt><dd>Loading…</dd>
         </dl>
-        <div class="statement-box" style="margin-top:14px;">
+        <div class="statement-box" style="margin-top:14px;" id="constableStatementBox">
           <strong>Statement</strong>
           <p>Loading latest citizen statement…</p>
         </div>
       </div>
 
       <div class="detail-card">
-        <h3>Potential Invalidity</h3>
-        <div class="statement-box">
-          <p><strong>Category:</strong> INSUFFICIENT_INFORMATION</p>
-          <p><strong>Notes:</strong> The citizen account is incomplete; confirm whether the damage affects only the access gate.</p>
-          <p><strong>Status:</strong> OPEN</p>
+        <h3>Potential Invalidity Flags {{ statutory_badge('PAJA §3', 'Every administrative status change requires a recorded justification.') }}</h3>
+        <div class="stack-list" id="constableFlagList">
+          <div class="empty-state">Loading flags…</div>
         </div>
         <div class="stack-row" style="margin-top:16px;">
-          <button class="secondary-btn" type="button">Update Flag</button>
           <button class="primary-btn" type="button" id="continueToInterview">Continue to Interview</button>
         </div>
       </div>
@@ -45,17 +45,50 @@
     <div class="cards-grid" style="margin-top:18px;">
       <div class="panel-card">
         <h3>Evidence</h3>
-        <ul class="timeline-list" id="constableCaseEvidence">
-          <li><span class="timeline-dot"></span><div><strong>Loading evidence</strong><small>Please wait…</small></div></li>
-        </ul>
+        {{ evidence_table_skeleton('constableCaseEvidence') }}
       </div>
 
       <div class="panel-card">
         <h3>Related Cases</h3>
-        <div class="statement-box">
-          <p>No direct related case links detected.</p>
+        <div class="statement-box" id="constableRelatedCases">
+          <p>Loading related case links…</p>
         </div>
       </div>
     </div>
   </section>
+
+  <div class="reauth-modal hidden" id="flagModal" aria-hidden="true">
+    <div class="reauth-card">
+      <div class="reauth-header">
+        <span class="lock-icon">🚩</span>
+        <span id="flagModalTitle">Flag a Potential Invalidity</span>
+      </div>
+      <p class="reauth-subtitle">Flags are recorded against the docket and reviewed by the assigned detective before investigation proceeds.</p>
+
+      <label class="input-label">Category</label>
+      <select class="field-select" id="flagCategory">
+        <option value="INCONSISTENT_INFORMATION">Inconsistent Information</option>
+        <option value="INSUFFICIENT_INFORMATION">Insufficient Information</option>
+        <option value="CONFLICTING_ACCOUNT">Conflicting Account</option>
+        <option value="DUPLICATE_OR_RELATED_REPORT">Duplicate or Related Report</option>
+        <option value="OTHER">Other</option>
+      </select>
+
+      <label class="input-label" style="margin-top:12px; display:block;">Status</label>
+      <select class="field-select" id="flagStatus">
+        <option value="OPEN">Open</option>
+        <option value="RESOLVED">Resolved</option>
+        <option value="DISMISSED">Dismissed</option>
+      </select>
+
+      <label class="input-label" style="margin-top:12px; display:block;">Notes</label>
+      <textarea rows="3" placeholder="Describe the concern..." id="flagNotes"></textarea>
+      <p class="inline-error hidden" id="flagModalError"></p>
+
+      <div class="modal-actions">
+        <button type="button" class="secondary-btn" id="closeFlagModal">Cancel</button>
+        <button type="button" class="primary-btn" id="submitFlagModal">Save Flag</button>
+      </div>
+    </div>
+  </div>
 {% endblock %}

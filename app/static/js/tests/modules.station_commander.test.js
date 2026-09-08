@@ -46,32 +46,46 @@ describe('modules/station_commander.js (integration)', () => {
     expect(container.querySelector('.badge-warning')).not.toBeNull();
   });
 
-  it('hydrateStationCommanderDetail renders assignment/freeze/SLA metadata and audit timeline', async () => {
+  it('hydrateStationCommanderDetail renders assignment/freeze/SLA metadata and audit timeline, and disables reassignment while frozen', async () => {
     document.body.innerHTML = `
       <dl id="stationCommanderCaseMeta"></dl>
+      <span id="stationCommanderFreezeBadge"></span>
+      <div id="stationCommanderSlaMeter"></div>
       <ul id="stationCommanderAuditList"></ul>
+      <div id="stationCommanderInvestigationInfo"></div>
+      <p id="reassignmentBlockedNotice"></p>
+      <input id="currentOfficerField" />
+      <select id="targetOfficerSelect"></select>
+      <textarea id="reassignmentReason"></textarea>
+      <p id="reassignmentError" class="hidden"></p>
+      <button id="confirmReassignment"></button>
     `;
     setLocation('/station-commander/dockets/CD-5');
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
+    const fetchMock = vi.fn((url) => {
+      if (url.endsWith('/audit')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([{ action: 'Reassigned', timestamp: '2026-01-01T00:00:00Z' }]) });
+      }
+      return Promise.resolve({
         ok: true,
         json: () =>
           Promise.resolve({
             assigned_officer_id: 'OFF-1',
-            status: 'SLA_BREACHED',
+            status: 'REGISTERED',
             freeze_status: 'FROZEN',
-            sla_status: 'Breached at 74h',
-            audit: [{ action: 'Reassigned', timestamp: '2026-01-01T00:00:00Z' }],
+            is_frozen: true,
+            freeze_reason: 'IPID uphold',
+            sla: { sla_due_at: '2026-01-04T00:00:00Z', elapsed_hours: 74, remaining_hours: 0 },
           }),
-      })
-    );
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
 
     await hydrateStationCommanderDetail();
 
     expect(document.getElementById('stationCommanderCaseMeta').textContent).toContain('OFF-1');
     expect(document.getElementById('stationCommanderCaseMeta').textContent).toContain('FROZEN');
     expect(document.getElementById('stationCommanderAuditList').textContent).toContain('Reassigned');
+    expect(document.getElementById('confirmReassignment').disabled).toBe(true);
   });
 
   it('init does not hydrate the dashboard for a different role', () => {

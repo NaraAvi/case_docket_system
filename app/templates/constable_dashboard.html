@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from 'components/_docket_card.html' import docket_list_skeleton %}
 
 {% block content %}
   <section class="page-hero">
@@ -17,6 +18,6 @@
       </div>
     </div>
 
-    <div id="constableQueueState" class="stack-list"></div>
+    {{ docket_list_skeleton('constableQueueState', 'stack-list', 'Loading triage queue…') }}
   </section>
 {% endblock %}

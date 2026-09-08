@@ -3,7 +3,7 @@
  */
 
 import { fetchJson } from '../core/api.js';
-import { buildStatusBadge, setEmptyState, bindCaseLinks } from '../core/ui.js';
+import { buildStatusBadge, configureReauthModal, renderDocketCardList, renderTimelineList, setEmptyState } from '../core/ui.js';
 
 export function getIpidEscalationId() {
   const match = window.location.pathname.match(/\/ipid\/escalations\/([^/]+)/);
@@ -18,30 +18,81 @@ export async function hydrateIpidDashboard() {
 
   try {
     const escalations = await fetchJson('/api/v1/ipid/escalations');
-    if (!escalations.length) {
-      setEmptyState(container, 'No escalations are awaiting IPID review.');
-      return;
-    }
-
-    container.innerHTML = escalations
-      .map((item) => `
-        <article class="docket-card">
-          <div class="meta-wrap">
-            <strong>${item.escalation_id}</strong>
-            <span>${item.case_reference || 'Case reference unavailable'}</span>
-          </div>
-          <div class="stack-row">
-            <span class="${buildStatusBadge(item.status)}">${item.status || 'RECEIVED'}</span>
-            <button class="secondary-btn small-btn" type="button" data-case-link="/ipid/escalations/${item.escalation_id}">Review</button>
-          </div>
-        </article>
-      `)
-      .join('');
-
-    bindCaseLinks(container);
+    renderDocketCardList(container, escalations, {
+      reference: (item) => item.escalation_id,
+      title: (item) => item.case_reference || 'Case reference unavailable',
+      status: (item) => item.status || 'RECEIVED',
+      linkPrefix: '/ipid/escalations/',
+      actionLabel: 'Review',
+      emptyMessage: 'No escalations are awaiting IPID review.',
+    });
   } catch (error) {
     setEmptyState(container, error.message || 'Unable to load IPID review queue.');
   }
+}
+
+function renderFindings(container, findings) {
+  if (!container) {
+    return;
+  }
+  if (!findings.length) {
+    container.innerHTML = '<div class="empty-state">No internal findings have been recorded.</div>';
+    return;
+  }
+  container.innerHTML = findings
+    .map(
+      (finding) => `
+        <article class="mini-case-card">
+          <strong>${finding.finding_type}</strong>
+          <p>${finding.summary}</p>
+        </article>
+      `
+    )
+    .join('');
+}
+
+function bindDecisionButtons(escalationId, escalation) {
+  const dismissBtn = document.getElementById('dismissEscalationBtn');
+  const upholdBtn = document.getElementById('upholdEscalationBtn');
+  const notice = document.getElementById('ipidDecisionNotice');
+
+  const status = (escalation.status || '').toUpperCase();
+  if (status === 'RESOLVED') {
+    if (dismissBtn) dismissBtn.disabled = true;
+    if (upholdBtn) upholdBtn.disabled = true;
+    if (notice) {
+      notice.textContent = `This escalation was already resolved (${escalation.decision || 'decision recorded'}).`;
+    }
+    return;
+  }
+
+  dismissBtn?.addEventListener('click', () => {
+    configureReauthModal({
+      targetLabel: 'Escalation',
+      targetValue: escalationId,
+      actionLabel: 'Dismiss Escalation',
+      subtitle: 'Dismissal releases any statutory freeze tied to this escalation and closes the review with no further action.',
+      confirmLabel: 'Confirm Dismissal',
+      onConfirm: async (reason) => {
+        await fetchJson(`/api/v1/ipid/escalations/${escalationId}/dismiss`, { method: 'POST', body: { reason } });
+        window.location.reload();
+      },
+    });
+  });
+
+  upholdBtn?.addEventListener('click', () => {
+    configureReauthModal({
+      targetLabel: 'Escalation',
+      targetValue: escalationId,
+      actionLabel: 'Uphold Escalation',
+      subtitle: 'Upholding this escalation freezes the docket, revokes the implicated officer\'s access, and opens a disciplinary case under IPID Act §28.',
+      confirmLabel: 'Confirm Uphold',
+      onConfirm: async (reason) => {
+        await fetchJson(`/api/v1/ipid/escalations/${escalationId}/uphold`, { method: 'POST', body: { reason } });
+        window.location.reload();
+      },
+    });
+  });
 }
 
 export async function hydrateIpidDetail() {
@@ -49,33 +100,48 @@ export async function hydrateIpidDetail() {
   if (!escalationId) {
     return;
   }
+  const meta = document.getElementById('ipidEscalationMeta');
+  const assignmentMeta = document.getElementById('ipidAssignmentMeta');
+  const notes = document.getElementById('ipidReviewNotes');
+  const findings = document.getElementById('ipidReviewFindings');
+  const audit = document.getElementById('ipidAuditList');
+  const statusBadge = document.getElementById('ipidStatusBadge');
+
   try {
-    const escalation = await fetchJson(`/api/v1/ipid/escalations/${escalationId}`);
-    const meta = document.getElementById('ipidEscalationMeta');
-    const notes = document.getElementById('ipidReviewNotes');
-    const audit = document.getElementById('ipidAuditList');
+    let escalation = await fetchJson(`/api/v1/ipid/escalations/${escalationId}`);
+    if ((escalation.status || '').toUpperCase() === 'OPEN') {
+      await fetchJson(`/api/v1/ipid/escalations/${escalationId}/review`, { method: 'POST' });
+    }
+
+    const workspace = await fetchJson(`/api/v1/ipid/escalations/${escalationId}/review-workspace`);
+    const caseContext = workspace.case_context || {};
+
     if (meta) {
       meta.innerHTML = `
-        <dt>Case Reference</dt><dd>${escalation.case_reference || 'Unavailable'}</dd>
-        <dt>Category</dt><dd>${escalation.category || 'Unspecified'}</dd>
-        <dt>Status</dt><dd>${escalation.status || 'RECEIVED'}</dd>
-        <dt>Assigned Officer</dt><dd>${escalation.assigned_officer_id || 'Not assigned'}</dd>
+        <dt>Case Reference</dt><dd>${workspace.case_reference || 'Unavailable'}</dd>
+        <dt>Category</dt><dd>${workspace.category || 'Unspecified'}</dd>
+        <dt>Submitted By</dt><dd>${caseContext.citizen_id || 'Unavailable'}</dd>
+        <dt>Status</dt><dd>${workspace.status || 'RECEIVED'}</dd>
       `;
     }
-    if (notes) {
-      const items = Array.isArray(escalation.review_notes) && escalation.review_notes.length ? escalation.review_notes : [{ note_text: 'No review notes have yet been added.' }];
-      notes.innerHTML = items
-        .map((note) => `<li><span class="timeline-dot"></span><div><strong>${note.author_role || 'Reviewer'}</strong><small>${note.note_text || 'No details supplied.'}</small></div></li>`)
-        .join('');
+    if (statusBadge) {
+      statusBadge.className = buildStatusBadge(workspace.status);
+      statusBadge.textContent = workspace.status || 'RECEIVED';
     }
-    if (audit) {
-      const items = Array.isArray(escalation.audit_summary) && escalation.audit_summary.length ? escalation.audit_summary : [{ action: 'Escalation logged', timestamp: 'Pending' }];
-      audit.innerHTML = items
-        .map((item) => `<li><span class="timeline-dot"></span><div><strong>${item.action || 'Audit Event'}</strong><small>${item.timestamp || 'No timestamp'}</small></div></li>`)
-        .join('');
+    if (assignmentMeta) {
+      assignmentMeta.innerHTML = `
+        <dt>Assigned Officer</dt><dd>${caseContext.assigned_officer_id || 'Not assigned'}</dd>
+        <dt>Freeze Status</dt><dd>${caseContext.freeze_status || 'NOT_FROZEN'}</dd>
+        <dt>Access State</dt><dd>${caseContext.is_frozen ? 'RESTRICTED' : 'ACTIVE'}</dd>
+      `;
     }
+    renderTimelineList(notes, workspace.review_notes, { titleKey: 'author_role', detailKey: 'note_text', fallbackTitle: 'Reviewer', fallbackDetail: 'No details supplied.' });
+    renderFindings(findings, workspace.review_findings || []);
+    renderTimelineList(audit, workspace.audit_history, { titleKey: 'action', detailKey: 'timestamp', fallbackTitle: 'Audit Event' });
+
+    escalation = { ...escalation, status: workspace.status };
+    bindDecisionButtons(escalationId, escalation);
   } catch (error) {
-    const meta = document.getElementById('ipidEscalationMeta');
     if (meta) {
       meta.innerHTML = `<dt>Status</dt><dd>Unavailable</dd><dt>Message</dt><dd>${error.message}</dd>`;
     }

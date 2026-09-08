@@ -1,0 +1,11 @@
+{#
+  Statutory legal-basis badge.
+  Renders the citation (e.g. "IPID Act §28") as a small badge, optionally
+  with a longer human-readable label as its tooltip/title.
+
+  Usage: {% from 'components/_statutory_badge.html' import statutory_badge %}
+         {{ statutory_badge('IPID Act §28', 'Mandatory referral: police corruption') }}
+#}
+{% macro statutory_badge(citation, label=None) %}
+  <span class="badge badge-statute"{% if label %} title="{{ label }}"{% endif %}>{{ citation }}</span>
+{% endmacro %}

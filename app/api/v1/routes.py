@@ -618,6 +618,21 @@ def get_station_commander_officer_audit(officer_id):
     return jsonify(audit_entries)
 
 
+@api_v1_bp.get("/station-commander/officers")
+@jwt_required()
+def list_station_commander_officers():
+    claims = get_jwt()
+    if claims.get("role") != "station_commander":
+        return jsonify({"error": "Forbidden."}), 403
+
+    role = request.args.get("role")
+    try:
+        officers = get_station_commander_service().list_officers(role=role)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(officers)
+
+
 @api_v1_bp.get("/station-commander/sla/breaches")
 @jwt_required()
 def get_station_commander_sla_breaches():
@@ -1012,6 +1027,23 @@ def complete_detective_investigation(investigation_id):
         status = 404 if "not found" in str(exc).lower() else 400
         return jsonify({"error": str(exc)}), status
     return jsonify(completed)
+
+
+@api_v1_bp.patch("/detective/investigations/<investigation_id>/notes")
+@jwt_required()
+def update_detective_investigation_notes(investigation_id):
+    claims = get_jwt()
+    if claims.get("role") != "detective":
+        return jsonify({"error": "Forbidden."}), 403
+
+    detective_id = get_jwt_identity()
+    payload = request.get_json(silent=True) or {}
+    try:
+        investigation = get_investigation_service().update_notes(investigation_id, detective_id, payload)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+    return jsonify(investigation)
 
 
 @api_v1_bp.patch("/detective/investigations/<investigation_id>/status")

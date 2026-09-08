@@ -154,6 +154,7 @@ class InvestigationService:
             "evidence": case.get("evidence", []),
             "timeline": case.get("timeline", []),
             "interview_id": case.get("interview_id"),
+            "investigation": self._get_investigation_by_case(case_reference),
         }
 
     def create_investigation(self, case_reference, detective_id, payload=None):
@@ -261,6 +262,45 @@ class InvestigationService:
                 "action": "investigation_status_updated",
                 "case_reference": investigation.get("case_reference"),
                 "details": {"investigation_id": investigation_id, "status": next_status},
+            }
+        )
+        return dict(investigation)
+
+    def update_notes(self, investigation_id, detective_id, payload=None):
+        investigation = self.repository.get_by_investigation_id(investigation_id)
+        if investigation is None:
+            raise ValueError("Investigation not found.")
+        if investigation.get("detective_id") != detective_id:
+            raise ValueError("Detective is not authorized for this investigation.")
+        if investigation.get("status") == "COMPLETED":
+            raise ValueError("A completed investigation's notes cannot be edited.")
+
+        if not isinstance(payload, dict):
+            raise ValueError("Notes payload must be a JSON object.")
+
+        notes = str(payload.get("notes") or "").strip()
+        if not notes:
+            raise ValueError("Investigation notes are required.")
+
+        investigation["notes"] = notes
+        investigation["updated_at"] = self._utc_now()
+        investigation.setdefault("timeline", []).append(
+            {
+                "event_type": "investigation_notes_updated",
+                "actor_id": detective_id,
+                "actor_role": "detective",
+                "timestamp": self._utc_now(),
+                "details": {},
+            }
+        )
+        self.repository.update(investigation["id"], investigation)
+        self.audit_service.log(
+            {
+                "actor_id": detective_id,
+                "actor_role": "detective",
+                "action": "investigation_notes_updated",
+                "case_reference": investigation.get("case_reference"),
+                "details": {"investigation_id": investigation_id},
             }
         )
         return dict(investigation)

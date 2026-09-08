@@ -283,34 +283,151 @@ Full suite still green: **101 tests total** — pytest: 28 passed, 1 skipped acr
 
 ---
 
-### Milestone 3: Template Finalization & Interactive UX Completion
-*Goal: Fix broken, mocked, or hardcoded templates and make every button, input, and modal fully operational.*
+## COMPLETED Milestone 3: Template Finalization & Interactive UX Completion
 
-- [ ] **Task 3.1: Clean Base Layout & Dynamic High-Accountability Modal (`base.html`)**
-  - Remove hardcoded `CAS-2023-BB1` and static action names from `base.html`.
-  - Convert `reauthModal` into a reusable, parameter-driven dialog.
-  - Correct role-based navigation active states based on current route.
-- [ ] **Task 3.2: Reusable Template Components (`app/templates/components/`)**
-  - Create `_docket_card.html` macro for consistent case rendering across all dashboards.
-  - Create `_timeline.html` macro for rendering chronological case/audit events.
-  - Create `_evidence_table.html` macro displaying items, file sizes, SHA-256 hashes, and verification badges.
-  - Create `_statutory_badge.html` displaying legal basis (e.g., "SAPS Act §13", "IPID Act §28").
-- [ ] **Task 3.3: Finalize Constable Review Screen (`constable_docket_review.html`)**
-  - Replace hardcoded invalidity box with live data from `GET /api/v1/constable/dockets/<ref>/flags`.
-  - Hook up "Flag Concern" button to dynamic flag modal submitting to `POST /api/v1/constable/dockets/<ref>/flags`.
-  - Connect "Continue to Interview" to initiate recording workflow.
-  - Display actual citizen statement text instead of static placeholder.
-- [ ] **Task 3.4: Finalize Detective Workspace (`detective_case_workspace.html`)**
-  - Hook up "Investigation Notes" textarea and "Save Note" action to backend API.
-  - Hook up "Add Finding" button to dynamic modal submitting to `POST /api/v1/detective/investigations/<id>/findings`.
-  - Connect live citizen deposition and witness statements.
-- [ ] **Task 3.5: Finalize Station Commander Detail (`station_commander_docket_detail.html`)**
-  - Replace hardcoded `<input value="Detective One">` with searchable officer selection dropdown.
-  - Connect "Confirm Reassignment" button to `POST /api/v1/station-commander/dockets/<ref>/reassign`.
-  - Add visual SLA countdown timer showing elapsed vs. remaining hours out of 72 hours.
-- [ ] **Task 3.6: Finalize IPID Review Workspace (`ipid_escalation_detail.html`)**
-  - Connect "Dismiss Escalation" and "Uphold Escalation" buttons to live endpoints with mandatory statutory rationale input.
-  - Bind "Assignment & Freeze" metadata list dynamically.
+Goal: fix broken, mocked, or hardcoded templates and make every button, input,
+and modal fully operational, building directly on the SQLAlchemy persistence
+layer (Milestone 1) and the ES6 module split (Milestone 2).
+
+### A pre-existing bug found and fixed first
+
+Before wiring anything up, `base.html` was audited against every child
+template and turned out to have a structural bug that predates this
+milestone: every child template does `{% extends 'base.html' %}` +
+`{% block content %}...{% endblock %}`, but `base.html`'s `{% block content %}`
+wrapped the *entire* sidebar/topbar/footer shell and relied on
+`{{ self.body() }}` inside it to splice in the child's markup. In Jinja,
+a child's `{% block content %}` **replaces** the parent's block outright —
+so the shell never rendered for any page, on any role, ever. Every
+dashboard and detail page has been rendering as bare content with no
+sidebar nav, topbar, or footer since the UI was first scaffolded; nothing
+in the Milestone 1/2 test suites caught it because they only asserted on
+`data-role` and the script tag, both of which sit outside the block. Fixed
+by moving the shell markup outside `{% block content %}` so it always
+renders, with the block left as a normal, empty slot child templates fill
+in exactly as before (zero child-template changes required) and a
+`self.content()` call so the unauthenticated `plain-layout` branch (login
+page) still gets the same content. Verified via direct HTML inspection
+(`pdas-shell`/`nav-list`/`content-wrap` now present) and the full pytest run.
+
+Also found and fixed while auditing role wiring: `/active-cases` and
+`/evidence-vault` in `app/ui/routes.py` hardcoded `role="station_commander"`
+regardless of who was actually logged in, so a constable/detective/IPID
+user landed on those two pages with the station commander's sidebar menu.
+Fixed to pass the real role from the session claims.
+
+### What changed
+
+**`base.html`** — reauth modal hardcoded to `CAS-2023-BB1` / "Authorize
+Escalation Decision" is now populated via `data-reauth-target`,
+`data-reauth-action`, `data-reauth-subtitle`, `data-reauth-reason`,
+`data-reauth-confirm`, and `data-reauth-error` hooks, driven per-action by
+`core/ui.js::configureReauthModal(...)`. Nav items now compute their
+`active` class from `request.path` (Jinja has `request` in context by
+default; no route changes needed) instead of the first sidebar link always
+being marked active. The redundant citizen "My Dockets" link (pointed at
+the same URL as "Dashboard") was dropped.
+
+**`app/templates/components/`** — four Jinja macros, adapted to the reality
+that M2 made every page's actual data fully JS-hydrated (Flask's UI routes
+render a shell, not case data — there's nothing for a macro to loop over
+server-side). Rather than force macros to fake server-side rendering they
+can't do, each renders the shared **initial-paint skeleton** that JS then
+replaces once its fetch resolves, so every dashboard/detail page gets
+identical loading-state markup instead of each template hand-rolling its
+own (or, for the dashboards, no loading state at all):
+- `_docket_card.html::docket_list_skeleton(container_id, container_class, message)`
+- `_timeline.html::timeline_skeleton(list_id, message)`
+- `_evidence_table.html::evidence_table_skeleton(body_id, message)` — a real `<table>` (Item/Type/Source/Status/SHA-256 Hash columns; hashing itself is Milestone 6)
+- `_statutory_badge.html::statutory_badge(citation, label)` — genuinely used inline (not just skeleton) next to legal citations, e.g. "IPID Act §28", "NI 3/2011", "CPA §212", "PAJA §3"
+
+The equivalent duplication that actually lived in JS (every dashboard
+module hand-rolling the same docket-card HTML string) was factored into
+shared render helpers in `core/ui.js` instead — the honest fix for
+client-rendered duplication: `renderDocketCard`/`renderDocketCardList`,
+`renderTimelineList`, `renderEvidenceTable`, `populateSelect`, and
+`renderSlaMeter` (a live 72-hour countdown/progress meter). All five
+domain JS modules (`citizen.js` untouched, `constable`, `detective`,
+`station_commander`, `ipid`, `shared`) now render through these instead of
+duplicating template literals.
+
+**Constable review** (`constable_docket_review.html` + `modules/constable.js`)
+— "Potential Invalidity" is now a real flag list from
+`GET .../dockets/<ref>/flags`, each with an "Update Flag" button. "Flag
+Concern" opens a dedicated create/edit modal (category + status + notes)
+posting to `POST/PATCH .../flags`. The citizen statement box and evidence
+table render real fetched data instead of static placeholder text.
+
+**Detective workspace** (`detective_case_workspace.html` + `modules/detective.js`)
+— "Save Note" now persists via a **new** `PATCH
+/api/v1/detective/investigations/<id>/notes` endpoint (didn't exist before;
+added `InvestigationService.update_notes()`). "Add Finding" opens a modal
+(finding type + notes) posting to the existing findings endpoint and
+re-renders a findings list. Both controls are disabled until an
+investigation actually exists for the docket — `get_docket_for_detective()`
+now also returns the case's current investigation (id/status/notes) so the
+workspace can tell without a second round trip.
+
+**Station Commander detail** (`station_commander_docket_detail.html` +
+`modules/station_commander.js`) — "Detective One"/"Detective Two" hardcoded
+inputs replaced with a real officer `<select>`, populated from a **new**
+`GET /api/v1/station-commander/officers` endpoint (`?role=constable|detective`
+filter; added `StationCommanderService.list_officers()`, backed by the
+identity registry's already-existing `list_constables()`/`list_detectives()`
+from Milestone 1). "Confirm Reassignment" posts to the existing
+force-reassign endpoint and is disabled with an explanation when the docket
+is frozen or unregistered. The 72-hour SLA countdown renders from the
+`sla` block the station commander service already computed
+(`elapsed_hours`/`remaining_hours`/`sla_due_at`) — no backend change needed,
+just a client-side meter that ticks every minute. The dashboard's duplicate,
+non-functional "Assignment Controls" mini-form (same hardcoded "Detective
+One" input, no case context to act on, no submit handler) was removed in
+favor of pointing users at a specific docket's own reassignment panel; same
+treatment for the IPID dashboard's dead Dismiss/Uphold buttons.
+
+**IPID escalation detail** (`ipid_escalation_detail.html` + `modules/ipid.js`)
+— now hydrates from `GET .../review-workspace` (an existing, richer
+endpoint the page wasn't using) instead of the bare detail endpoint,
+surfacing real Assignment & Freeze metadata and internal review findings
+that were previously static placeholder text. Opening the page
+auto-transitions an `OPEN` escalation to `UNDER_REVIEW` (required before a
+decision can be recorded). Dismiss/Uphold both open the now-parameterized
+reauth modal with a mandatory reason field — the 400-if-missing reason
+requirement already existed server-side; this milestone is what actually
+puts a UI in front of it. Both buttons disable with an explanation once
+the escalation is already resolved.
+
+### Tests
+
+**Backend (pytest, new — `tests/test_milestone3.py`, 21 tests):** the two
+new endpoints (notes update: success/persistence, empty-notes rejection,
+role forbidden, 404; officer listing: default/filtered/invalid-role/
+forbidden); the `/active-cases` and `/evidence-vault` role-bug regression
+across all four applicable roles; and full-stack renders (real Flask +
+Jinja, not just JS) of all four reworked detail pages plus a nav
+active-state assertion — each built on a real citizen→constable→detective
+HTTP lifecycle through to a `REGISTERED` docket, the same real-flow style
+Milestone 1 used.
+
+**Frontend (Vitest, updated):** `core.ui.test.js` gained coverage for every
+new shared helper (`configureReauthModal` + `bindReauthModal` confirm
+wiring, `renderDocketCardList`, `renderTimelineList`, `renderEvidenceTable`,
+`populateSelect`, `renderSlaMeter`). `modules.constable.test.js`,
+`modules.detective.test.js`, `modules.station_commander.test.js`, and
+`modules.ipid.test.js` were rewritten against the real new markup/endpoints
+(multi-URL fetch mocks per module instead of one blanket mock), including a
+dedicated test driving the flag-create modal end-to-end and a
+detective-workspace test covering both the no-investigation-yet and
+investigation-already-open states.
+
+Also untracked the 53 stray `__pycache__/*.pyc` files that had been
+committed before `.gitignore` existed (flagged during the Milestone 1/2
+audit, fixed here since this milestone's commit was already touching most
+of the surrounding files).
+
+Full suite green: **133 tests total** — pytest: 49 passed, 1 skipped across
+3 files (`test_persistence.py`, `test_frontend_modularization.py`,
+`test_milestone3.py`); Vitest: 84 passed across 10 files.
 
 ---
 

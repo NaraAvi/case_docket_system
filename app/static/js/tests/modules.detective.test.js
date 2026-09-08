@@ -45,11 +45,19 @@ describe('modules/detective.js (integration)', () => {
     expect(container.textContent).not.toContain('CD-2');
   });
 
-  it('hydrateDetectiveCase renders detail and wires Start Investigation', async () => {
+  it('hydrateDetectiveCase renders detail and wires Start Investigation when no investigation exists yet', async () => {
     document.body.innerHTML = `
       <dl id="detectiveCaseMeta"></dl>
+      <span id="detectiveStatusBadge"></span>
+      <div id="detectiveDeposition"></div>
+      <div id="detectiveStatementBox"></div>
       <ul id="detectiveCaseTimeline"></ul>
       <ul id="detectiveCaseEvidence"></ul>
+      <textarea id="investigationNotes"></textarea>
+      <button id="saveInvestigationNote"></button>
+      <p id="investigationNotesError" class="hidden"></p>
+      <div id="detectiveFindingsList"></div>
+      <button id="openFindingModal"></button>
       <button id="startInvestigation"></button>
     `;
     setLocation('/detective/dockets/CD-1');
@@ -59,13 +67,15 @@ describe('modules/detective.js (integration)', () => {
       }
       return Promise.resolve({
         ok: true,
-        json: () => Promise.resolve({ title: 'Assault case', status: 'REGISTERED', timeline: [], evidence: [] }),
+        json: () => Promise.resolve({ location: 'Main St', status: 'REGISTERED', timeline: [], evidence: [], statements: [], investigation: null }),
       });
     });
     vi.stubGlobal('fetch', fetchMock);
 
     await hydrateDetectiveCase();
-    expect(document.getElementById('detectiveCaseMeta').textContent).toContain('Assault case');
+    expect(document.getElementById('detectiveCaseMeta').textContent).toContain('Main St');
+    expect(document.getElementById('detectiveCaseMeta').textContent).toContain('Not yet assigned');
+    expect(document.getElementById('openFindingModal').disabled).toBe(true);
 
     document.getElementById('startInvestigation').click();
     await vi.waitFor(() => expect(window.location.href).toBe('/detective/dockets/CD-1'));
@@ -73,6 +83,50 @@ describe('modules/detective.js (integration)', () => {
       '/api/v1/detective/dockets/CD-1/investigation',
       expect.objectContaining({ method: 'POST' })
     );
+  });
+
+  it('hydrateDetectiveCase disables Start Investigation and loads findings when an investigation already exists', async () => {
+    document.body.innerHTML = `
+      <dl id="detectiveCaseMeta"></dl>
+      <span id="detectiveStatusBadge"></span>
+      <div id="detectiveDeposition"></div>
+      <div id="detectiveStatementBox"></div>
+      <ul id="detectiveCaseTimeline"></ul>
+      <ul id="detectiveCaseEvidence"></ul>
+      <textarea id="investigationNotes"></textarea>
+      <button id="saveInvestigationNote"></button>
+      <p id="investigationNotesError" class="hidden"></p>
+      <div id="detectiveFindingsList"></div>
+      <button id="openFindingModal"></button>
+      <button id="startInvestigation"></button>
+    `;
+    setLocation('/detective/dockets/CD-1');
+    const fetchMock = vi.fn((url) => {
+      if (url.endsWith('/findings')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([{ finding_type: 'VALID', notes: 'Consistent with evidence.' }]) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            location: 'Main St',
+            status: 'REGISTERED',
+            timeline: [],
+            evidence: [],
+            statements: [],
+            investigation: { investigation_id: 'INV-1', detective_id: 'DET-1', status: 'OPEN', notes: 'Initial notes.' },
+          }),
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await hydrateDetectiveCase();
+
+    expect(document.getElementById('detectiveCaseMeta').textContent).toContain('DET-1');
+    expect(document.getElementById('investigationNotes').value).toBe('Initial notes.');
+    expect(document.getElementById('startInvestigation').disabled).toBe(true);
+    expect(document.getElementById('openFindingModal').disabled).toBe(false);
+    expect(document.getElementById('detectiveFindingsList').textContent).toContain('Consistent with evidence.');
   });
 
   it('init does nothing on a page with no detective containers or matching path', () => {

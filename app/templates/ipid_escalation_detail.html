@@ -1,4 +1,6 @@
 {% extends 'base.html' %}
+{% from 'components/_timeline.html' import timeline_skeleton %}
+{% from 'components/_statutory_badge.html' import statutory_badge %}
 
 {% block content %}
   <section class="detail-shell">
@@ -8,13 +10,13 @@
         <h1>{{ escalation_id }}</h1>
       </div>
       <div class="stack-row">
-        <span class="badge badge-warning">Under Review</span>
+        <span class="badge badge-warning" id="ipidStatusBadge">Under Review</span>
       </div>
     </div>
 
     <div class="detail-grid">
       <div class="detail-card">
-        <h3>Escalation Context</h3>
+        <h3>Escalation Context {{ statutory_badge('IPID Act §28', 'Independent Police Investigative Directorate Act 1 of 2011, Section 28 mandatory referral.') }}</h3>
         <dl class="meta-list" id="ipidEscalationMeta">
           <dt>Case Reference</dt><dd>Loading…</dd>
           <dt>Category</dt><dd>Loading…</dd>
@@ -25,10 +27,10 @@
 
       <div class="detail-card">
         <h3>Assignment & Freeze</h3>
-        <dl class="meta-list">
+        <dl class="meta-list" id="ipidAssignmentMeta">
           <dt>Assigned Officer</dt><dd>Loading…</dd>
           <dt>Freeze Status</dt><dd>Loading…</dd>
-          <dt>Access State</dt><dd>ACTIVE</dd>
+          <dt>Access State</dt><dd>Loading…</dd>
         </dl>
       </div>
     </div>
@@ -36,31 +38,28 @@
     <div class="cards-grid" style="margin-top:18px;">
       <div class="panel-card">
         <h3>Review Notes</h3>
-        <ul class="timeline-list" id="ipidReviewNotes">
-          <li><span class="timeline-dot"></span><div><strong>Loading review notes</strong><small>Please wait…</small></div></li>
-        </ul>
+        {{ timeline_skeleton('ipidReviewNotes', 'Loading review notes') }}
       </div>
 
       <div class="panel-card">
         <h3>Internal Findings</h3>
-        <div class="statement-box">
-          <p>Further review is required to validate the timeline and whether the officer conduct was materially linked to the underlying incident.</p>
+        <div class="stack-list" id="ipidReviewFindings">
+          <div class="empty-state">Loading internal findings…</div>
         </div>
       </div>
 
       <div class="panel-card">
         <h3>Audit History</h3>
-        <ul class="timeline-list" id="ipidAuditList">
-          <li><span class="timeline-dot"></span><div><strong>Loading audit history</strong><small>Please wait…</small></div></li>
-        </ul>
+        {{ timeline_skeleton('ipidAuditList', 'Loading audit history') }}
       </div>
 
       <div class="panel-card">
         <h3>Decision</h3>
         <div class="stack-row" style="flex-direction:column; align-items:stretch;">
-          <button class="secondary-btn" type="button" data-open-reauth>Dismiss Escalation</button>
-          <button class="primary-btn" type="button" data-open-reauth>Uphold Escalation</button>
+          <button class="secondary-btn full-width" type="button" id="dismissEscalationBtn" data-open-reauth>Dismiss Escalation</button>
+          <button class="primary-btn full-width" type="button" id="upholdEscalationBtn" data-open-reauth>Uphold Escalation</button>
         </div>
+        <p class="field-hint" id="ipidDecisionNotice"></p>
       </div>
     </div>
   </section>

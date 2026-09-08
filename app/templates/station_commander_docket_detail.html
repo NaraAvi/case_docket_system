@@ -1,4 +1,6 @@
 {% extends 'base.html' %}
+{% from 'components/_timeline.html' import timeline_skeleton %}
+{% from 'components/_statutory_badge.html' import statutory_badge %}
 
 {% block content %}
   <section class="detail-shell">
@@ -8,8 +10,7 @@
         <h1>{{ case_reference }}</h1>
       </div>
       <div class="stack-row">
-        <span class="badge badge-warning">Frozen</span>
-        <button class="secondary-btn" type="button" data-open-reauth>Force Reassign</button>
+        <span class="badge badge-warning" id="stationCommanderFreezeBadge">Loading…</span>
       </div>
     </div>
 
@@ -20,26 +21,33 @@
           <dt>Assigned Officer</dt><dd>Loading…</dd>
           <dt>Current Status</dt><dd>Loading…</dd>
           <dt>Freeze Status</dt><dd>Loading…</dd>
-          <dt>SLA</dt><dd>Loading…</dd>
         </dl>
+        <div style="margin-top:14px;">
+          <div class="mini-title">72-Hour SLA {{ statutory_badge('NI 3/2011', 'National Instruction 3/2011: 72-hour docket registration and investigation window.') }}</div>
+          <div id="stationCommanderSlaMeter">Loading SLA status…</div>
+        </div>
       </div>
 
       <div class="detail-card">
         <h3>Reassignment</h3>
+        <p class="field-hint" id="reassignmentBlockedNotice"></p>
         <div class="wizard-row">
           <label>Current Officer</label>
-          <input type="text" value="Detective One" />
+          <input type="text" id="currentOfficerField" value="Loading…" disabled />
         </div>
         <div class="wizard-row">
           <label>Target Officer</label>
-          <input type="text" value="Detective Two" />
+          <select class="field-select" id="targetOfficerSelect">
+            <option value="">Loading officers…</option>
+          </select>
         </div>
         <div class="wizard-row">
           <label>Reason</label>
-          <textarea rows="3" placeholder="Mandatory operational reason..."></textarea>
+          <textarea rows="3" placeholder="Mandatory operational reason..." id="reassignmentReason"></textarea>
         </div>
+        <p class="inline-error hidden" id="reassignmentError"></p>
         <div class="stack-row" style="margin-top:12px; justify-content:flex-end;">
-          <button class="primary-btn" type="button">Confirm Reassignment</button>
+          <button class="primary-btn" type="button" id="confirmReassignment">Confirm Reassignment</button>
         </div>
       </div>
     </div>
@@ -47,15 +55,13 @@
     <div class="cards-grid" style="margin-top:18px;">
       <div class="panel-card">
         <h3>Audit Trail</h3>
-        <ul class="timeline-list" id="stationCommanderAuditList">
-          <li><span class="timeline-dot"></span><div><strong>Loading audit trail</strong><small>Please wait…</small></div></li>
-        </ul>
+        {{ timeline_skeleton('stationCommanderAuditList', 'Loading audit trail') }}
       </div>
 
       <div class="panel-card">
         <h3>Investigation Information</h3>
-        <div class="statement-box">
-          <p>Investigation remains active under oversight review. Further action requires authorization from the station commander.</p>
+        <div class="statement-box" id="stationCommanderInvestigationInfo">
+          <p>Loading investigation status…</p>
         </div>
       </div>
     </div>

@@ -127,13 +127,15 @@ def station_commander_dashboard():
 @ui_bp.route("/active-cases")
 @require_ui_role("constable", "detective", "station_commander", "ipid")
 def active_cases():
-    return render_template("active_cases.html", role="station_commander", page_title="Active Cases")
+    role = get_ui_claims().get("role")
+    return render_template("active_cases.html", role=role, page_title="Active Cases")
 
 
 @ui_bp.route("/evidence-vault")
 @require_ui_role("constable", "detective", "station_commander", "ipid")
 def evidence_vault():
-    return render_template("evidence_vault.html", role="station_commander", page_title="Evidence Vault")
+    role = get_ui_claims().get("role")
+    return render_template("evidence_vault.html", role=role, page_title="Evidence Vault")
 
 
 @ui_bp.route("/station-commander/dockets/<case_reference>")

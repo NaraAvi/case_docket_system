@@ -162,6 +162,28 @@ class StationCommanderService:
             "history": self.assignment_service.get_assignment_history_for_case(case_reference),
         }
 
+    def list_officers(self, role=None):
+        normalized_role = str(role).strip().lower() if role else None
+        if normalized_role == "constable":
+            officers = self.identity_registry.list_constables()
+        elif normalized_role == "detective":
+            officers = self.identity_registry.list_detectives()
+        elif normalized_role in (None, "", "all"):
+            officers = self.identity_registry.list_constables() + self.identity_registry.list_detectives()
+        else:
+            raise ValueError("Officer role must be one of: constable, detective.")
+
+        return [
+            {
+                "test_id": officer.get("test_id"),
+                "full_name": officer.get("full_name"),
+                "role": officer.get("role"),
+                "access_state": officer.get("access_state", "ACTIVE"),
+            }
+            for officer in officers
+            if officer.get("active", True) and str(officer.get("access_state", "ACTIVE")).upper() != "REVOKED"
+        ]
+
     def get_sla_breaches(self):
         if self.automation_service is None or self.automation_service.sla_service is None:
             return []

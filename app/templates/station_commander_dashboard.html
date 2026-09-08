@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from 'components/_docket_card.html' import docket_list_skeleton %}
 
 {% block content %}
   <section class="page-hero">
@@ -9,26 +10,16 @@
   </section>
 
   <div class="cards-grid multi-panel">
-    <div class="panel-card">
+    <div class="panel-card wide-card">
       <h3>Operational Dashboard</h3>
-      <div id="stationCommanderCaseList" class="stack-list"></div>
+      {{ docket_list_skeleton('stationCommanderCaseList', 'stack-list', 'Loading tracked dockets…') }}
     </div>
 
     <div class="panel-card">
       <h3>Assignment Controls</h3>
-      <div class="wizard-row">
-        <label>Current Officer</label>
-        <input type="text" value="Detective One" />
+      <div class="statement-box">
+        <p>Reassignment requires a specific case. Open a docket from the list above, then use its <strong>Reassignment</strong> panel to select a target officer and confirm.</p>
       </div>
-      <div class="wizard-row">
-        <label>Target Officer</label>
-        <input type="text" placeholder="Officer ID" />
-      </div>
-      <div class="wizard-row">
-        <label>Reason</label>
-        <textarea rows="3" placeholder="Mandatory reason for reassignment..."></textarea>
-      </div>
-      <button class="primary-btn full-width" type="button">Confirm Reassignment</button>
     </div>
   </div>
 {% endblock %}

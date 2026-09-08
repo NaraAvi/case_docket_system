@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from 'components/_docket_card.html' import docket_list_skeleton %}
 
 {% block content %}
   <section class="page-hero">
@@ -11,7 +12,7 @@
   <div class="cards-grid multi-panel">
     <div class="panel-card">
       <h3>Current Investigations</h3>
-      <div id="detectiveInvestigationList" class="stack-list"></div>
+      {{ docket_list_skeleton('detectiveInvestigationList', 'stack-list', 'Loading registered investigations…') }}
     </div>
 
     <div class="panel-card">
