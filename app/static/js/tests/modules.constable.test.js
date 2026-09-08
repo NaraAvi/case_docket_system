@@ -49,6 +49,40 @@ describe('modules/constable.js (integration)', () => {
     expect(window.location.href).toBe('/constable/dockets/CD-9');
   });
 
+  it('the Search control queries the search endpoint and renders matches, then reverts to the unregistered queue on an empty query', async () => {
+    document.body.innerHTML = `
+      <input id="constableSearch" type="search" />
+      <button id="constableSearchBtn"></button>
+      <div id="constableQueueState"></div>
+    `;
+    setLocation('/constable');
+    const fetchMock = vi.fn((url) => {
+      if (url.includes('/search')) {
+        expect(url).toBe('/api/v1/constable/dockets/search?q=Main%20St');
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([{ case_reference: 'CD-9', location: 'Main St', status: 'REGISTERED' }]),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await hydrateConstableDashboard();
+    expect(document.getElementById('constableQueueState').textContent).toContain('No unregistered dockets');
+
+    document.getElementById('constableSearch').value = 'Main St';
+    document.getElementById('constableSearchBtn').click();
+
+    await vi.waitFor(() => expect(document.getElementById('constableQueueState').textContent).toContain('CD-9'));
+
+    document.getElementById('constableSearch').value = '';
+    document.getElementById('constableSearch').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    await vi.waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith('/api/v1/constable/dockets/unregistered', expect.any(Object))
+    );
+  });
+
   it('hydrateConstableDashboard shows an empty state with no queue items', async () => {
     document.body.innerHTML = '<div id="constableQueueState"></div>';
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) }));

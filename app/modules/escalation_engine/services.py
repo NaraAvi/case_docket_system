@@ -131,7 +131,7 @@ class EscalationService:
                 raise ValueError("Status filter must be one of: OPEN, UNDER_REVIEW, RESOLVED.")
             escalations = self.repository.list_by_status(status_value)
         else:
-            escalations = self.repository.list_open()
+            escalations = self.repository.list_unresolved()
         escalations.sort(key=lambda item: str(item.get("created_at") or ""))
         return [dict(item) for item in escalations]
 

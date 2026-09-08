@@ -60,6 +60,20 @@
         {{ timeline_skeleton('detectiveCaseTimeline', 'Loading audit timeline') }}
       </div>
 
+      <div class="panel-card">
+        <h3>Potential Invalidity Flags {{ statutory_badge('PAJA §3', 'Every administrative status change requires a recorded justification.') }}</h3>
+        <div class="stack-list" id="detectiveFlagsList">
+          <div class="empty-state">Start the investigation to review constable-raised flags.</div>
+        </div>
+      </div>
+
+      <div class="panel-card">
+        <h3>Related Cases</h3>
+        <div class="statement-box" id="detectiveRelatedCases">
+          <p>Start the investigation to review related case links.</p>
+        </div>
+      </div>
+
       <div class="panel-card wide-card">
         <h3>Findings {{ statutory_badge('CPA §212', 'Evidence and findings must be recorded with an auditable chain of reasoning.') }}</h3>
         <div class="stack-list" id="detectiveFindingsList">

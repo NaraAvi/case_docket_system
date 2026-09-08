@@ -97,6 +97,8 @@ describe('modules/detective.js (integration)', () => {
       <button id="saveInvestigationNote"></button>
       <p id="investigationNotesError" class="hidden"></p>
       <div id="detectiveFindingsList"></div>
+      <div id="detectiveFlagsList"></div>
+      <div id="detectiveRelatedCases"></div>
       <button id="openFindingModal"></button>
       <button id="startInvestigation"></button>
     `;
@@ -104,6 +106,18 @@ describe('modules/detective.js (integration)', () => {
     const fetchMock = vi.fn((url) => {
       if (url.endsWith('/findings')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve([{ finding_type: 'VALID', notes: 'Consistent with evidence.' }]) });
+      }
+      if (url.endsWith('/flags')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([{ category: 'INSUFFICIENT_INFORMATION', status: 'OPEN', notes: 'Missing detail from constable.' }]),
+        });
+      }
+      if (url.endsWith('/related')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([{ relationship_type: 'RELATED_CASE', source_case_reference: 'CD-1', related_case_reference: 'CD-2' }]),
+        });
       }
       return Promise.resolve({
         ok: true,
@@ -127,6 +141,43 @@ describe('modules/detective.js (integration)', () => {
     expect(document.getElementById('startInvestigation').disabled).toBe(true);
     expect(document.getElementById('openFindingModal').disabled).toBe(false);
     expect(document.getElementById('detectiveFindingsList').textContent).toContain('Consistent with evidence.');
+    await vi.waitFor(() => expect(document.getElementById('detectiveFlagsList').textContent).toContain('Missing detail from constable.'));
+    expect(document.getElementById('detectiveRelatedCases').textContent).toContain('CD-2');
+  });
+
+  it('shows placeholder copy for flags/related when no investigation has started yet, without fetching them', async () => {
+    document.body.innerHTML = `
+      <dl id="detectiveCaseMeta"></dl>
+      <span id="detectiveStatusBadge"></span>
+      <div id="detectiveDeposition"></div>
+      <div id="detectiveStatementBox"></div>
+      <ul id="detectiveCaseTimeline"></ul>
+      <ul id="detectiveCaseEvidence"></ul>
+      <textarea id="investigationNotes"></textarea>
+      <button id="saveInvestigationNote"></button>
+      <p id="investigationNotesError" class="hidden"></p>
+      <div id="detectiveFindingsList"></div>
+      <div id="detectiveFlagsList">Start the investigation to review constable-raised flags.</div>
+      <div id="detectiveRelatedCases">Start the investigation to review related case links.</div>
+      <button id="openFindingModal"></button>
+      <button id="startInvestigation"></button>
+    `;
+    setLocation('/detective/dockets/CD-1');
+    const fetchMock = vi.fn((url) => {
+      if (url.includes('/flags') || url.includes('/related')) {
+        throw new Error(`unexpected pre-investigation fetch to ${url}`);
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ location: 'Main St', status: 'REGISTERED', timeline: [], evidence: [], statements: [], investigation: null }),
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await hydrateDetectiveCase();
+
+    expect(document.getElementById('detectiveFlagsList').textContent).toContain('Start the investigation');
+    expect(document.getElementById('detectiveRelatedCases').textContent).toContain('Start the investigation');
   });
 
   it('init does nothing on a page with no detective containers or matching path', () => {

@@ -5,6 +5,29 @@
 import { fetchJson } from '../core/api.js';
 import { buildStatusBadge, flashToast, renderDocketCardList, renderEvidenceTable, renderTimelineList, setEmptyState, showToast } from '../core/ui.js';
 
+function renderReadOnlyFlags(container, flags) {
+  if (!container) {
+    return;
+  }
+  if (!flags.length) {
+    container.innerHTML = '<div class="empty-state">No potential invalidity flags have been raised.</div>';
+    return;
+  }
+  container.innerHTML = flags
+    .map(
+      (flag) => `
+        <article class="mini-case-card">
+          <div class="stack-row" style="justify-content:space-between;">
+            <strong>${flag.category}</strong>
+            <span class="${buildStatusBadge(flag.status)}">${flag.status}</span>
+          </div>
+          <p>${flag.notes}</p>
+        </article>
+      `
+    )
+    .join('');
+}
+
 export function getDetectiveCaseReference() {
   const match = window.location.pathname.match(/\/detective\/dockets\/([^/]+)/);
   return match ? match[1] : null;
@@ -159,6 +182,8 @@ export async function hydrateDetectiveCase() {
   const statementBox = document.getElementById('detectiveStatementBox');
   const statusBadge = document.getElementById('detectiveStatusBadge');
   const findingsList = document.getElementById('detectiveFindingsList');
+  const flagsList = document.getElementById('detectiveFlagsList');
+  const relatedBox = document.getElementById('detectiveRelatedCases');
   const startInvestigation = document.getElementById('startInvestigation');
   const notesField = document.getElementById('investigationNotes');
 
@@ -232,6 +257,27 @@ export async function hydrateDetectiveCase() {
     };
     bindFindingModal(investigation ? investigation.investigation_id : null, { onSaved: refreshFindings });
     await refreshFindings();
+
+    if (investigation) {
+      try {
+        const flags = await fetchJson(`/api/v1/detective/investigations/${investigation.investigation_id}/flags`);
+        renderReadOnlyFlags(flagsList, flags);
+      } catch (error) {
+        setEmptyState(flagsList, error.message || 'Unable to load flags.');
+      }
+      try {
+        const related = await fetchJson(`/api/v1/detective/investigations/${investigation.investigation_id}/related`);
+        if (relatedBox) {
+          relatedBox.innerHTML = related.length
+            ? related.map((item) => `<p><strong>${item.relationship_type}</strong>: ${item.related_case_reference === caseReference ? item.source_case_reference : item.related_case_reference}</p>`).join('')
+            : '<p>No direct related case links detected.</p>';
+        }
+      } catch (error) {
+        if (relatedBox) {
+          relatedBox.innerHTML = `<p>${error.message}</p>`;
+        }
+      }
+    }
   } catch (error) {
     if (meta) {
       meta.innerHTML = `<dt>Status</dt><dd>Unavailable</dd><dt>Message</dt><dd>${error.message}</dd>`;

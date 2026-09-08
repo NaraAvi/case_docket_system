@@ -42,6 +42,14 @@ class EscalationRepository(BaseSqlAlchemyRepository):
         instances = self.model.query.filter_by(status="OPEN").all()
         return [self._serialize(instance) for instance in instances]
 
+    def list_unresolved(self):
+        """OPEN + UNDER_REVIEW -- everything not yet decided. Used as the
+        default IPID queue view so an escalation doesn't disappear from the
+        dashboard the moment a reviewer opens it (which transitions it from
+        OPEN to UNDER_REVIEW) but before a decision has actually been made."""
+        instances = self.model.query.filter(self.model.status.in_(["OPEN", "UNDER_REVIEW"])).all()
+        return [self._serialize(instance) for instance in instances]
+
     def list_by_status(self, status):
         target = str(status or "").upper()
         instances = self.model.query.filter_by(status=target).all()

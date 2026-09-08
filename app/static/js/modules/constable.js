@@ -10,23 +10,46 @@ export function getConstableCaseReference() {
   return match ? match[1] : null;
 }
 
+async function loadConstableQueue(container, query) {
+  try {
+    const queue = query
+      ? await fetchJson(`/api/v1/constable/dockets/search?q=${encodeURIComponent(query)}`)
+      : await fetchJson('/api/v1/constable/dockets/unregistered');
+    renderDocketCardList(container, queue, {
+      linkPrefix: '/constable/dockets/',
+      title: (item) => item.location,
+      status: (item) => item.status || 'AWAITING_CONSTABLE_REGISTRATION',
+      emptyMessage: query ? `No dockets match "${query}".` : 'No unregistered dockets are currently waiting for triage.',
+    });
+  } catch (error) {
+    setEmptyState(container, error.message || 'Unable to load constable queue.');
+  }
+}
+
+function bindConstableSearch(container) {
+  const input = document.getElementById('constableSearch');
+  const button = document.getElementById('constableSearchBtn');
+  if (!input || !button) {
+    return;
+  }
+  const runSearch = () => loadConstableQueue(container, input.value.trim());
+  button.addEventListener('click', runSearch);
+  input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      runSearch();
+    }
+  });
+}
+
 export async function hydrateConstableDashboard() {
   const container = document.getElementById('constableQueueState');
   if (!container) {
     return;
   }
 
-  try {
-    const queue = await fetchJson('/api/v1/constable/dockets/unregistered');
-    renderDocketCardList(container, queue, {
-      linkPrefix: '/constable/dockets/',
-      title: (item) => item.location,
-      status: (item) => item.status || 'AWAITING_CONSTABLE_REGISTRATION',
-      emptyMessage: 'No unregistered dockets are currently waiting for triage.',
-    });
-  } catch (error) {
-    setEmptyState(container, error.message || 'Unable to load constable queue.');
-  }
+  await loadConstableQueue(container, '');
+  bindConstableSearch(container);
 }
 
 function renderFlags(container, flags, { onEdit } = {}) {
