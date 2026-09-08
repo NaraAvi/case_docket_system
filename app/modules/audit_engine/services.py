@@ -11,7 +11,8 @@ class AuditTrailService:
     _shared_entries = []
     _event_counter = 0
 
-    def __init__(self):
+    def __init__(self, repository=None):
+        self.repository = repository
         self._entries = self.__class__._shared_entries
 
     @classmethod
@@ -20,9 +21,9 @@ class AuditTrailService:
         return f"AUDIT-{cls._event_counter:06d}"
 
     def log(self, entry):
-        event = {
-            "event_id": entry.get("event_id") or self._next_event_id(),
-            "timestamp": entry.get("timestamp") or datetime.now(timezone.utc).isoformat(),
+        payload = {
+            "event_id": entry.get("event_id"),
+            "timestamp": entry.get("timestamp"),
             "actor_id": entry.get("actor_id"),
             "actor_role": entry.get("actor_role"),
             "action": entry.get("action"),
@@ -38,16 +39,26 @@ class AuditTrailService:
             "metadata": entry.get("metadata", {}),
             "details": entry.get("details", {}),
         }
-        self._entries.append(event)
-        return event
+
+        if self.repository is not None:
+            return self.repository.create(payload)
+
+        payload["event_id"] = payload["event_id"] or self._next_event_id()
+        payload["timestamp"] = payload["timestamp"] or datetime.now(timezone.utc).isoformat()
+        self._entries.append(payload)
+        return payload
 
     def update_event(self, event_id, updates):
         raise ValueError("Audit event history is immutable and append-only.")
 
     def list_entries(self):
+        if self.repository is not None:
+            return self.repository.list()
         return [dict(entry) for entry in self._entries]
 
     def get_events_by_actor(self, actor_id):
+        if self.repository is not None:
+            return self.repository.list_for_actor(actor_id)
         return [
             dict(entry)
             for entry in self._entries
@@ -55,6 +66,8 @@ class AuditTrailService:
         ]
 
     def get_for_case(self, case_reference):
+        if self.repository is not None:
+            return self.repository.list_for_case(case_reference)
         return [
             dict(entry)
             for entry in self._entries

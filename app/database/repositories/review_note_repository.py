@@ -4,36 +4,39 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from app.database.repositories.base_repository import InMemoryRepository
+from app.database.repositories.base_repository import BaseSqlAlchemyRepository
+from app.models import ReviewNote
 
 
-class ReviewNoteRepository(InMemoryRepository):
-    """In-memory persistence for internal review notes."""
+class ReviewNoteRepository(BaseSqlAlchemyRepository):
+    """Persistence for internal review notes."""
 
-    _shared_items = []
-
-    def __init__(self, session=None):
-        super().__init__(session=session)
-        self._items = self.__class__._shared_items
+    model = ReviewNote
+    id_column = "note_id"
 
     @staticmethod
     def _utc_now():
         return datetime.now(UTC).isoformat()
 
+    def _generate_note_id(self):
+        sequence = self.model.query.count() + 1
+        return f"RNT-{sequence:06d}"
+
     def create(self, payload):
-        item = dict(payload)
-        item.setdefault("note_id", f"RNT-{len(self._items) + 1:06d}")
-        item.setdefault("note_text", item.get("note") or item.get("note_text") or "")
-        item.setdefault("created_at", self._utc_now())
-        item.setdefault("updated_at", self._utc_now())
-        self._items.append(item)
-        return dict(item)
+        payload = dict(payload)
+        if not payload.get("note_id"):
+            payload["note_id"] = self._generate_note_id()
+        if not payload.get("note_text"):
+            payload["note_text"] = payload.get("note") or payload.get("note_text") or ""
+        if not payload.get("created_at"):
+            payload["created_at"] = self._utc_now()
+        if not payload.get("updated_at"):
+            payload["updated_at"] = self._utc_now()
+        return super().create(payload)
 
     def list_for_escalation(self, escalation_id):
-        return [dict(item) for item in self._items if item.get("escalation_id") == escalation_id]
+        instances = self.model.query.filter_by(escalation_id=escalation_id).all()
+        return [self._serialize(instance) for instance in instances]
 
     def get_for_note_id(self, note_id):
-        for item in self._items:
-            if item.get("note_id") == note_id:
-                return dict(item)
-        return None
+        return self.get_by_id(note_id)

@@ -4,37 +4,41 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from app.database.repositories.base_repository import InMemoryRepository
+from app.database.repositories.base_repository import BaseSqlAlchemyRepository
+from app.models import ReviewFinding
 
 
-class ReviewFindingRepository(InMemoryRepository):
-    """In-memory persistence for review findings."""
+class ReviewFindingRepository(BaseSqlAlchemyRepository):
+    """Persistence for review findings."""
 
-    _shared_items = []
-
-    def __init__(self, session=None):
-        super().__init__(session=session)
-        self._items = self.__class__._shared_items
+    model = ReviewFinding
+    id_column = "finding_id"
 
     @staticmethod
     def _utc_now():
         return datetime.now(UTC).isoformat()
 
+    def _generate_finding_id(self):
+        sequence = self.model.query.count() + 1
+        return f"RFG-{sequence:06d}"
+
     def create(self, payload):
-        item = dict(payload)
-        item.setdefault("finding_id", f"RFG-{len(self._items) + 1:06d}")
-        item.setdefault("finding_type", item.get("type") or item.get("finding_type") or "FURTHER_REVIEW_REQUIRED")
-        item.setdefault("summary", item.get("summary") or "")
-        item.setdefault("created_at", self._utc_now())
-        item.setdefault("updated_at", self._utc_now())
-        self._items.append(item)
-        return dict(item)
+        payload = dict(payload)
+        if not payload.get("finding_id"):
+            payload["finding_id"] = self._generate_finding_id()
+        if not payload.get("finding_type"):
+            payload["finding_type"] = payload.get("type") or "FURTHER_REVIEW_REQUIRED"
+        if not payload.get("summary"):
+            payload["summary"] = payload.get("summary") or ""
+        if not payload.get("created_at"):
+            payload["created_at"] = self._utc_now()
+        if not payload.get("updated_at"):
+            payload["updated_at"] = self._utc_now()
+        return super().create(payload)
 
     def list_for_escalation(self, escalation_id):
-        return [dict(item) for item in self._items if item.get("escalation_id") == escalation_id]
+        instances = self.model.query.filter_by(escalation_id=escalation_id).all()
+        return [self._serialize(instance) for instance in instances]
 
     def get_for_finding_id(self, finding_id):
-        for item in self._items:
-            if item.get("finding_id") == finding_id:
-                return dict(item)
-        return None
+        return self.get_by_id(finding_id)

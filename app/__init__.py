@@ -1,14 +1,17 @@
 from flask import Flask
 
+from app import models  # noqa: F401  (registers all models with SQLAlchemy metadata)
 from app.api.health import health_bp
 from app.api.v1.routes import api_v1_bp
-from app.auth.service import TestIdentityRegistry
+from app.auth.service import TestIdentityRegistry, all_seed_identities
 from app.ui.routes import ui_bp
 from app.config import get_config
+from app.database.repositories.audit_event_repository import AuditEventRepository
 from app.database.repositories.case_repository import CaseRepository
 from app.database.repositories.disciplinary_case_repository import DisciplinaryCaseRepository
 from app.database.repositories.review_finding_repository import ReviewFindingRepository
 from app.database.repositories.review_note_repository import ReviewNoteRepository
+from app.database.repositories.user_repository import UserRepository
 from app.extensions import cors, db, jwt, ma, migrate
 from app.infrastructure.storage.media_manager import MediaManager
 from app.modules.audit_engine.services import AuditTrailService
@@ -31,14 +34,16 @@ from app.modules.station_commander_engine.services import StationCommanderServic
 from app.services.case_service import CaseService
 
 
-def create_app(testing: bool = False):
+def create_app(testing: bool = False, database_uri: str | None = None):
     app = Flask(__name__)
     config = get_config()
     app.config.from_object(config)
 
     if testing:
         app.config["TESTING"] = True
-        app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+        app.config["SQLALCHEMY_DATABASE_URI"] = database_uri or "sqlite:///:memory:"
+    elif database_uri:
+        app.config["SQLALCHEMY_DATABASE_URI"] = database_uri
 
     db.init_app(app)
     jwt.init_app(app)
@@ -46,9 +51,15 @@ def create_app(testing: bool = False):
     cors.init_app(app)
     ma.init_app(app)
 
-    identity_registry = TestIdentityRegistry()
+    user_repository = UserRepository()
+    audit_repository = AuditEventRepository()
+    with app.app_context():
+        db.create_all()
+        user_repository.seed_if_empty(all_seed_identities())
+
+    identity_registry = TestIdentityRegistry(user_repository=user_repository)
     citizen_auth_service = CitizenAuthenticationService(identity_provider=identity_registry)
-    audit_service = AuditTrailService()
+    audit_service = AuditTrailService(repository=audit_repository)
     legal_reference_service = LegalReferenceService()
     regulatory_rule_service = RegulatoryRuleService(legal_reference_service=legal_reference_service)
     case_repository = CaseRepository()

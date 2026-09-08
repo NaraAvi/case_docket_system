@@ -4,76 +4,60 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from app.database.repositories.base_repository import InMemoryRepository
+from app.database.repositories.base_repository import BaseSqlAlchemyRepository
+from app.models import Assignment
 
 
-class AssignmentRepository(InMemoryRepository):
-    """In-memory persistence for assignment records and historical state."""
+class AssignmentRepository(BaseSqlAlchemyRepository):
+    """Persistence for assignment records and historical state."""
 
-    _shared_items = []
-
-    def __init__(self, session=None):
-        super().__init__(session=session)
-        self._items = self.__class__._shared_items
+    model = Assignment
+    id_column = "assignment_id"
 
     @staticmethod
     def _utc_now():
         return datetime.now(UTC).isoformat()
 
-    @staticmethod
-    def _generate_assignment_id(sequence):
+    def _generate_assignment_id(self):
+        sequence = self.model.query.count() + 1
         return f"ASG-{sequence:06d}"
 
     def create(self, payload):
-        item = dict(payload)
-        item.setdefault("assignment_id", self._generate_assignment_id(len(self._items) + 1))
-        item.setdefault("status", "ACTIVE")
-        item.setdefault("assigned_at", self._utc_now())
-        self._items.append(item)
-        return dict(item)
-
-    def get_by_id(self, assignment_id):
-        for item in self._items:
-            if item.get("assignment_id") == assignment_id:
-                return dict(item)
-        return None
+        payload = dict(payload)
+        if not payload.get("assignment_id"):
+            payload["assignment_id"] = self._generate_assignment_id()
+        if not payload.get("status"):
+            payload["status"] = "ACTIVE"
+        if not payload.get("assigned_at"):
+            payload["assigned_at"] = self._utc_now()
+        return super().create(payload)
 
     def get_current_assignment_for_case(self, case_reference):
-        matches = [
-            dict(item)
-            for item in self._items
-            if item.get("case_reference") == case_reference and item.get("status") == "ACTIVE"
-        ]
+        instances = self.model.query.filter_by(case_reference=case_reference, status="ACTIVE").all()
+        matches = [self._serialize(instance) for instance in instances]
         if not matches:
             return None
         matches.sort(key=lambda item: str(item.get("assigned_at") or ""), reverse=True)
         return matches[0]
 
     def get_history_for_case(self, case_reference):
-        matches = [
-            dict(item)
-            for item in self._items
-            if item.get("case_reference") == case_reference
-        ]
+        instances = self.model.query.filter_by(case_reference=case_reference).all()
+        matches = [self._serialize(instance) for instance in instances]
         matches.sort(key=lambda item: str(item.get("assigned_at") or ""))
         return matches
 
     def query_by_officer(self, officer_id):
-        return [
-            dict(item)
-            for item in self._items
-            if item.get("officer_id") == officer_id
-        ]
+        instances = self.model.query.filter_by(officer_id=officer_id).all()
+        return [self._serialize(instance) for instance in instances]
 
     def end_assignment(self, assignment_id, ended_by=None, ended_by_role=None, reason=None):
-        for index, item in enumerate(self._items):
-            if item.get("assignment_id") == assignment_id:
-                record = dict(item)
-                record["status"] = "ENDED"
-                record["ended_at"] = self._utc_now()
-                record["ended_by"] = ended_by
-                record["ended_by_role"] = ended_by_role
-                record["end_reason"] = reason
-                self._items[index] = record
-                return dict(record)
-        return None
+        instance = self.model.query.filter_by(assignment_id=assignment_id).first()
+        if instance is None:
+            return None
+        instance.status = "ENDED"
+        instance.ended_at = self._utc_now()
+        instance.ended_by = ended_by
+        instance.ended_by_role = ended_by_role
+        instance.end_reason = reason
+        self._commit()
+        return self._serialize(instance)
