@@ -169,3 +169,25 @@ rewritten against the real new markup and endpoints, plus new coverage in
 
 Full suite green: **133 tests total** — pytest: 49 passed, 1 skipped across
 3 files; Vitest: 84 passed across 10 files.
+
+### Post-M3 fixes (commits `95e2280`, `0f6437c`, `a381610`)
+
+Three rounds of manual testing found real bugs the milestone's green tests
+didn't catch: the citizen docket lifecycle was a dead end (no
+statement/evidence/submit wiring); the interview step had no recording UI
+on either side; evidence and recordings were metadata-only text fields
+(now real uploads, SHA-256-hashed, viewable); cross-role "Forbidden" on the
+detective dashboard and shared Active Cases/Evidence Vault pages; a
+reassigned case didn't transfer investigation ownership to the new
+detective (fixed for **both** the station-commander and IPID reassignment
+paths); a station commander couldn't assign a constable pre-registration;
+an escalation vanished from the IPID queue the moment it was opened
+(GitHub issue #3); and two dead controls (constable search, detective
+flags/related display) found by an id-by-id audit rather than a bug
+report. Several of these fixes are invariants other code now depends on —
+see the "Post-M3 fixes and load-bearing invariants" section of
+`case_docket_system_architecture_and_roadmap.md` before touching
+reassignment, file storage, or the citizen/interview lifecycle again.
+
+Full suite green: **212 tests total** — pytest: 105 passed, 1 skipped;
+Vitest: 106 passed.

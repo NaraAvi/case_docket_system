@@ -429,6 +429,151 @@ Full suite green: **133 tests total** — pytest: 49 passed, 1 skipped across
 3 files (`test_persistence.py`, `test_frontend_modularization.py`,
 `test_milestone3.py`); Vitest: 84 passed across 10 files.
 
+### Post-M3 fixes and load-bearing invariants
+
+Three follow-up rounds of manual testing (by the repo owner) each found
+real, working-app bugs that the milestone's own "133 tests green" state
+didn't catch — commits `95e2280`, `0f6437c`, and `a381610` on `avinash`.
+Recorded here because several of the fixes changed a rule other code now
+silently depends on; the next person touching these areas needs to know the
+rule exists, not just that a bug was once fixed.
+
+**1. The citizen docket lifecycle was previously a dead end.**
+`citizen_docket_detail.html` had never had statement/evidence/submit wiring
+or a working "Escalate Case" button (pre-dates M3 — M3 only touched
+constable/detective/station-commander/ipid pages). Since `submit_docket()`
+requires at least one statement, no docket could ever leave `DRAFT` through
+the UI. Fixed in `95e2280`: full statement save/update, evidence add, a
+submit button gated on `status == DRAFT` and having a statement, and a
+working escalation modal.
+> **Invariant:** `CitizenDocketService._assert_draft()` / `_assert_evidence_editable()`
+> gate what a citizen can mutate by `docket.status`. Any new citizen-facing
+> control must check the same status before rendering as enabled, the way
+> `citizen.js::hydrateCitizenDetail()` does — otherwise it'll either silently
+> 400 or (worse) look enabled while doing nothing.
+
+**2. "Continue to Interview" started an interview but nothing else existed.**
+Neither the constable nor citizen page had any UI to submit a recording or
+register the docket, so the interview step was a second, separate dead end
+one click past the first. Fixed in `95e2280`: an interview panel on both
+pages (status, recording submission, Register Docket once both sides are
+in).
+> **Invariant:** registering a docket flips its status to `REGISTERED`,
+> and `ConstableRegistrationService.open_docket()` / `get_constable_docket()`
+> explicitly reject anything that isn't `AWAITING_CONSTABLE_REGISTRATION` —
+> so the constable's own docket-detail endpoint becomes inaccessible to them
+> the instant they register it. `registerDocketBtn`'s click handler
+> redirects to `/constable` for exactly this reason; don't "fix" that
+> redirect to go back to the docket detail page.
+
+**3. Evidence and recordings were metadata-only text fields.**
+Fixed in `0f6437c`: `MediaManager.save_upload()` streams a real multipart
+file to `instance/uploads/<evidence|recordings>/<uuid>_<original filename>`,
+hashing it with SHA-256 as it writes.
+> **Invariants:**
+> - The `storage_reference` returned by an upload (e.g.
+>   `"evidence/3f2a..._window.jpg"`) is the only thing a caller should ever
+>   persist or use to fetch the file back — never reconstruct a path by hand.
+>   `GET /api/v1/media/<storage_reference>` serves it back through
+>   `MediaManager.resolve_path()`, which validates the reference stays
+>   inside `storage_root` (path-traversal guard) — a hand-built path would
+>   bypass that check on the write side and simply 404 on the read side.
+> - Any new endpoint that accepts a file must branch on
+>   `request.files.get("file")` vs. JSON the way `add_docket_evidence()` /
+>   `_recording_payload_from_request()` do, to keep the older JSON-only
+>   (metadata-only) callers — and every existing test that uses them —
+>   working.
+> - `get_evidence_file` / `get_recording_file` scope citizens to files on
+>   their *own* dockets/interviews and let every operational role see any
+>   file — matching the access model everywhere else in this app. Don't add
+>   a third, differently-scoped file endpoint without a specific reason.
+
+**4. Cross-role "Forbidden" on the detective dashboard and shared pages.**
+`GET /api/v1/station-commander/dockets` — the list backing the detective
+dashboard's "Current Investigations" panel *and* the shared Active Cases /
+Evidence Vault pages (`shared.js`, reachable by constable/detective/
+station_commander/ipid) — was gated to `station_commander` only since
+Milestone 2. Fixed in `0f6437c` by introducing `OPERATIONAL_ROLES =
+{"constable", "detective", "station_commander", "ipid"}` in `routes.py`.
+> **Invariant:** this endpoint's name is legacy (`/station-commander/...`)
+> but its actual audience is now all four operational roles. Any new
+> "list every docket" or similarly broad read endpoint should use
+> `OPERATIONAL_ROLES` from the start rather than defaulting to
+> `role != "station_commander"`, which is what caused this bug in the first
+> place and is an easy pattern to copy-paste back in.
+
+**5. Reassigning a case's officer didn't transfer investigation ownership.**
+`AssignmentService.create_replacement_assignment()` only ever touched the
+assignment record. `InvestigationService._assert_authorized_detective()`
+checks `investigation.detective_id`, which was never updated — so a newly
+assigned detective was denied access to an investigation the previous
+detective had already opened, while the previous detective kept sole
+access despite no longer being assigned. Fixed in `0f6437c` for
+`StationCommanderService.force_reassign_docket()`, and in a same-day
+follow-up for `IPIDReviewService.reassign_case_officer()` (**both** call
+`create_replacement_assignment()` — the first fix only covered one of the
+two call sites; the second was found by explicitly auditing for this exact
+class of gap and confirmed by a test that spies on
+`reassign_active_investigation()` rather than requiring a second seeded
+detective identity).
+> **Invariant:** every current and future call site of
+> `AssignmentService.create_assignment()` / `create_replacement_assignment()`
+> that can target a `detective` role must also call
+> `InvestigationService.reassign_active_investigation(case_reference,
+> new_officer_id, actor_id, reason=...)` when `assignment.officer_role ==
+> "detective"`. It's a safe no-op when there's no open investigation or the
+> detective didn't change (see the method's early return) — call it
+> unconditionally rather than trying to detect "is this reassignment
+> meaningful" yourself.
+
+**6. A station commander couldn't assign a constable to an unregistered docket.**
+`AssignmentService` required `case.status == "REGISTERED"` unconditionally,
+which also meant the target-officer dropdown silently stayed on "Loading
+officers…" forever for any docket that wasn't yet registered (the code
+just skipped populating it, with no error and no explanation). Fixed by
+adding `_assert_assignable_status()`: `REGISTERED` (any officer role, as
+before) OR `AWAITING_CONSTABLE_REGISTRATION` **and** the target role is
+specifically `constable`.
+> **Invariant:** this check now runs *after* `_resolve_target_officer()`
+> resolves the officer's role (order matters — the role has to be known
+> before the status/role combination can be validated), in both
+> `create_assignment()` and `create_replacement_assignment()`. If you add a
+> third assignable-status rule, extend `_assert_assignable_status()` rather
+> than re-adding a bare `status != "REGISTERED"` check somewhere else — the
+> old bare check is exactly what caused this bug.
+
+**7. An escalation vanished from the IPID queue the moment it was opened.**
+Opening an escalation's detail page auto-transitions it `OPEN` →
+`UNDER_REVIEW` (`ipid.js::hydrateIpidDetail()`, part of the original M3
+work) — normal and intended. But `EscalationService.list_queue()`'s default
+(unfiltered) view called `EscalationRepository.list_open()`, which only
+ever returned `status == "OPEN"`. So the escalation disappeared from the
+dashboard queue the instant a reviewer opened it, before any decision was
+made — reported by the repo owner as GitHub issue #3. Fixed by adding
+`list_unresolved()` (`OPEN` + `UNDER_REVIEW`) and using it as the default.
+> **Invariant:** "the IPID queue" now means "not yet resolved," not "not yet
+> opened." An escalation only leaves it once dismissed or upheld
+> (`status == "RESOLVED"`). Don't reintroduce a `status == "OPEN"`-only
+> default when touching this code path.
+
+**8. Two dead controls found by a systematic audit, not a bug report.**
+The constable dashboard's Search box had zero JS behind it, and the
+detective workspace never displayed constable-raised flags or related-case
+links despite the flag-creation modal's own copy promising "reviewed by the
+assigned detective." Both fixed in `a381610`. Neither broke any existing
+test because no test exercised those UI elements at all — the audit method
+was cross-referencing every template's interactive-element `id` against
+its module's `getElementById`/`querySelector` calls, and every route's role
+check against every JS module's fetch calls. That audit surfaced five
+further gaps that were *not* fixed (logged as GitHub issues #4-#8 instead —
+missing UI for completing an investigation, viewing IPID disciplinary
+cases, a consolidated SLA-breach view, a citizen's own escalation status,
+and constable-side related-case creation). Worth re-running that same
+cross-reference sweep after any future milestone before calling it done.
+
+Full suite green after all of the above: **212 tests total** — pytest: 105
+passed, 1 skipped; Vitest: 106 passed.
+
 ---
 
 ### Milestone 4: Objective South African Regulatory & Decision Engine (ODDE)

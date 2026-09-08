@@ -146,6 +146,49 @@ class TestReassignmentTransfersInvestigationOwnership:
         assert stored["detective_id"] == "DET-B-9999999999999"
         assert stored["timeline"][-1]["event_type"] == "investigation_reassigned"
 
+    def test_ipid_reassignment_endpoint_also_wires_up_the_investigation_transfer(self, app_client):
+        """IPIDReviewService.reassign_case_officer() hits the same
+        AssignmentService.create_replacement_assignment() path as the station
+        commander's force_reassign_docket() and needs the identical
+        investigation-transfer call -- this was missed on the first pass and
+        would have silently reintroduced the "new detective locked out" bug
+        via IPID's reassignment endpoint instead. Confirmed by spying on
+        InvestigationService.reassign_active_investigation() rather than via
+        a second detective identity (none is seeded in this dev environment)."""
+        from unittest.mock import MagicMock
+
+        citizen_token = _login(app_client, "citizen")
+        constable_token = _login(app_client, "constable")
+        case_reference = _create_and_submit_docket(app_client, citizen_token)
+        _register_docket(app_client, citizen_token, constable_token, case_reference)
+
+        detective_token = _login(app_client, "detective")
+        create_investigation = app_client.post(
+            f"/api/v1/detective/dockets/{case_reference}/investigation",
+            json={"notes": "Initial notes."},
+            headers=_auth_headers(detective_token),
+        )
+        assert create_investigation.status_code == 201
+
+        with app_client.application.app_context():
+            ipid_service = app_client.application.extensions["ipid_service"]
+            spy = MagicMock(wraps=ipid_service.investigation_service.reassign_active_investigation)
+            ipid_service.investigation_service.reassign_active_investigation = spy
+
+        ipid_token = _login(app_client, "ipid")
+        # No formal AssignmentService record exists yet (the detective
+        # self-started the investigation), so reassigning to that same
+        # detective via IPID is accepted as a fresh assignment.
+        response = app_client.post(
+            f"/api/v1/ipid/dockets/{case_reference}/reassign",
+            json={"officer_id": ROLE_TEST_IDS["detective"], "reason": "IPID confirming officer assignment."},
+            headers=_auth_headers(ipid_token),
+        )
+        assert response.status_code == 200
+        spy.assert_called_once()
+        assert spy.call_args.args[0] == case_reference
+        assert spy.call_args.args[1] == ROLE_TEST_IDS["detective"]
+
     def test_is_a_no_op_when_there_is_no_active_investigation(self, app_client):
         from app.modules.investigation_engine.services import InvestigationService
 

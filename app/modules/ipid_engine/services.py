@@ -399,6 +399,15 @@ class IPIDReviewService:
                 },
             }
         )
+
+        if assignment.get("officer_role") == "detective" and self.investigation_service is not None:
+            # Same fix as StationCommanderService.force_reassign_docket: without
+            # this, the previously-assigned detective keeps sole access to any
+            # investigation already opened on this case.
+            self.investigation_service.reassign_active_investigation(
+                case_reference, assignment.get("officer_id"), actor_id, reason=reason
+            )
+
         return assignment
 
     def list_disciplinary_cases(self):
