@@ -113,6 +113,226 @@ describe('modules/citizen.js (integration: module + core/api + core/ui + DOM)', 
       expect(document.getElementById('citizenCaseMeta').textContent).toContain('Broken window');
       expect(document.getElementById('citizenCaseTimeline').textContent).toContain('docket_registered');
     });
+
+    function draftDetailMarkup() {
+      return `
+        <dl id="citizenCaseMeta"></dl>
+        <span id="citizenStatusBadge"></span>
+        <ul id="citizenCaseTimeline"></ul>
+        <textarea id="citizenStatementText"></textarea>
+        <button id="saveCitizenStatement"></button>
+        <p id="citizenStatementError" class="hidden"></p>
+        <table><tbody id="citizenCaseEvidence"></tbody></table>
+        <select id="citizenEvidenceType"><option value="PHOTO">Photo</option></select>
+        <input id="citizenEvidenceFilename" />
+        <textarea id="citizenEvidenceDescription"></textarea>
+        <button id="addCitizenEvidence"></button>
+        <p id="citizenEvidenceError" class="hidden"></p>
+        <button id="submitCitizenDocketForReview"></button>
+        <p id="submitDocketHint"></p>
+        <button id="escalateCaseBtn"></button>
+        <div id="escalateModal" class="hidden">
+          <select id="escalateCategory"><option value="OFFICER_CONDUCT">Officer Conduct</option></select>
+          <textarea id="escalateDescription"></textarea>
+          <p id="escalateModalError" class="hidden"></p>
+          <button id="closeEscalateModal"></button>
+          <button id="submitEscalateModal"></button>
+        </div>
+        <div id="citizenInterviewPanel" class="hidden">
+          <div id="citizenInterviewStatus"></div>
+          <input id="citizenRecordingFilename" />
+          <button id="submitCitizenRecording"></button>
+          <p id="citizenRecordingError" class="hidden"></p>
+        </div>
+      `;
+    }
+
+    it('disables submit until a statement is saved, then enables it once one exists', async () => {
+      document.body.innerHTML = draftDetailMarkup();
+      setLocation('/citizen/dockets/CD-1');
+      let statementSaved = false;
+      const fetchMock = vi.fn((url, options = {}) => {
+        if (url.endsWith('/statements') && options.method === 'POST') {
+          statementSaved = true;
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({ statement_id: 1, statement_text: 'It happened.' }) });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              status: 'DRAFT',
+              location: 'Main St',
+              incident_date: '2026-01-01',
+              title: 'Broken window',
+              timeline: [],
+              statements: statementSaved ? [{ statement_text: 'It happened.' }] : [],
+              evidence: [],
+            }),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await hydrateCitizenDetail();
+      expect(document.getElementById('submitCitizenDocketForReview').disabled).toBe(true);
+
+      document.getElementById('citizenStatementText').value = 'It happened.';
+      document.getElementById('saveCitizenStatement').click();
+
+      await vi.waitFor(() => expect(document.getElementById('submitCitizenDocketForReview').disabled).toBe(false));
+    });
+
+    it('adds evidence and re-renders the evidence table', async () => {
+      document.body.innerHTML = draftDetailMarkup();
+      setLocation('/citizen/dockets/CD-1');
+      let evidenceAdded = false;
+      const fetchMock = vi.fn((url, options = {}) => {
+        if (url.endsWith('/evidence') && options.method === 'POST') {
+          evidenceAdded = true;
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({ evidence_id: 1 }) });
+        }
+        if (url.endsWith('/evidence')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve(evidenceAdded ? [{ description: 'Broken window photo', evidence_type: 'PHOTO' }] : []),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ status: 'DRAFT', timeline: [], statements: [], evidence: [] }),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await hydrateCitizenDetail();
+      document.getElementById('citizenEvidenceFilename').value = 'window.jpg';
+      document.getElementById('citizenEvidenceDescription').value = 'Broken window photo';
+      document.getElementById('addCitizenEvidence').click();
+
+      await vi.waitFor(() => expect(document.getElementById('citizenCaseEvidence').textContent).toContain('Broken window photo'));
+    });
+
+    it('submits the docket for review and reloads', async () => {
+      document.body.innerHTML = draftDetailMarkup();
+      setLocation('/citizen/dockets/CD-1');
+      const fetchMock = vi.fn((url, options = {}) => {
+        if (url.endsWith('/submit')) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'AWAITING_CONSTABLE_REGISTRATION' }) });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ status: 'DRAFT', timeline: [], statements: [{ statement_text: 'It happened.' }], evidence: [] }),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await hydrateCitizenDetail();
+      expect(document.getElementById('submitCitizenDocketForReview').disabled).toBe(false);
+
+      document.getElementById('submitCitizenDocketForReview').click();
+
+      await vi.waitFor(() =>
+        expect(fetchMock).toHaveBeenCalledWith('/api/v1/citizen/dockets/CD-1/submit', expect.objectContaining({ method: 'POST' }))
+      );
+    });
+
+    it('disables statement editing and submit once the docket has left DRAFT', async () => {
+      document.body.innerHTML = draftDetailMarkup();
+      setLocation('/citizen/dockets/CD-1');
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              status: 'AWAITING_CONSTABLE_REGISTRATION',
+              timeline: [],
+              statements: [{ statement_text: 'It happened.' }],
+              evidence: [],
+            }),
+        })
+      );
+
+      await hydrateCitizenDetail();
+
+      expect(document.getElementById('citizenStatementText').disabled).toBe(true);
+      expect(document.getElementById('submitCitizenDocketForReview').disabled).toBe(true);
+      expect(document.getElementById('submitCitizenDocketForReview').textContent).toContain('AWAITING_CONSTABLE_REGISTRATION');
+    });
+
+    it('the escalate modal submits a category and description', async () => {
+      document.body.innerHTML = draftDetailMarkup();
+      setLocation('/citizen/dockets/CD-1');
+      const fetchMock = vi.fn((url, options = {}) => {
+        if (url.endsWith('/escalations')) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({ escalation_id: 'ESC-1' }) });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ status: 'DRAFT', timeline: [], statements: [], evidence: [] }),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await hydrateCitizenDetail();
+      document.getElementById('escalateCaseBtn').click();
+      expect(document.getElementById('escalateModal').classList.contains('hidden')).toBe(false);
+
+      document.getElementById('escalateDescription').value = 'Officer refused to register this docket.';
+      document.getElementById('submitEscalateModal').click();
+
+      await vi.waitFor(() =>
+        expect(fetchMock).toHaveBeenCalledWith(
+          '/api/v1/citizen/dockets/CD-1/escalations',
+          expect.objectContaining({ method: 'POST' })
+        )
+      );
+    });
+
+    it('shows the interview panel and lets the citizen submit their recording once the constable has started an interview', async () => {
+      document.body.innerHTML = draftDetailMarkup();
+      setLocation('/citizen/dockets/CD-1');
+      let citizenSubmitted = false;
+      const fetchMock = vi.fn((url, options = {}) => {
+        if (url.endsWith('/interviews/INT-1/recording')) {
+          citizenSubmitted = true;
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({ recording_id: 'REC-1' }) });
+        }
+        if (url.endsWith('/interviews/INT-1')) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                status: citizenSubmitted ? 'AWAITING_AUDIO' : 'STARTED',
+                citizen_recording: citizenSubmitted ? { status: 'SUBMITTED' } : null,
+                constable_recording: null,
+              }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              status: 'AWAITING_CONSTABLE_REGISTRATION',
+              timeline: [],
+              statements: [{ statement_text: 'It happened.' }],
+              evidence: [],
+              interview_id: 'INT-1',
+            }),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await hydrateCitizenDetail();
+
+      expect(document.getElementById('citizenInterviewPanel').classList.contains('hidden')).toBe(false);
+      expect(document.getElementById('citizenInterviewStatus').textContent).toContain('Not yet submitted');
+
+      document.getElementById('citizenRecordingFilename').value = 'my_statement.wav';
+      document.getElementById('submitCitizenRecording').click();
+
+      await vi.waitFor(() => expect(document.getElementById('submitCitizenRecording').disabled).toBe(true));
+      expect(document.getElementById('citizenInterviewStatus').textContent).toContain('Submitted');
+    });
   });
 
   describe('hydrateCitizenForm', () => {
@@ -149,7 +369,7 @@ describe('modules/citizen.js (integration: module + core/api + core/ui + DOM)', 
         <input id="incidentDate" value="" />
         <input id="incidentLocation" value="" />
         <button id="submitCitizenDocket"></button>
-        <div id="formError" class="hidden"></div>
+        <p id="citizenFormError" class="hidden"></p>
       `;
       setLocation('/citizen/dockets/new');
       vi.stubGlobal(
@@ -160,8 +380,8 @@ describe('modules/citizen.js (integration: module + core/api + core/ui + DOM)', 
       hydrateCitizenForm();
       document.getElementById('submitCitizenDocket').click();
 
-      await vi.waitFor(() => expect(document.getElementById('formError').classList.contains('hidden')).toBe(false));
-      expect(document.getElementById('formError').textContent).toBe('Description is required.');
+      await vi.waitFor(() => expect(document.getElementById('citizenFormError').classList.contains('hidden')).toBe(false));
+      expect(document.getElementById('citizenFormError').textContent).toBe('Description is required.');
       expect(window.location.href).toBe('');
     });
   });

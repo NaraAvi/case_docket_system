@@ -51,12 +51,12 @@ describe('modules/constable.js (integration)', () => {
     expect(document.getElementById('constableQueueState').textContent).toContain('No unregistered dockets');
   });
 
-  it('hydrateConstableReview renders meta/statement/evidence/flags/related and wires Continue to Interview', async () => {
-    document.body.innerHTML = `
+  function reviewMarkup() {
+    return `
       <dl id="constableCaseMeta"></dl>
       <span id="constableStatusBadge"></span>
       <div id="constableStatementBox"></div>
-      <ul id="constableCaseEvidence"></ul>
+      <table><tbody id="constableCaseEvidence"></tbody></table>
       <div id="constableFlagList"></div>
       <div id="constableRelatedCases"></div>
       <button id="continueToInterview"></button>
@@ -70,11 +70,28 @@ describe('modules/constable.js (integration)', () => {
         <button id="closeFlagModal"></button>
         <button id="submitFlagModal"></button>
       </div>
+      <div id="constableInterviewPanel" class="hidden">
+        <div id="constableInterviewStatus"></div>
+        <input id="constableRecordingFilename" />
+        <button id="submitConstableRecording"></button>
+        <p id="constableRecordingError" class="hidden"></p>
+        <button id="registerDocketBtn" disabled></button>
+      </div>
     `;
+  }
+
+  it('hydrateConstableReview renders meta/statement/evidence/flags/related, and Continue to Interview reveals the interview panel in place', async () => {
+    document.body.innerHTML = reviewMarkup();
     setLocation('/constable/dockets/CD-1');
     const fetchMock = vi.fn((url) => {
       if (url.endsWith('/interview')) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ interview_id: 'INT-1' }) });
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ interview_id: 'INT-1', status: 'STARTED' }) });
+      }
+      if (url.endsWith('/interviews/INT-1')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ status: 'STARTED', citizen_recording: null, constable_recording: null }),
+        });
       }
       if (url.endsWith('/flags')) {
         return Promise.resolve({
@@ -95,6 +112,7 @@ describe('modules/constable.js (integration)', () => {
             timeline: [],
             statements: [{ statement_text: 'Someone broke my window.' }],
             evidence: [{ evidence_type: 'photo', description: 'Broken window photo' }],
+            interview_id: null,
           }),
       });
     });
@@ -107,10 +125,98 @@ describe('modules/constable.js (integration)', () => {
     expect(document.getElementById('constableStatementBox').textContent).toContain('Someone broke my window.');
     expect(document.getElementById('constableFlagList').textContent).toContain('Missing detail.');
     expect(document.getElementById('constableRelatedCases').textContent).toContain('No direct related case links');
+    expect(document.getElementById('constableInterviewPanel').classList.contains('hidden')).toBe(true);
 
     document.getElementById('continueToInterview').click();
-    await vi.waitFor(() => expect(window.location.href).toBe('/constable/dockets/CD-1'));
+
+    await vi.waitFor(() => expect(document.getElementById('constableInterviewPanel').classList.contains('hidden')).toBe(false));
+    expect(document.getElementById('continueToInterview').classList.contains('hidden')).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/constable/dockets/CD-1/interview', expect.objectContaining({ method: 'POST' }));
+    expect(document.getElementById('constableInterviewStatus').textContent).toContain('STARTED');
+  });
+
+  it('shows the interview panel immediately when the docket already has an interview, submits a recording, and enables Register once complete', async () => {
+    document.body.innerHTML = reviewMarkup();
+    setLocation('/constable/dockets/CD-1');
+    let constableSubmitted = false;
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (url.endsWith('/interviews/INT-1/recording')) {
+        constableSubmitted = true;
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ recording_id: 'REC-1' }) });
+      }
+      if (url.endsWith('/interviews/INT-1')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              status: constableSubmitted ? 'COMPLETED' : 'STARTED',
+              citizen_recording: { status: 'SUBMITTED' },
+              constable_recording: constableSubmitted ? { status: 'SUBMITTED' } : null,
+            }),
+        });
+      }
+      if (url.endsWith('/flags')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      if (url.endsWith('/related')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            title: 'Vandalism',
+            status: 'AWAITING_CONSTABLE_REGISTRATION',
+            timeline: [],
+            statements: [],
+            evidence: [],
+            interview_id: 'INT-1',
+          }),
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await hydrateConstableReview();
+
+    expect(document.getElementById('constableInterviewPanel').classList.contains('hidden')).toBe(false);
+    expect(document.getElementById('registerDocketBtn').disabled).toBe(true);
+
+    document.getElementById('constableRecordingFilename').value = 'constable.wav';
+    document.getElementById('submitConstableRecording').click();
+
+    await vi.waitFor(() => expect(document.getElementById('registerDocketBtn').disabled).toBe(false));
+    expect(document.getElementById('constableInterviewStatus').textContent).toContain('COMPLETED');
+  });
+
+  it('registering the docket redirects to the constable dashboard, not the now-inaccessible detail page', async () => {
+    document.body.innerHTML = reviewMarkup();
+    setLocation('/constable/dockets/CD-1');
+    const fetchMock = vi.fn((url) => {
+      if (url.endsWith('/interviews/INT-1/register')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'REGISTERED' }) });
+      }
+      if (url.endsWith('/interviews/INT-1')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ status: 'COMPLETED', citizen_recording: { status: 'SUBMITTED' }, constable_recording: { status: 'SUBMITTED' } }),
+        });
+      }
+      if (url.endsWith('/flags') || url.endsWith('/related')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ title: 'Vandalism', status: 'AWAITING_CONSTABLE_REGISTRATION', timeline: [], statements: [], evidence: [], interview_id: 'INT-1' }),
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await hydrateConstableReview();
+    await vi.waitFor(() => expect(document.getElementById('registerDocketBtn').disabled).toBe(false));
+
+    document.getElementById('registerDocketBtn').click();
+
+    await vi.waitFor(() => expect(window.location.href).toBe('/constable'));
   });
 
   it('the flag modal creates a new flag and refreshes the list', async () => {

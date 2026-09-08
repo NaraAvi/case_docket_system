@@ -62,6 +62,94 @@ function renderFlags(container, flags, { onEdit } = {}) {
   });
 }
 
+function renderInterviewStatus(container, interview) {
+  if (!container) {
+    return;
+  }
+  const citizenDone = Boolean(interview.citizen_recording && interview.citizen_recording.status === 'SUBMITTED');
+  const constableDone = Boolean(interview.constable_recording && interview.constable_recording.status === 'SUBMITTED');
+  container.innerHTML = `
+    <p><strong>Interview status:</strong> ${interview.status}</p>
+    <p>Citizen recording: ${citizenDone ? 'Submitted' : 'Awaiting citizen'}</p>
+    <p>Constable recording: ${constableDone ? 'Submitted' : 'Awaiting constable'}</p>
+  `;
+}
+
+async function hydrateInterview(caseReference, interviewId) {
+  const panel = document.getElementById('constableInterviewPanel');
+  const continueButton = document.getElementById('continueToInterview');
+  const statusBox = document.getElementById('constableInterviewStatus');
+  const filenameField = document.getElementById('constableRecordingFilename');
+  const submitButton = document.getElementById('submitConstableRecording');
+  const errorEl = document.getElementById('constableRecordingError');
+  const registerButton = document.getElementById('registerDocketBtn');
+  if (!panel) {
+    return;
+  }
+
+  panel.classList.remove('hidden');
+  if (continueButton) {
+    continueButton.classList.add('hidden');
+  }
+
+  async function refreshInterview() {
+    const interview = await fetchJson(`/api/v1/constable/interviews/${interviewId}`);
+    renderInterviewStatus(statusBox, interview);
+    const constableDone = Boolean(interview.constable_recording && interview.constable_recording.status === 'SUBMITTED');
+    if (submitButton) {
+      submitButton.disabled = constableDone;
+    }
+    if (filenameField) {
+      filenameField.disabled = constableDone;
+    }
+    if (registerButton) {
+      registerButton.disabled = interview.status !== 'COMPLETED';
+    }
+    return interview;
+  }
+
+  try {
+    await refreshInterview();
+  } catch (error) {
+    if (statusBox) {
+      statusBox.innerHTML = `<p>${error.message || 'Unable to load interview status.'}</p>`;
+    }
+  }
+
+  submitButton?.addEventListener('click', async () => {
+    const filename = filenameField ? filenameField.value.trim() : '';
+    errorEl.classList.add('hidden');
+    if (!filename) {
+      errorEl.textContent = 'A recording file name is required.';
+      errorEl.classList.remove('hidden');
+      return;
+    }
+    try {
+      await fetchJson(`/api/v1/constable/interviews/${interviewId}/recording`, {
+        method: 'POST',
+        body: { filename },
+      });
+      await refreshInterview();
+    } catch (error) {
+      errorEl.textContent = error.message || 'Unable to submit recording.';
+      errorEl.classList.remove('hidden');
+    }
+  });
+
+  registerButton?.addEventListener('click', async () => {
+    try {
+      await fetchJson(`/api/v1/constable/interviews/${interviewId}/register`, { method: 'POST' });
+      // The docket is REGISTERED now, which constable/open_docket rejects
+      // (constable access is scoped to AWAITING_CONSTABLE_REGISTRATION) --
+      // send the constable back to their queue instead of this now-inaccessible page.
+      window.location.href = '/constable';
+    } catch (error) {
+      errorEl.textContent = error.message || 'Unable to register docket.';
+      errorEl.classList.remove('hidden');
+    }
+  });
+}
+
 function bindFlagModal(caseReference, { onSaved } = {}) {
   const modal = document.getElementById('flagModal');
   const openButton = document.getElementById('openFlagModal');
@@ -169,12 +257,16 @@ export async function hydrateConstableReview() {
     }
     renderEvidenceTable(evidenceBody, docket.evidence);
 
-    const continueButton = document.getElementById('continueToInterview');
-    if (continueButton) {
-      continueButton.addEventListener('click', async () => {
-        await fetchJson(`/api/v1/constable/dockets/${caseReference}/interview`, { method: 'POST' });
-        window.location.href = `/constable/dockets/${caseReference}`;
-      });
+    if (docket.interview_id) {
+      await hydrateInterview(caseReference, docket.interview_id);
+    } else {
+      const continueButton = document.getElementById('continueToInterview');
+      if (continueButton) {
+        continueButton.addEventListener('click', async () => {
+          const interview = await fetchJson(`/api/v1/constable/dockets/${caseReference}/interview`, { method: 'POST' });
+          await hydrateInterview(caseReference, interview.interview_id);
+        });
+      }
     }
   } catch (error) {
     if (meta) {
