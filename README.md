@@ -59,3 +59,66 @@ Also verified through a real HTTP test-client cycle (not just direct service
 calls): login, the full citizen docket → statement → evidence → submit flow,
 constable interview/recording/registration, and station commander
 reassignment — re-fetching after each step to confirm it actually persisted.
+
+## Milestone 2: Frontend Monolith Decoupling (`pdas.js` Refactoring)
+
+Goal: break the 719-line `pdas.js` monolith into modular, maintainable ES6
+modules with strict separation of concerns, without changing any observable
+behavior.
+
+### What changed
+
+**Core modules** (`app/static/js/core/`)
+`api.js` — `fetchJson(url, options)` with automatic JWT Bearer header
+injection and standardized error surfacing. `auth.js` — `setSession`,
+`clearSession`, `getUser`, `getToken`, `isAuthenticated`, `requireRole`,
+`routeByRole`, plus dependency-injectable `bindLoginForm`/`bindLogoutButton`.
+`ui.js` — `buildStatusBadge`, `setEmptyState`, `bindCaseLinks`,
+`refreshUserBadge`, `bindReauthModal`.
+
+**Domain modules** (`app/static/js/modules/`)
+`citizen.js`, `constable.js`, `detective.js`, `station_commander.js`,
+`ipid.js` — each owns exactly the hydration and event handlers for its
+role's dashboard and detail page, ported behavior-for-behavior from the old
+monolith. `shared.js` is new: it holds the two cross-role widgets
+(`activeCaseList`, `evidenceVaultList`) that render on pages reachable by
+more than one role and aren't gated by `data-role`.
+
+**Entrypoint** (`app/static/js/pdas_app.js`)
+Binds login/logout, dynamically `import()`s only the role module matching
+`document.body.dataset.role`, then loads the shared module. `base.html` now
+loads `<script type="module" src=".../pdas_app.js">`; the old `pdas.js` and
+the dead 0-byte `citizen_dashboard.js` were deleted.
+
+### Tests
+
+**Frontend (Vitest + jsdom, new toolchain — `package.json`,
+`vitest.config.js`):** 72 tests across 10 files under
+`app/static/js/tests/`:
+- *Unit* — `core.api.test.js`, `core.auth.test.js`, `core.ui.test.js` test
+  each core module in isolation: token injection, error-message extraction,
+  status-badge mapping, cookie/localStorage fallback, malformed-cookie
+  handling.
+- *Integration* — one file per domain module exercising the real module
+  wired to the real `core/api.js` + `core/ui.js` against a jsdom DOM, with
+  only `fetch` mocked at the network boundary — dashboard rendering, detail
+  hydration, form submission, button wiring, and role/element gating in
+  `init()`.
+- *System* — `system.pdas_app.test.js` boots the real entrypoint with
+  nothing mocked except `fetch`: full login → session → role redirect
+  through the real `auth.js`+`api.js`, a full citizen dashboard render with
+  the Bearer token verified end-to-end from `localStorage` through the fetch
+  call, and the reauth modal / user badge chrome.
+
+**Backend system test** (new — `tests/test_frontend_modularization.py`,
+pytest + Flask test client): verifies the real running app — all 10 new
+module files are served by Flask's static route with a JS content-type, the
+old `pdas.js`/`citizen_dashboard.js` paths now 404, `base.html` emits the
+`type="module"` entrypoint tag for the login page and for every one of the 5
+role dashboards after a real login, the unauthenticated redirect still
+works, and the cross-role Active Cases page still renders for every
+non-citizen role.
+
+Full suite still green: **101 tests total** — pytest: 28 passed, 1 skipped
+across 2 files; Vitest: 72 passed across 10 files. The Milestone 1
+persistence tests were untouched by this refactor.
