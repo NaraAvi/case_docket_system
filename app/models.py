@@ -158,6 +158,19 @@ class InvestigationFinding(db.Model):
     is_final_outcome = db.Column(db.Boolean, default=False)
 
 
+class InvestigationNote(db.Model):
+    __tablename__ = "investigation_notes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    note_id = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    investigation_id = db.Column(db.String(50), nullable=False, index=True)
+    case_reference = db.Column(db.String(50), nullable=False)
+    detective_id = db.Column(db.String(100))
+    evidence_reference = db.Column(db.String(50))
+    note_text = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.String(50))
+
+
 class Escalation(db.Model):
     __tablename__ = "escalations"
 

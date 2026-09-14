@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% from 'components/_timeline.html' import timeline_skeleton %}
+{% from 'components/_evidence_table.html' import evidence_table_skeleton %}
 {% from 'components/_statutory_badge.html' import statutory_badge %}
 
 {% block content %}
@@ -32,10 +33,31 @@
           <dt>Freeze Status</dt><dd>Loading…</dd>
           <dt>Access State</dt><dd>Loading…</dd>
         </dl>
+        <button class="secondary-btn full-width" type="button" id="takeCustodyBtn" data-open-reauth style="margin-top:12px;">Take Custody &amp; Freeze Docket</button>
       </div>
     </div>
 
     <div class="cards-grid" style="margin-top:18px;">
+      <div class="panel-card wide-card">
+        <h3>Statements</h3>
+        <div class="stack-list" id="ipidStatementsList">
+          <p>Loading statements…</p>
+        </div>
+        <div class="stack-row" style="margin-top:10px; justify-content:flex-end;">
+          <button class="secondary-btn" type="button" id="openIpidStatementModal">Add Victim Statement</button>
+        </div>
+      </div>
+
+      <div class="panel-card">
+        <h3>Evidence</h3>
+        {{ evidence_table_skeleton('ipidCaseEvidence') }}
+      </div>
+
+      <div class="panel-card">
+        <h3>Case Timeline</h3>
+        {{ timeline_skeleton('ipidCaseTimeline', 'Loading case timeline') }}
+      </div>
+
       <div class="panel-card">
         <h3>Review Notes</h3>
         {{ timeline_skeleton('ipidReviewNotes', 'Loading review notes') }}
@@ -63,4 +85,23 @@
       </div>
     </div>
   </section>
+
+  <div class="reauth-modal hidden" id="ipidStatementModal" aria-hidden="true">
+    <div class="reauth-card">
+      <div class="reauth-header">
+        <span class="lock-icon">🗣️</span>
+        <span>Add Victim Statement</span>
+      </div>
+      <p class="reauth-subtitle">Record an additional statement taken from the victim or a witness during the independent review.</p>
+
+      <label class="input-label">Statement</label>
+      <textarea rows="5" placeholder="Record the statement..." id="ipidStatementText"></textarea>
+      <p class="inline-error hidden" id="ipidStatementModalError"></p>
+
+      <div class="modal-actions">
+        <button type="button" class="secondary-btn" id="closeIpidStatementModal">Cancel</button>
+        <button type="button" class="primary-btn" id="submitIpidStatementModal">Save Statement</button>
+      </div>
+    </div>
+  </div>
 {% endblock %}

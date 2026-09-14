@@ -164,3 +164,14 @@ def ipid_escalation_detail(escalation_id):
         escalation_id=escalation_id,
         page_title="IPID Escalation Review",
     )
+
+
+@ui_bp.route("/ipid/disciplinary-cases/<disciplinary_case_id>")
+@require_ui_role("ipid")
+def ipid_disciplinary_case_detail(disciplinary_case_id):
+    return render_template(
+        "ipid_disciplinary_case_detail.html",
+        role="ipid",
+        disciplinary_case_id=disciplinary_case_id,
+        page_title="IPID Disciplinary Case",
+    )

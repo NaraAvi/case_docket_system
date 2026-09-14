@@ -26,6 +26,23 @@ export async function hydrateStationCommanderDashboard() {
   } catch (error) {
     setEmptyState(container, error.message || 'Unable to load station commander queue.');
   }
+
+  const breachContainer = document.getElementById('stationCommanderSlaBreachList');
+  if (breachContainer) {
+    try {
+      const breaches = await fetchJson('/api/v1/station-commander/sla/breaches');
+      renderDocketCardList(breachContainer, breaches, {
+        reference: (item) => item.case_reference,
+        linkPrefix: '/station-commander/dockets/',
+        title: (item) => `${item.elapsed_hours != null ? item.elapsed_hours : '?'}h elapsed of the 72-hour SLA`,
+        status: 'BREACHED',
+        actionLabel: 'Open',
+        emptyMessage: 'No dockets have breached the 72-hour SLA (NI 3/2011).',
+      });
+    } catch (error) {
+      setEmptyState(breachContainer, error.message || 'Unable to load SLA breach summary.');
+    }
+  }
 }
 
 function bindReassignment(caseReference, docket) {
@@ -123,23 +140,39 @@ export async function hydrateStationCommanderDetail() {
   }
   const meta = document.getElementById('stationCommanderCaseMeta');
   const freezeBadge = document.getElementById('stationCommanderFreezeBadge');
+  const frozenNotice = document.getElementById('stationCommanderFrozenNotice');
+  const frozenReason = document.getElementById('stationCommanderFrozenReason');
+  const docketContent = document.getElementById('stationCommanderDocketContent');
   const slaContainer = document.getElementById('stationCommanderSlaMeter');
   const timeline = document.getElementById('stationCommanderAuditList');
   const investigationInfo = document.getElementById('stationCommanderInvestigationInfo');
 
+  let isFrozen = false;
   try {
     const docket = await fetchJson(`/api/v1/station-commander/dockets/${caseReference}`);
+    isFrozen = Boolean(docket.is_frozen);
+    if (freezeBadge) {
+      freezeBadge.className = isFrozen ? 'badge badge-warning' : 'badge badge-verified';
+      freezeBadge.textContent = isFrozen ? `Frozen${docket.freeze_reason ? `: ${docket.freeze_reason}` : ''}` : 'Active';
+    }
+
+    if (isFrozen) {
+      if (frozenReason) {
+        frozenReason.textContent = `This docket has been frozen by IPID while under independent review${docket.freeze_reason ? `: ${docket.freeze_reason}` : '.'}`;
+      }
+      frozenNotice?.classList.remove('hidden');
+      docketContent?.classList.add('hidden');
+      return;
+    }
+    frozenNotice?.classList.add('hidden');
+    docketContent?.classList.remove('hidden');
+
     if (meta) {
       meta.innerHTML = `
         <dt>Assigned Officer</dt><dd>${docket.assigned_officer_id || 'Not assigned'}</dd>
         <dt>Current Status</dt><dd>${docket.status || 'UNKNOWN'}</dd>
         <dt>Freeze Status</dt><dd>${docket.freeze_status || 'NOT_FROZEN'}</dd>
       `;
-    }
-    if (freezeBadge) {
-      const isFrozen = Boolean(docket.is_frozen);
-      freezeBadge.className = isFrozen ? 'badge badge-warning' : 'badge badge-verified';
-      freezeBadge.textContent = isFrozen ? `Frozen${docket.freeze_reason ? `: ${docket.freeze_reason}` : ''}` : 'Active';
     }
     renderSlaMeter(slaContainer, docket.sla);
     if (investigationInfo) {
@@ -152,6 +185,7 @@ export async function hydrateStationCommanderDetail() {
     if (meta) {
       meta.innerHTML = `<dt>Status</dt><dd>Unavailable</dd><dt>Message</dt><dd>${error.message}</dd>`;
     }
+    return;
   }
 
   try {

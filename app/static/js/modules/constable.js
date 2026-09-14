@@ -3,7 +3,7 @@
  */
 
 import { fetchJson, postForm } from '../core/api.js';
-import { bindFilePreview, bindMediaViewButtons, buildStatusBadge, flashToast, renderDocketCardList, renderEvidenceTable, renderMediaViewButton, setEmptyState, showToast } from '../core/ui.js';
+import { bindFilePreview, bindMediaViewButtons, buildStatusBadge, flashToast, renderDocketCardList, renderEvidenceTable, renderMediaViewButton, renderStatementList, setEmptyState, showToast } from '../core/ui.js';
 
 export function getConstableCaseReference() {
   const match = window.location.pathname.match(/\/constable\/dockets\/([^/]+)/);
@@ -258,11 +258,15 @@ export async function hydrateConstableReview() {
   }
 
   const meta = document.getElementById('constableCaseMeta');
-  const statementBox = document.getElementById('constableStatementBox');
+  const statementsList = document.getElementById('constableStatementsList');
   const evidenceBody = document.getElementById('constableCaseEvidence');
   const flagList = document.getElementById('constableFlagList');
   const relatedBox = document.getElementById('constableRelatedCases');
   const statusBadge = document.getElementById('constableStatusBadge');
+  const freezeBadge = document.getElementById('constableFreezeBadge');
+  const frozenNotice = document.getElementById('constableFrozenNotice');
+  const frozenReason = document.getElementById('constableFrozenReason');
+  const docketContent = document.getElementById('constableDocketContent');
 
   const flagModal = bindFlagModal(caseReference, {
     onSaved: () => refreshFlags(),
@@ -277,8 +281,34 @@ export async function hydrateConstableReview() {
     }
   }
 
+  let isFrozen = false;
   try {
     const docket = await fetchJson(`/api/v1/constable/dockets/${caseReference}`);
+    if (statusBadge) {
+      statusBadge.className = buildStatusBadge(docket.status);
+      statusBadge.textContent = docket.status || 'AWAITING_CONSTABLE_REGISTRATION';
+    }
+    if (freezeBadge) {
+      if (docket.is_frozen) {
+        freezeBadge.textContent = `Frozen — under IPID review${docket.freeze_reason ? `: ${docket.freeze_reason}` : ''}`;
+        freezeBadge.classList.remove('hidden');
+      } else {
+        freezeBadge.classList.add('hidden');
+      }
+    }
+
+    isFrozen = Boolean(docket.is_frozen);
+    if (isFrozen) {
+      if (frozenReason) {
+        frozenReason.textContent = `This docket has been frozen by IPID while under independent review${docket.freeze_reason ? `: ${docket.freeze_reason}` : '.'}`;
+      }
+      frozenNotice?.classList.remove('hidden');
+      docketContent?.classList.add('hidden');
+      return;
+    }
+    frozenNotice?.classList.add('hidden');
+    docketContent?.classList.remove('hidden');
+
     if (meta) {
       meta.innerHTML = `
         <dt>Title</dt><dd>${docket.title || 'Unspecified'}</dd>
@@ -287,18 +317,7 @@ export async function hydrateConstableReview() {
         <dt>Status</dt><dd>${docket.status || 'AWAITING_CONSTABLE_REGISTRATION'}</dd>
       `;
     }
-    if (statusBadge) {
-      statusBadge.className = buildStatusBadge(docket.status);
-      statusBadge.textContent = docket.status || 'AWAITING_CONSTABLE_REGISTRATION';
-    }
-    if (statementBox) {
-      const statements = Array.isArray(docket.statements) ? docket.statements : [];
-      const latest = statements[statements.length - 1];
-      statementBox.innerHTML = `
-        <strong>Statement</strong>
-        <p>${latest ? latest.statement_text : 'No citizen statement has been submitted yet.'}</p>
-      `;
-    }
+    renderStatementList(statementsList, docket.statements);
     renderEvidenceTable(evidenceBody, docket.evidence);
 
     if (docket.interview_id) {
@@ -321,16 +340,21 @@ export async function hydrateConstableReview() {
     if (meta) {
       meta.innerHTML = `<dt>Status</dt><dd>Unavailable</dd><dt>Message</dt><dd>${error.message}</dd>`;
     }
+    return;
   }
 
   await refreshFlags();
+  await refreshRelatedCases(caseReference, relatedBox);
+  bindRelatedCaseForm(caseReference, relatedBox);
+}
 
+async function refreshRelatedCases(caseReference, relatedBox) {
   try {
     const related = await fetchJson(`/api/v1/constable/dockets/${caseReference}/related`);
     if (relatedBox) {
       relatedBox.innerHTML = related.length
         ? related
-            .map((item) => `<p><strong>${item.relationship_type}</strong>: ${item.related_case_reference === caseReference ? item.source_case_reference : item.related_case_reference}</p>`)
+            .map((item) => `<p><strong>${item.relationship_type}</strong>: ${item.related_case_reference === caseReference ? item.source_case_reference : item.related_case_reference}${item.notes ? ` — ${item.notes}` : ''}</p>`)
             .join('')
         : '<p>No direct related case links detected.</p>';
     }
@@ -338,7 +362,50 @@ export async function hydrateConstableReview() {
     if (relatedBox) {
       relatedBox.innerHTML = `<p>${error.message}</p>`;
     }
+    showToast(error.message || 'Unable to load related cases.', { type: 'error' });
   }
+}
+
+function bindRelatedCaseForm(caseReference, relatedBox) {
+  const referenceField = document.getElementById('relatedCaseReference');
+  const notesField = document.getElementById('relatedCaseNotes');
+  const submitButton = document.getElementById('addRelatedCaseBtn');
+  const errorEl = document.getElementById('relatedCaseError');
+  if (!submitButton) {
+    return;
+  }
+
+  submitButton.addEventListener('click', async () => {
+    const relatedCaseReference = referenceField?.value.trim();
+    errorEl?.classList.add('hidden');
+    if (!relatedCaseReference) {
+      if (errorEl) {
+        errorEl.textContent = 'A case reference is required.';
+        errorEl.classList.remove('hidden');
+      }
+      return;
+    }
+    try {
+      await fetchJson(`/api/v1/constable/dockets/${caseReference}/related`, {
+        method: 'POST',
+        body: {
+          related_case_reference: relatedCaseReference,
+          relationship_type: 'RELATED_CASE',
+          notes: notesField?.value.trim() || undefined,
+        },
+      });
+      if (referenceField) referenceField.value = '';
+      if (notesField) notesField.value = '';
+      await refreshRelatedCases(caseReference, relatedBox);
+      showToast('Related case link recorded.');
+    } catch (error) {
+      if (errorEl) {
+        errorEl.textContent = error.message || 'Unable to link related case.';
+        errorEl.classList.remove('hidden');
+      }
+      showToast(error.message || 'Unable to link related case.', { type: 'error' });
+    }
+  });
 }
 
 export function init() {

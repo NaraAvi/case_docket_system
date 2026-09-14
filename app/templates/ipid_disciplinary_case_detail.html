@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% from 'components/_statutory_badge.html' import statutory_badge %}
+
+{% block content %}
+  <section class="detail-shell">
+    <div class="page-head-row">
+      <div>
+        <p class="eyebrow">IPID Disciplinary Case</p>
+        <h1>{{ disciplinary_case_id }}</h1>
+      </div>
+      <div class="stack-row">
+        <span class="badge badge-warning" id="disciplinaryCaseStatusBadge">Loading…</span>
+      </div>
+    </div>
+
+    <div class="detail-grid">
+      <div class="detail-card">
+        <h3>Case Context {{ statutory_badge('IPID Act §28', 'Disciplinary cases are opened when an escalation is upheld under Section 28.') }}</h3>
+        <dl class="meta-list" id="disciplinaryCaseMeta">
+          <dt>Source Docket</dt><dd>Loading…</dd>
+          <dt>Escalation</dt><dd>Loading…</dd>
+          <dt>Implicated Officer</dt><dd>Loading…</dd>
+          <dt>Status</dt><dd>Loading…</dd>
+        </dl>
+      </div>
+
+      <div class="detail-card">
+        <h3>Reason &amp; Category</h3>
+        <dl class="meta-list" id="disciplinaryCaseReasonMeta">
+          <dt>Category</dt><dd>Loading…</dd>
+          <dt>Created By</dt><dd>Loading…</dd>
+          <dt>Created At</dt><dd>Loading…</dd>
+        </dl>
+        <div class="statement-box" style="margin-top:12px;" id="disciplinaryCaseReasonBox">
+          <p>Loading reason…</p>
+        </div>
+      </div>
+    </div>
+  </section>
+{% endblock %}

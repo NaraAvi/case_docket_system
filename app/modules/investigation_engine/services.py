@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 from app.database.repositories.flag_repository import FlagRepository
 from app.database.repositories.investigation_finding_repository import InvestigationFindingRepository
+from app.database.repositories.investigation_note_repository import InvestigationNoteRepository
 from app.database.repositories.investigation_repository import InvestigationRepository
 from app.database.repositories.related_case_repository import RelatedCaseRepository
 from app.modules.audit_engine.services import AuditTrailService
@@ -26,6 +27,7 @@ class InvestigationService:
         repository=None,
         constable_service=None,
         finding_repository=None,
+        note_repository=None,
         flag_repository=None,
         related_case_repository=None,
         freeze_service=None,
@@ -35,6 +37,7 @@ class InvestigationService:
         self.repository = repository or InvestigationRepository()
         self.constable_service = constable_service
         self.finding_repository = finding_repository or InvestigationFindingRepository()
+        self.note_repository = note_repository or InvestigationNoteRepository()
         self.flag_repository = flag_repository or FlagRepository()
         self.related_case_repository = related_case_repository or RelatedCaseRepository()
         self.freeze_service = freeze_service
@@ -65,6 +68,20 @@ class InvestigationService:
             if investigation.get("status") in {"OPEN", "IN_PROGRESS"}:
                 return investigation
         return None
+
+    def _get_latest_investigation_by_case(self, case_reference):
+        """Like `_get_investigation_by_case`, but also returns a COMPLETED
+        investigation so the detective workspace can still display its
+        findings/notes/outcome after completion, instead of the page
+        reverting to "no investigation has been started" the moment one is
+        completed (the actual completion is unaffected either way -- this is
+        display-only; `_get_investigation_by_case` still governs whether a
+        new investigation may be opened)."""
+        active = self._get_investigation_by_case(case_reference)
+        if active is not None:
+            return active
+        investigations = self.repository.list_for_case(case_reference)
+        return investigations[-1] if investigations else None
 
     def _get_interview_for_case(self, case_reference):
         if self.constable_service is None:
@@ -141,6 +158,13 @@ class InvestigationService:
             raise ValueError("Docket not found.")
         if case.get("status") != "REGISTERED":
             raise ValueError("Detective access is limited to registered dockets.")
+        freeze = self.freeze_service.get_current_freeze(case_reference) if self.freeze_service else None
+        if freeze is not None:
+            # IPID custody blocks a detective from viewing the case content
+            # at all -- not just from mutating it -- while it's frozen. Only
+            # enough is returned for the workspace to render the "Case
+            # Frozen" notice.
+            return self._frozen_notice(case, freeze)
         return {
             "id": case.get("id"),
             "case_reference": case.get("case_reference"),
@@ -154,8 +178,74 @@ class InvestigationService:
             "evidence": case.get("evidence", []),
             "timeline": case.get("timeline", []),
             "interview_id": case.get("interview_id"),
-            "investigation": self._get_investigation_by_case(case_reference),
+            "investigation": self._get_latest_investigation_by_case(case_reference),
+            "is_frozen": False,
+            "freeze_status": "NOT_FROZEN",
+            "freeze_reason": None,
         }
+
+    @staticmethod
+    def _frozen_notice(case, freeze):
+        return {
+            "case_reference": case.get("case_reference"),
+            "status": case.get("status"),
+            "is_frozen": True,
+            "freeze_status": "FROZEN",
+            "freeze_reason": freeze.get("reason"),
+            "frozen_at": freeze.get("frozen_at"),
+            "frozen_by": freeze.get("actor_id"),
+        }
+
+    def add_statement(self, case_reference, detective_id, payload=None):
+        """Let a detective record an additional victim/witness statement on
+        the case docket, visible to every role that already reads
+        `docket.statements` (citizen, constable, station commander, IPID) --
+        distinct from the citizen's own self-authored statement, which stays
+        editable only by them while still DRAFT."""
+        case = self._get_case(case_reference)
+        if case is None:
+            raise ValueError("Docket not found.")
+        if case.get("status") != "REGISTERED":
+            raise ValueError("Detective access is limited to registered dockets.")
+        if self.freeze_service and self.freeze_service.is_case_frozen(case_reference):
+            raise ValueError("Case is frozen and operational mutation is restricted.")
+
+        if not isinstance(payload, dict):
+            raise ValueError("Statement payload must be a JSON object.")
+        statement_text = str(payload.get("statement_text") or "").strip()
+        if not statement_text:
+            raise ValueError("Statement text is required.")
+
+        statement = {
+            "statement_id": len(case.get("statements", [])) + 1,
+            "case_reference": case_reference,
+            "citizen_id": case.get("citizen_id"),
+            "statement_text": statement_text,
+            "recorded_by": detective_id,
+            "recorded_by_role": "detective",
+            "created_at": self._utc_now(),
+        }
+        case.setdefault("statements", []).append(statement)
+        case.setdefault("timeline", []).append(
+            {
+                "event_type": "statement_added_by_detective",
+                "actor_id": detective_id,
+                "actor_role": "detective",
+                "timestamp": self._utc_now(),
+                "details": {"statement_id": statement["statement_id"]},
+            }
+        )
+        self.case_service.update_case(case)
+        self.audit_service.log(
+            {
+                "actor_id": detective_id,
+                "actor_role": "detective",
+                "action": "statement_added_by_detective",
+                "case_reference": case_reference,
+                "details": {"statement_id": statement["statement_id"]},
+            }
+        )
+        return dict(statement)
 
     def create_investigation(self, case_reference, detective_id, payload=None):
         case = self._get_case(case_reference)
@@ -208,6 +298,17 @@ class InvestigationService:
                 "details": {"investigation_id": investigation_id, "status": "OPEN"},
             }
         )
+
+        case.setdefault("timeline", []).append(
+            CaseService._timeline_event(
+                "investigation_opened",
+                detective_id,
+                "detective",
+                {"investigation_id": investigation_id},
+            )
+        )
+        self.case_service.update_case(case)
+
         return dict(investigation)
 
     def get_investigation(self, investigation_id):
@@ -533,6 +634,53 @@ class InvestigationService:
         investigation = self.get_investigation(investigation_id)
         self._assert_authorized_detective(investigation, detective_id)
         return [dict(item) for item in self.finding_repository.list_for_investigation(investigation_id)]
+
+    def add_note(self, investigation_id, detective_id, payload=None):
+        investigation = self.get_investigation(investigation_id)
+        self._assert_authorized_detective(investigation, detective_id)
+        if investigation.get("status") == "COMPLETED":
+            raise ValueError("Completed investigations cannot receive new notes.")
+        if not isinstance(payload, dict):
+            raise ValueError("Note payload must be a JSON object.")
+
+        note_text = str(payload.get("note_text") or payload.get("notes") or "").strip()
+        if not note_text:
+            raise ValueError("Note text is required.")
+
+        evidence_reference = payload.get("evidence_reference")
+        if evidence_reference not in (None, ""):
+            evidence_reference = str(evidence_reference)
+            case = self._get_case(investigation.get("case_reference"))
+            case_evidence = case.get("evidence", []) if case else []
+            if not any(str(item.get("evidence_id")) == evidence_reference for item in case_evidence):
+                raise ValueError("Evidence reference does not match any evidence item on this case.")
+        else:
+            evidence_reference = None
+
+        note = {
+            "investigation_id": investigation.get("investigation_id"),
+            "case_reference": investigation.get("case_reference"),
+            "detective_id": detective_id,
+            "evidence_reference": evidence_reference,
+            "note_text": note_text,
+            "created_at": self._utc_now(),
+        }
+        created = self.note_repository.create(note)
+        self.audit_service.log(
+            {
+                "actor_id": detective_id,
+                "actor_role": "detective",
+                "action": "investigation_note_added",
+                "case_reference": investigation.get("case_reference"),
+                "details": {"investigation_id": investigation_id, "note_id": created.get("note_id"), "evidence_reference": evidence_reference},
+            }
+        )
+        return dict(created)
+
+    def list_notes(self, investigation_id, detective_id):
+        investigation = self.get_investigation(investigation_id)
+        self._assert_authorized_detective(investigation, detective_id)
+        return [dict(item) for item in self.note_repository.list_for_investigation(investigation_id)]
 
     def complete_investigation(self, investigation_id, detective_id, payload=None):
         investigation = self.get_investigation(investigation_id)

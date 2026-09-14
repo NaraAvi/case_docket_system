@@ -127,10 +127,12 @@ describe('modules/citizen.js (integration: module + core/api + core/ui + DOM)', 
       return `
         <dl id="citizenCaseMeta"></dl>
         <span id="citizenStatusBadge"></span>
+        <span id="citizenFreezeBadge" class="hidden"></span>
         <ul id="citizenCaseTimeline"></ul>
         <textarea id="citizenStatementText"></textarea>
         <button id="saveCitizenStatement"></button>
         <p id="citizenStatementError" class="hidden"></p>
+        <div id="citizenStatementsList"></div>
         <table><tbody id="citizenCaseEvidence"></tbody></table>
         <select id="citizenEvidenceType"><option value="PHOTO">Photo</option></select>
         <input type="file" id="citizenEvidenceFile" />
@@ -155,6 +157,7 @@ describe('modules/citizen.js (integration: module + core/api + core/ui + DOM)', 
           <button id="submitCitizenRecording"></button>
           <p id="citizenRecordingError" class="hidden"></p>
         </div>
+        <div id="citizenEscalationsList"></div>
         <div class="toast-container" id="toastContainer"></div>
       `;
     }
@@ -291,6 +294,120 @@ describe('modules/citizen.js (integration: module + core/api + core/ui + DOM)', 
       expect(document.getElementById('citizenStatementText').disabled).toBe(true);
       expect(document.getElementById('submitCitizenDocketForReview').disabled).toBe(true);
       expect(document.getElementById('submitCitizenDocketForReview').textContent).toContain('AWAITING_CONSTABLE_REGISTRATION');
+    });
+
+    it('shows the freeze badge with a reason when the docket is frozen, and hides it otherwise', async () => {
+      document.body.innerHTML = draftDetailMarkup();
+      setLocation('/citizen/dockets/CD-1');
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              status: 'REGISTERED',
+              timeline: [],
+              statements: [],
+              evidence: [],
+              is_frozen: true,
+              freeze_reason: 'IPID took custody of the docket while reviewing escalation ESC-1',
+            }),
+        })
+      );
+
+      await hydrateCitizenDetail();
+
+      const badge = document.getElementById('citizenFreezeBadge');
+      expect(badge.classList.contains('hidden')).toBe(false);
+      expect(badge.textContent).toContain('IPID took custody');
+    });
+
+    it('renders the "My Escalations" panel with status and decision once resolved', async () => {
+      document.body.innerHTML = draftDetailMarkup();
+      setLocation('/citizen/dockets/CD-1');
+      const fetchMock = vi.fn((url, options = {}) => {
+        if (url.endsWith('/escalations') && !options.method) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve([
+                {
+                  escalation_id: 'ESC-1',
+                  category: 'OFFICER_CONDUCT',
+                  description: 'Officer refused to register this docket.',
+                  status: 'RESOLVED',
+                  decision: 'UPHELD',
+                  decision_reason: 'Corroborated by audio evidence.',
+                  decision_at: '2026-01-03T00:00:00Z',
+                },
+              ]),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ status: 'DRAFT', timeline: [], statements: [], evidence: [] }),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+
+      await hydrateCitizenDetail();
+
+      const panel = document.getElementById('citizenEscalationsList');
+      expect(panel.textContent).toContain('OFFICER_CONDUCT');
+      expect(panel.textContent).toContain('UPHELD');
+      expect(panel.textContent).toContain('Corroborated by audio evidence.');
+    });
+
+    it('shows a placeholder when the citizen has not escalated this docket', async () => {
+      document.body.innerHTML = draftDetailMarkup();
+      setLocation('/citizen/dockets/CD-1');
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url, options = {}) => {
+          if (url.endsWith('/escalations') && !options.method) {
+            return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+          }
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({ status: 'DRAFT', timeline: [], statements: [], evidence: [] }),
+          });
+        })
+      );
+
+      await hydrateCitizenDetail();
+
+      expect(document.getElementById('citizenEscalationsList').textContent).toContain('You have not escalated');
+    });
+
+    it('shows the full mixed-author statement history, while the editable textarea only ever reflects the citizen\'s own latest statement', async () => {
+      document.body.innerHTML = draftDetailMarkup();
+      setLocation('/citizen/dockets/CD-1');
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              status: 'REGISTERED',
+              timeline: [],
+              evidence: [],
+              statements: [
+                { statement_text: 'Someone broke my window.', created_at: '2026-01-01' },
+                { statement_text: 'Witness confirms seeing the suspect flee northbound.', recorded_by: 'DET-1', recorded_by_role: 'detective' },
+              ],
+            }),
+        })
+      );
+
+      await hydrateCitizenDetail();
+
+      const panel = document.getElementById('citizenStatementsList');
+      expect(panel.textContent).toContain('Someone broke my window.');
+      expect(panel.textContent).toContain('Witness confirms seeing the suspect flee northbound.');
+      expect(panel.textContent).toContain('detective');
+      // The detective-authored statement is the *last* array item, but the
+      // editable textarea must still seed from the citizen's own statement.
+      expect(document.getElementById('citizenStatementText').value).toBe('Someone broke my window.');
     });
 
     it('the escalate modal submits a category and description', async () => {

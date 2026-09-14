@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from app.auth.service import TestIdentityRegistry
 from app.database.repositories.review_finding_repository import ReviewFindingRepository
 from app.database.repositories.review_note_repository import ReviewNoteRepository
@@ -39,6 +41,10 @@ class IPIDReviewService:
         self.review_finding_repository = review_finding_repository or ReviewFindingRepository()
         self.identity_registry = identity_registry or TestIdentityRegistry()
         self.disciplinary_service = disciplinary_service or DisciplinaryCaseService(audit_service=self.audit_service)
+
+    @staticmethod
+    def _utc_now():
+        return datetime.now(UTC).isoformat()
 
     def _get_case_summary(self, case_reference):
         if not case_reference:
@@ -288,8 +294,44 @@ class IPIDReviewService:
         if not reason:
             raise ValueError("Uphold reason is required.")
 
-        reviewed = self.escalation_service.uphold_escalation(escalation_id, actor_id, "ipid", reason=reason)
         case_reference = escalation.get("case_reference")
+
+        # Resolve and validate the implicated officer *before* mutating
+        # anything (resolving the escalation, freezing the docket) -- doing
+        # this after those side effects (as this method used to) left a real
+        # stuck state when no active assignment existed: the escalation was
+        # already RESOLVED/UPHELD and the docket already frozen by the time
+        # the ValueError below fired, with no officer revoked and no
+        # disciplinary case created, and no UI path to recover (dismiss
+        # requires UNDER_REVIEW, uphold requires not-already-resolved).
+        implicated_officer_id = None
+        if self.assignment_service is not None and case_reference:
+            assignment = self.assignment_service.get_current_assignment_for_case(case_reference)
+            if assignment:
+                implicated_officer_id = assignment.get("officer_id")
+
+        if implicated_officer_id is None:
+            raise ValueError("No active officer assignment is available to revoke for this uphold decision.")
+
+        officer = self.identity_registry.get_identity(str(implicated_officer_id))
+        if officer is None:
+            raise ValueError("Implicated officer identity not found.")
+        if str(officer.get("role") or "").lower() == "ipid":
+            raise ValueError("IPID reviewer cannot be revoked as an operational officer.")
+
+        # Same reasoning as above: check freeze-ability up front too, so a
+        # freeze failure can't happen after the escalation is already
+        # resolved either.
+        if self.freeze_service and case_reference:
+            case_summary = self._get_case_summary(case_reference)
+            if case_summary is None:
+                raise ValueError("Case not found.")
+            if case_summary.get("status") != "REGISTERED":
+                raise ValueError("Freeze requires a registered case.")
+            if self.freeze_service.is_case_frozen(case_reference):
+                raise ValueError("Case is already frozen.")
+
+        reviewed = self.escalation_service.uphold_escalation(escalation_id, actor_id, "ipid", reason=reason)
         if self.freeze_service and case_reference:
             freeze = self.freeze_service.freeze_case(
                 case_reference,
@@ -312,21 +354,6 @@ class IPIDReviewService:
                     },
                 }
             )
-
-        implicated_officer_id = None
-        if self.assignment_service is not None and case_reference:
-            assignment = self.assignment_service.get_current_assignment_for_case(case_reference)
-            if assignment:
-                implicated_officer_id = assignment.get("officer_id")
-
-        if implicated_officer_id is None:
-            raise ValueError("No active officer assignment is available to revoke for this uphold decision.")
-
-        officer = self.identity_registry.get_identity(str(implicated_officer_id))
-        if officer is None:
-            raise ValueError("Implicated officer identity not found.")
-        if str(officer.get("role") or "").lower() == "ipid":
-            raise ValueError("IPID reviewer cannot be revoked as an operational officer.")
 
         updated_officer = self.identity_registry.revoke_access(str(implicated_officer_id))
         self.audit_service.log(
@@ -410,6 +437,92 @@ class IPIDReviewService:
 
         return assignment
 
+    def list_custody_cases(self):
+        """Dockets IPID currently has frozen -- the "Cases in Custody"
+        section (GitHub follow-up to issue #3): a reviewer needs a single
+        place to find every case they've taken custody of, whether they're
+        still actively reviewing it or it's already been upheld and the
+        freeze is being kept in place through the disciplinary process."""
+        if self.freeze_service is None:
+            return []
+
+        custody_cases = []
+        for freeze in self.freeze_service.list_active_freezes(source="IPID_REVIEW"):
+            case_reference = freeze.get("case_reference")
+            case_summary = self._get_case_summary(case_reference) or {}
+            escalation_id = freeze.get("related_escalation_id")
+            escalation = self.escalation_service.get_by_id(escalation_id) if escalation_id else None
+            custody_cases.append(
+                {
+                    "case_reference": case_reference,
+                    "case_status": case_summary.get("status"),
+                    "title": case_summary.get("title"),
+                    "location": case_summary.get("location"),
+                    "escalation_id": escalation_id,
+                    "escalation_status": escalation.get("status") if escalation else None,
+                    "escalation_decision": escalation.get("decision") if escalation else None,
+                    "freeze_id": freeze.get("freeze_id"),
+                    "frozen_at": freeze.get("frozen_at"),
+                    "frozen_by": freeze.get("actor_id"),
+                    "reason": freeze.get("reason"),
+                }
+            )
+        return custody_cases
+
+    def add_case_statement(self, case_reference, actor_id, payload=None):
+        """Let an IPID reviewer record an additional victim/witness statement
+        directly on the case docket, mirroring the detective's own
+        `InvestigationService.add_statement` -- distinct from IPID's
+        escalation-scoped review notes, this is visible to every role that
+        already reads `docket.statements`. Freeze deliberately does not
+        block this: IPID is the actor who freezes a docket, and needs to
+        keep recording statements on a case they're actively reviewing in
+        custody, not be locked out of their own investigation."""
+        if not isinstance(payload, dict):
+            raise ValueError("Statement payload must be a JSON object.")
+        statement_text = str(payload.get("statement_text") or "").strip()
+        if not statement_text:
+            raise ValueError("Statement text is required.")
+
+        case = None
+        for candidate in self.case_service.get_all_cases():
+            if candidate.get("case_reference") == case_reference:
+                case = candidate
+                break
+        if case is None:
+            raise ValueError("Docket not found.")
+
+        statement = {
+            "statement_id": len(case.get("statements", [])) + 1,
+            "case_reference": case_reference,
+            "citizen_id": case.get("citizen_id"),
+            "statement_text": statement_text,
+            "recorded_by": actor_id,
+            "recorded_by_role": "ipid",
+            "created_at": self._utc_now(),
+        }
+        case.setdefault("statements", []).append(statement)
+        case.setdefault("timeline", []).append(
+            {
+                "event_type": "statement_added_by_ipid",
+                "actor_id": actor_id,
+                "actor_role": "ipid",
+                "timestamp": statement["created_at"],
+                "details": {"statement_id": statement["statement_id"]},
+            }
+        )
+        self.case_service.update_case(case)
+        self.audit_service.log(
+            {
+                "actor_id": actor_id,
+                "actor_role": "ipid",
+                "action": "statement_added_by_ipid",
+                "case_reference": case_reference,
+                "details": {"statement_id": statement["statement_id"]},
+            }
+        )
+        return dict(statement)
+
     def list_disciplinary_cases(self):
         return self.disciplinary_service.list_cases()
 
@@ -418,3 +531,46 @@ class IPIDReviewService:
 
     def start_review(self, escalation_id, reviewer_id, reviewer_role="ipid"):
         return self.escalation_service.start_review(escalation_id, reviewer_id, reviewer_role)
+
+    def take_custody(self, escalation_id, actor_id, actor_role="ipid", reason=None):
+        """Let an IPID reviewer freeze the docket from other officers while a
+        review is in progress, independent of the eventual dismiss/uphold
+        decision (GitHub issue #3: opening a review did not lock the docket,
+        so other officers could keep mutating a case under active review)."""
+        escalation = self.escalation_service.get_by_id(escalation_id)
+        if escalation is None:
+            raise ValueError("Escalation not found.")
+        if str(escalation.get("status") or "").upper() == "RESOLVED":
+            raise ValueError("Escalation is already resolved; nothing to take custody of.")
+
+        case_reference = escalation.get("case_reference")
+        if not case_reference:
+            raise ValueError("Escalation has no associated case.")
+        if self.freeze_service is None:
+            raise ValueError("Freeze service is not configured.")
+        if self.freeze_service.is_case_frozen(case_reference):
+            raise ValueError("Case is already frozen.")
+
+        default_reason = f"IPID took custody of the docket while reviewing escalation {escalation_id}"
+        freeze = self.freeze_service.freeze_case(
+            case_reference,
+            actor_id,
+            actor_role,
+            reason=f"{default_reason}: {reason}" if reason else default_reason,
+            source="IPID_REVIEW",
+            related_escalation_id=escalation_id,
+        )
+        self.audit_service.log(
+            {
+                "actor_id": actor_id,
+                "actor_role": actor_role,
+                "action": "ipid_docket_frozen",
+                "case_reference": case_reference,
+                "details": {
+                    "escalation_id": escalation_id,
+                    "freeze_id": freeze.get("freeze_id"),
+                    "reason": freeze.get("reason"),
+                },
+            }
+        )
+        return freeze

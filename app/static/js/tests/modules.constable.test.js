@@ -94,30 +94,34 @@ describe('modules/constable.js (integration)', () => {
 
   function reviewMarkup() {
     return `
-      <dl id="constableCaseMeta"></dl>
       <span id="constableStatusBadge"></span>
-      <div id="constableStatementBox"></div>
-      <table><tbody id="constableCaseEvidence"></tbody></table>
-      <div id="constableFlagList"></div>
-      <div id="constableRelatedCases"></div>
-      <button id="continueToInterview"></button>
-      <button id="openFlagModal"></button>
-      <div id="flagModal" class="hidden">
-        <span id="flagModalTitle"></span>
-        <select id="flagCategory"></select>
-        <select id="flagStatus"></select>
-        <textarea id="flagNotes"></textarea>
-        <p id="flagModalError" class="hidden"></p>
-        <button id="closeFlagModal"></button>
-        <button id="submitFlagModal"></button>
-      </div>
-      <div id="constableInterviewPanel" class="hidden">
-        <div id="constableInterviewStatus"></div>
-        <input type="file" id="constableRecordingFile" />
-        <p id="constableRecordingFilePreview" class="hidden"></p>
-        <button id="submitConstableRecording"></button>
-        <p id="constableRecordingError" class="hidden"></p>
-        <button id="registerDocketBtn" disabled></button>
+      <span id="constableFreezeBadge" class="hidden"></span>
+      <div id="constableFrozenNotice" class="hidden"><p id="constableFrozenReason"></p></div>
+      <div id="constableDocketContent">
+        <dl id="constableCaseMeta"></dl>
+        <div id="constableStatementsList"></div>
+        <table><tbody id="constableCaseEvidence"></tbody></table>
+        <div id="constableFlagList"></div>
+        <div id="constableRelatedCases"></div>
+        <button id="continueToInterview"></button>
+        <button id="openFlagModal"></button>
+        <div id="flagModal" class="hidden">
+          <span id="flagModalTitle"></span>
+          <select id="flagCategory"></select>
+          <select id="flagStatus"></select>
+          <textarea id="flagNotes"></textarea>
+          <p id="flagModalError" class="hidden"></p>
+          <button id="closeFlagModal"></button>
+          <button id="submitFlagModal"></button>
+        </div>
+        <div id="constableInterviewPanel" class="hidden">
+          <div id="constableInterviewStatus"></div>
+          <input type="file" id="constableRecordingFile" />
+          <p id="constableRecordingFilePreview" class="hidden"></p>
+          <button id="submitConstableRecording"></button>
+          <p id="constableRecordingError" class="hidden"></p>
+          <button id="registerDocketBtn" disabled></button>
+        </div>
       </div>
       <div class="toast-container" id="toastContainer"></div>
     `;
@@ -165,7 +169,7 @@ describe('modules/constable.js (integration)', () => {
 
     expect(document.getElementById('constableCaseMeta').textContent).toContain('Vandalism');
     expect(document.getElementById('constableCaseEvidence').textContent).toContain('Broken window photo');
-    expect(document.getElementById('constableStatementBox').textContent).toContain('Someone broke my window.');
+    expect(document.getElementById('constableStatementsList').textContent).toContain('Someone broke my window.');
     expect(document.getElementById('constableFlagList').textContent).toContain('Missing detail.');
     expect(document.getElementById('constableRelatedCases').textContent).toContain('No direct related case links');
     expect(document.getElementById('constableInterviewPanel').classList.contains('hidden')).toBe(true);
@@ -267,6 +271,110 @@ describe('modules/constable.js (integration)', () => {
     expect(sessionStorage.getItem('pdasFlashMessage')).toContain('registered successfully');
   });
 
+  it('linking a related case posts to the related endpoint and refreshes the list', async () => {
+    document.body.innerHTML = `
+      <dl id="constableCaseMeta"></dl>
+      <span id="constableStatusBadge"></span>
+      <div id="constableStatementBox"></div>
+      <table><tbody id="constableCaseEvidence"></tbody></table>
+      <div id="constableFlagList"></div>
+      <div id="constableRelatedCases"></div>
+      <input id="relatedCaseReference" />
+      <textarea id="relatedCaseNotes"></textarea>
+      <p id="relatedCaseError" class="hidden"></p>
+      <button id="addRelatedCaseBtn"></button>
+      <button id="continueToInterview"></button>
+      <button id="openFlagModal"></button>
+      <div id="flagModal" class="hidden">
+        <select id="flagCategory"></select>
+        <select id="flagStatus"></select>
+        <textarea id="flagNotes"></textarea>
+        <p id="flagModalError" class="hidden"></p>
+        <button id="closeFlagModal"></button>
+        <button id="submitFlagModal"></button>
+      </div>
+      <div class="toast-container" id="toastContainer"></div>
+    `;
+    setLocation('/constable/dockets/CD-1');
+    let relatedCreated = false;
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (url.endsWith('/related') && options.method === 'POST') {
+        relatedCreated = true;
+        expect(JSON.parse(options.body)).toEqual({
+          related_case_reference: 'CD-2',
+          relationship_type: 'RELATED_CASE',
+          notes: 'Same suspect description.',
+        });
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ relationship_id: 'REL-1' }) });
+      }
+      if (url.endsWith('/related')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve(
+              relatedCreated
+                ? [{ relationship_type: 'RELATED_CASE', source_case_reference: 'CD-1', related_case_reference: 'CD-2', notes: 'Same suspect description.' }]
+                : []
+            ),
+        });
+      }
+      if (url.endsWith('/flags')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ title: 'Vandalism', status: 'REGISTERED', statements: [], evidence: [], timeline: [] }),
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await hydrateConstableReview();
+    expect(document.getElementById('constableRelatedCases').textContent).toContain('No direct related case links');
+
+    document.getElementById('relatedCaseReference').value = 'CD-2';
+    document.getElementById('relatedCaseNotes').value = 'Same suspect description.';
+    document.getElementById('addRelatedCaseBtn').click();
+
+    await vi.waitFor(() => expect(document.getElementById('constableRelatedCases').textContent).toContain('CD-2'));
+    expect(document.getElementById('toastContainer').textContent).toContain('Related case link recorded');
+    expect(document.getElementById('relatedCaseReference').value).toBe('');
+  });
+
+  it('rejects linking a related case with no reference entered', async () => {
+    document.body.innerHTML = `
+      <dl id="constableCaseMeta"></dl>
+      <span id="constableStatusBadge"></span>
+      <div id="constableStatementBox"></div>
+      <table><tbody id="constableCaseEvidence"></tbody></table>
+      <div id="constableFlagList"></div>
+      <div id="constableRelatedCases"></div>
+      <input id="relatedCaseReference" />
+      <textarea id="relatedCaseNotes"></textarea>
+      <p id="relatedCaseError" class="hidden"></p>
+      <button id="addRelatedCaseBtn"></button>
+    `;
+    setLocation('/constable/dockets/CD-1');
+    const fetchMock = vi.fn((url) => {
+      if (url.endsWith('/related')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      if (url.endsWith('/flags')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ title: 'Vandalism', status: 'REGISTERED', statements: [], evidence: [], timeline: [] }),
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await hydrateConstableReview();
+    document.getElementById('addRelatedCaseBtn').click();
+
+    expect(document.getElementById('relatedCaseError').classList.contains('hidden')).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining('/related'), expect.objectContaining({ method: 'POST' }));
+  });
+
   it('the flag modal creates a new flag and refreshes the list', async () => {
     document.body.innerHTML = `
       <dl id="constableCaseMeta"></dl>
@@ -323,6 +431,36 @@ describe('modules/constable.js (integration)', () => {
     await vi.waitFor(() => expect(document.getElementById('constableFlagList').textContent).toContain('New concern.'));
     expect(document.getElementById('flagModal').classList.contains('hidden')).toBe(true);
     expect(document.getElementById('toastContainer').textContent).toContain('Flag recorded');
+  });
+
+  it('shows the "Case Frozen" notice and withholds case content while the docket is frozen', async () => {
+    document.body.innerHTML = reviewMarkup();
+    setLocation('/constable/dockets/CD-1');
+    const fetchMock = vi.fn((url) => {
+      if (url.endsWith('/flags') || url.endsWith('/related')) {
+        throw new Error(`unexpected fetch to ${url} for a frozen docket`);
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            case_reference: 'CD-1',
+            status: 'REGISTERED',
+            is_frozen: true,
+            freeze_status: 'FROZEN',
+            freeze_reason: 'IPID uphold decision for escalation ESC-1',
+          }),
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await hydrateConstableReview();
+
+    expect(document.getElementById('constableFrozenNotice').classList.contains('hidden')).toBe(false);
+    expect(document.getElementById('constableFrozenReason').textContent).toContain('IPID uphold decision');
+    expect(document.getElementById('constableDocketContent').classList.contains('hidden')).toBe(true);
+    expect(document.getElementById('constableCaseMeta').textContent).toBe('');
+    expect(document.getElementById('constableFreezeBadge').classList.contains('hidden')).toBe(false);
   });
 
   it('init only hydrates the dashboard when both the role and container match', () => {

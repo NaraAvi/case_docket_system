@@ -36,6 +36,7 @@ class ConstableRegistrationService:
         flag_repository=None,
         related_case_repository=None,
         freeze_service=None,
+        assignment_service=None,
     ):
         self.case_service = case_service or CaseService()
         self.audit_service = audit_service or AuditTrailService()
@@ -44,6 +45,7 @@ class ConstableRegistrationService:
         self.flag_repository = flag_repository or FlagRepository()
         self.related_case_repository = related_case_repository or RelatedCaseRepository()
         self.freeze_service = freeze_service
+        self.assignment_service = assignment_service
         self._interviews = self.__class__._shared_interviews
         self._recordings = self.__class__._shared_recordings
 
@@ -103,6 +105,19 @@ class ConstableRegistrationService:
         case = self._get_docket_by_reference(case_reference)
         if case is None:
             return None
+        freeze = self.freeze_service.get_current_freeze(case_reference) if self.freeze_service else None
+        if freeze is not None:
+            # IPID custody blocks a constable from viewing case content at
+            # all while frozen, not just from mutating it.
+            return {
+                "case_reference": case.get("case_reference"),
+                "status": case.get("status"),
+                "is_frozen": True,
+                "freeze_status": "FROZEN",
+                "freeze_reason": freeze.get("reason"),
+                "frozen_at": freeze.get("frozen_at"),
+                "frozen_by": freeze.get("actor_id"),
+            }
         return {
             "id": case.get("id"),
             "case_reference": case.get("case_reference"),
@@ -117,16 +132,36 @@ class ConstableRegistrationService:
             "statements": case.get("statements", []),
             "timeline": case.get("timeline", []),
             "interview_id": case.get("interview_id"),
+            "is_frozen": False,
+            "freeze_status": "NOT_FROZEN",
+            "freeze_reason": None,
         }
 
     def open_docket(self, case_reference, constable_id):
         case = self._get_docket_by_reference(case_reference)
         if case is None:
             raise ValueError("Docket not found.")
-        if case.get("status") != "AWAITING_CONSTABLE_REGISTRATION":
+        status = case.get("status")
+        if status == "AWAITING_CONSTABLE_REGISTRATION":
+            if case.get("citizen_id") == constable_id:
+                raise ValueError("Constable cannot open a citizen-owned docket for registration.")
+        elif status == "REGISTERED":
+            # Pre-registration triage is an open queue (any constable), but a
+            # REGISTERED docket can now also be assigned to a specific
+            # constable (station-commander reassignment allows any officer
+            # role once REGISTERED) -- that constable still needs a way to
+            # open and keep handling it, not just the officer who registered
+            # it originally.
+            assignment = self.assignment_service.get_current_assignment_for_case(case_reference) if self.assignment_service else None
+            is_assigned_constable = (
+                assignment is not None
+                and assignment.get("officer_role") == "constable"
+                and str(assignment.get("officer_id")) == str(constable_id)
+            )
+            if not is_assigned_constable:
+                raise ValueError("Docket is not awaiting constable registration.")
+        else:
             raise ValueError("Docket is not awaiting constable registration.")
-        if case.get("citizen_id") == constable_id:
-            raise ValueError("Constable cannot open a citizen-owned docket for registration.")
         self.audit_service.log(
             {
                 "actor_id": constable_id,

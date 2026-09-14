@@ -10,83 +10,124 @@
         <p class="eyebrow">Active Investigation</p>
         <h1>{{ case_reference }}</h1>
       </div>
-      <span class="badge badge-verified" id="detectiveStatusBadge">Registered</span>
-    </div>
-
-    <div class="detail-grid">
-      <div class="detail-card">
-        <h3>Case Metadata</h3>
-        <dl class="meta-list" id="detectiveCaseMeta">
-          <dt>Incident Location</dt><dd>Loading…</dd>
-          <dt>Incident Date</dt><dd>Loading…</dd>
-          <dt>Assigned Officer</dt><dd>Loading…</dd>
-          <dt>Status</dt><dd>Loading…</dd>
-        </dl>
-      </div>
-
-      <div class="detail-card">
-        <h3>Initial Deposition</h3>
-        <div class="statement-box" id="detectiveDeposition">
-          <p>Loading docket description and witness information…</p>
-        </div>
+      <div class="stack-row">
+        <span class="badge badge-verified" id="detectiveStatusBadge">Registered</span>
+        <span class="badge badge-warning hidden" id="detectiveFreezeBadge">Frozen</span>
       </div>
     </div>
 
-    <div class="cards-grid" style="margin-top:18px;">
-      <div class="panel-card">
-        <h3>Investigation Notes</h3>
-        <textarea rows="7" placeholder="Document note chronology and witness follow-ups..." id="investigationNotes"></textarea>
-        <div class="stack-row" style="margin-top:10px; justify-content:flex-end;">
-          <button class="secondary-btn" type="button" id="saveInvestigationNote">Save Note</button>
-        </div>
-        <p class="inline-error hidden" id="investigationNotesError"></p>
-      </div>
-
-      <div class="panel-card">
-        <h3>Statements</h3>
-        <div class="statement-box" id="detectiveStatementBox">
-          <strong>Citizen Statement</strong>
-          <p>Loading the latest citizen statement…</p>
-        </div>
-      </div>
-
-      <div class="panel-card">
-        <h3>Evidence</h3>
-        {{ evidence_table_skeleton('detectiveCaseEvidence') }}
-      </div>
-
-      <div class="panel-card">
-        <h3>Audit Timeline</h3>
-        {{ timeline_skeleton('detectiveCaseTimeline', 'Loading audit timeline') }}
-      </div>
-
-      <div class="panel-card">
-        <h3>Potential Invalidity Flags {{ statutory_badge('PAJA §3', 'Every administrative status change requires a recorded justification.') }}</h3>
-        <div class="stack-list" id="detectiveFlagsList">
-          <div class="empty-state">Start the investigation to review constable-raised flags.</div>
-        </div>
-      </div>
-
-      <div class="panel-card">
-        <h3>Related Cases</h3>
-        <div class="statement-box" id="detectiveRelatedCases">
-          <p>Start the investigation to review related case links.</p>
-        </div>
-      </div>
-
-      <div class="panel-card wide-card">
-        <h3>Findings {{ statutory_badge('CPA §212', 'Evidence and findings must be recorded with an auditable chain of reasoning.') }}</h3>
-        <div class="stack-list" id="detectiveFindingsList">
-          <div class="empty-state">Loading findings…</div>
-        </div>
-      </div>
+    <div class="panel-card wide-card hidden" id="detectiveFrozenNotice">
+      <h3>🔒 Case Frozen</h3>
+      <p id="detectiveFrozenReason">This docket has been frozen by IPID while under independent review. Case content is not viewable until the freeze is released.</p>
     </div>
 
-    <div class="stack-row" style="margin-top:18px; justify-content:flex-end;">
-      <button class="secondary-btn" type="button" id="openFindingModal" disabled>Add Finding</button>
-      <button class="primary-btn" type="button" id="startInvestigation">Start Investigation</button>
+    <div id="detectiveDocketContent">
+      <div class="detail-grid">
+        <div class="detail-card">
+          <h3>Case Metadata</h3>
+          <dl class="meta-list" id="detectiveCaseMeta">
+            <dt>Incident Location</dt><dd>Loading…</dd>
+            <dt>Incident Date</dt><dd>Loading…</dd>
+            <dt>Assigned Officer</dt><dd>Loading…</dd>
+            <dt>Status</dt><dd>Loading…</dd>
+          </dl>
+        </div>
+
+        <div class="detail-card">
+          <h3>Initial Deposition</h3>
+          <div class="statement-box" id="detectiveDeposition">
+            <p>Loading docket description and witness information…</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="cards-grid" style="margin-top:18px;">
+        <div class="panel-card">
+          <h3>Investigation Notes</h3>
+          <textarea rows="7" placeholder="Document note chronology and witness follow-ups..." id="investigationNotes"></textarea>
+          <div class="stack-row" style="margin-top:10px; justify-content:flex-end;">
+            <button class="secondary-btn" type="button" id="saveInvestigationNote">Save Note</button>
+          </div>
+          <p class="inline-error hidden" id="investigationNotesError"></p>
+        </div>
+
+        <div class="panel-card wide-card">
+          <h3>Statements</h3>
+          <div class="stack-list" id="detectiveStatementsList">
+            <p>Loading statements…</p>
+          </div>
+          <div class="stack-row" style="margin-top:10px; justify-content:flex-end;">
+            <button class="secondary-btn" type="button" id="openStatementModal">Add Victim Statement</button>
+          </div>
+        </div>
+
+        <div class="panel-card">
+          <h3>Evidence</h3>
+          {{ evidence_table_skeleton('detectiveCaseEvidence') }}
+        </div>
+
+        <div class="panel-card">
+          <h3>Audit Timeline</h3>
+          {{ timeline_skeleton('detectiveCaseTimeline', 'Loading audit timeline') }}
+        </div>
+
+        <div class="panel-card">
+          <h3>Potential Invalidity Flags {{ statutory_badge('PAJA §3', 'Every administrative status change requires a recorded justification.') }}</h3>
+          <div class="stack-list" id="detectiveFlagsList">
+            <div class="empty-state">Start the investigation to review constable-raised flags.</div>
+          </div>
+        </div>
+
+        <div class="panel-card">
+          <h3>Related Cases</h3>
+          <div class="statement-box" id="detectiveRelatedCases">
+            <p>Start the investigation to review related case links.</p>
+          </div>
+        </div>
+
+        <div class="panel-card wide-card">
+          <h3>Findings {{ statutory_badge('CPA §212', 'Evidence and findings must be recorded with an auditable chain of reasoning.') }}</h3>
+          <div class="stack-list" id="detectiveFindingsList">
+            <div class="empty-state">Loading findings…</div>
+          </div>
+        </div>
+
+        <div class="panel-card wide-card">
+          <h3>Notes &amp; Evidence Annotations</h3>
+          <p class="field-hint">Standalone notes, or notes attached to a specific evidence item, kept separate from the working summary above.</p>
+          <div class="stack-list" id="detectiveNoteEntriesList">
+            <div class="empty-state">Start the investigation to add notes.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stack-row" style="margin-top:18px; justify-content:flex-end;">
+        <button class="secondary-btn" type="button" id="openNoteEntryModal" disabled>Add Note</button>
+        <button class="secondary-btn" type="button" id="openFindingModal" disabled>Add Finding</button>
+        <button class="primary-btn" type="button" id="openCompleteInvestigationModal" disabled>Complete Investigation</button>
+        <button class="primary-btn" type="button" id="startInvestigation">Start Investigation</button>
+      </div>
     </div>
   </section>
+
+  <div class="reauth-modal hidden" id="statementModal" aria-hidden="true">
+    <div class="reauth-card">
+      <div class="reauth-header">
+        <span class="lock-icon">🗣️</span>
+        <span>Add Victim Statement</span>
+      </div>
+      <p class="reauth-subtitle">Record an additional statement taken from the victim or a witness during the investigation.</p>
+
+      <label class="input-label">Statement</label>
+      <textarea rows="5" placeholder="Record the statement..." id="statementText"></textarea>
+      <p class="inline-error hidden" id="statementModalError"></p>
+
+      <div class="modal-actions">
+        <button type="button" class="secondary-btn" id="closeStatementModal">Cancel</button>
+        <button type="button" class="primary-btn" id="submitStatementModal">Save Statement</button>
+      </div>
+    </div>
+  </div>
 
   <div class="reauth-modal hidden" id="findingModal" aria-hidden="true">
     <div class="reauth-card">
@@ -111,6 +152,55 @@
       <div class="modal-actions">
         <button type="button" class="secondary-btn" id="closeFindingModal">Cancel</button>
         <button type="button" class="primary-btn" id="submitFindingModal">Save Finding</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="reauth-modal hidden" id="completeInvestigationModal" aria-hidden="true">
+    <div class="reauth-card">
+      <div class="reauth-header">
+        <span class="lock-icon">🔒</span>
+        <span>Complete Investigation</span>
+      </div>
+      <p class="reauth-subtitle">This records the final statutory outcome and closes the investigation to further findings.</p>
+
+      <label class="input-label">Outcome</label>
+      <select class="field-select" id="completeInvestigationOutcome">
+        <option value="VALID">Valid</option>
+        <option value="INVALID">Invalid</option>
+        <option value="GUILTY">Guilty</option>
+        <option value="NOT_GUILTY">Not Guilty</option>
+      </select>
+
+      <label class="input-label" style="margin-top:12px; display:block;">Final Reasoning</label>
+      <textarea rows="4" placeholder="Summarize the reasoning behind the final outcome..." id="completeInvestigationNotes"></textarea>
+      <p class="inline-error hidden" id="completeInvestigationModalError"></p>
+
+      <div class="modal-actions">
+        <button type="button" class="secondary-btn" id="closeCompleteInvestigationModal">Cancel</button>
+        <button type="button" class="primary-btn" id="submitCompleteInvestigationModal">Complete Investigation</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="reauth-modal hidden" id="noteEntryModal" aria-hidden="true">
+    <div class="reauth-card">
+      <div class="reauth-header">
+        <span class="lock-icon">📝</span>
+        <span>Add Note</span>
+      </div>
+      <p class="reauth-subtitle">Optionally attach this note to a specific evidence item, or leave it as a general investigation note.</p>
+
+      <label class="input-label">Evidence Item</label>
+      <select class="field-select" id="noteEntryEvidence"></select>
+
+      <label class="input-label" style="margin-top:12px; display:block;">Note</label>
+      <textarea rows="4" placeholder="Add a note..." id="noteEntryText"></textarea>
+      <p class="inline-error hidden" id="noteEntryModalError"></p>
+
+      <div class="modal-actions">
+        <button type="button" class="secondary-btn" id="closeNoteEntryModal">Cancel</button>
+        <button type="button" class="primary-btn" id="submitNoteEntryModal">Save Note</button>
       </div>
     </div>
   </div>

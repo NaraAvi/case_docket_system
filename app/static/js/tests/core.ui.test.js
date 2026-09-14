@@ -37,6 +37,7 @@ describe('core/ui.js', () => {
       ['FROZEN', 'badge badge-warning'],
       ['AWAITING_CONSTABLE_REGISTRATION', 'badge badge-warning'],
       ['PENDING_REVIEW', 'badge badge-warning'],
+      ['BREACHED', 'badge badge-breach'],
       ['DRAFT', 'badge badge-muted'],
       [undefined, 'badge badge-muted'],
       [null, 'badge badge-muted'],
@@ -164,6 +165,23 @@ describe('core/ui.js', () => {
       await vi.waitFor(() => expect(onConfirm).toHaveBeenCalledWith('Insufficient statutory grounds.'));
       await vi.waitFor(() => expect(document.getElementById('reauthModal').classList.contains('hidden')).toBe(true));
     });
+
+    it('shows a toast (in addition to the inline error) when onConfirm rejects', async () => {
+      document.body.innerHTML = `${reauthMarkup()}<div id="toastContainer"></div>`;
+      bindReauthModal();
+      const onConfirm = vi.fn().mockRejectedValue(new Error('Escalation already resolved.'));
+      configureReauthModal({ targetValue: 'ESC-1', actionLabel: 'Uphold Escalation', onConfirm });
+
+      document.getElementById('trigger').click();
+      document.querySelector('[data-reauth-reason]').value = 'Corroborated allegation.';
+      document.querySelector('[data-reauth-confirm]').click();
+
+      await vi.waitFor(() => expect(document.querySelector('[data-reauth-error]').textContent).toBe('Escalation already resolved.'));
+      expect(document.getElementById('reauthModal').classList.contains('hidden')).toBe(false);
+      const toast = document.querySelector('.toast-error');
+      expect(toast).not.toBeNull();
+      expect(toast.textContent).toBe('Escalation already resolved.');
+    });
   });
 
   describe('renderDocketCardList (integration: render + navigate)', () => {
@@ -183,6 +201,17 @@ describe('core/ui.js', () => {
       const container = document.createElement('div');
       renderDocketCardList(container, [], { emptyMessage: 'Nothing here.' });
       expect(container.textContent).toContain('Nothing here.');
+    });
+
+    it('shows a FROZEN badge only for items carrying is_frozen', () => {
+      const container = document.createElement('div');
+      renderDocketCardList(container, [
+        { case_reference: 'CD-1', location: 'Main St', status: 'REGISTERED', is_frozen: true },
+        { case_reference: 'CD-2', location: 'Elm St', status: 'REGISTERED', is_frozen: false },
+      ]);
+      const cards = container.querySelectorAll('.docket-card');
+      expect(cards[0].textContent).toContain('FROZEN');
+      expect(cards[1].textContent).not.toContain('FROZEN');
     });
   });
 

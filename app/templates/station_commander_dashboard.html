@@ -21,5 +21,10 @@
         <p>Reassignment requires a specific case. Open a docket from the list above, then use its <strong>Reassignment</strong> panel to select a target officer and confirm.</p>
       </div>
     </div>
+
+    <div class="panel-card wide-card">
+      <h3>SLA Breaches</h3>
+      {{ docket_list_skeleton('stationCommanderSlaBreachList', 'stack-list', 'Loading SLA breach summary…') }}
+    </div>
   </div>
 {% endblock %}

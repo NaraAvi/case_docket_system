@@ -169,7 +169,7 @@ def get_citizen_docket(case_reference):
         return jsonify({"error": "Forbidden."}), 403
 
     citizen_id = get_jwt_identity()
-    docket = get_citizen_docket_service().get_docket(citizen_id, case_reference)
+    docket = get_citizen_docket_service().get_docket_with_freeze_status(citizen_id, case_reference)
     if docket is None:
         return jsonify({"error": "Docket not found."}), 404
     return jsonify(docket)
@@ -366,6 +366,16 @@ def list_ipid_escalations():
     return jsonify(escalations)
 
 
+@api_v1_bp.get("/ipid/custody-cases")
+@jwt_required()
+def list_ipid_custody_cases():
+    claims = get_jwt()
+    if claims.get("role") != "ipid":
+        return jsonify({"error": "Forbidden."}), 403
+
+    return jsonify(get_ipid_service().list_custody_cases())
+
+
 @api_v1_bp.get("/ipid/escalations/<escalation_id>")
 @jwt_required()
 def get_ipid_escalation_detail(escalation_id):
@@ -393,6 +403,23 @@ def review_ipid_escalation(escalation_id):
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400 if "status" in str(exc).lower() or "already" in str(exc).lower() else 404
     return jsonify(review)
+
+
+@api_v1_bp.post("/ipid/escalations/<escalation_id>/take-custody")
+@jwt_required()
+def take_custody_ipid_escalation(escalation_id):
+    claims = get_jwt()
+    if claims.get("role") != "ipid":
+        return jsonify({"error": "Forbidden."}), 403
+
+    actor_id = get_jwt_identity()
+    payload = request.get_json(silent=True) or {}
+    try:
+        freeze = get_ipid_service().take_custody(escalation_id, actor_id, "ipid", reason=payload.get("reason"))
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+    return jsonify(freeze)
 
 
 @api_v1_bp.post("/ipid/escalations/<escalation_id>/dismiss")
@@ -449,6 +476,23 @@ def reassign_ipid_case_officer(case_reference):
         status = 404 if "not found" in str(exc).lower() else 400
         return jsonify({"error": str(exc)}), status
     return jsonify(assignment)
+
+
+@api_v1_bp.post("/ipid/dockets/<case_reference>/statements")
+@jwt_required()
+def create_ipid_statement(case_reference):
+    claims = get_jwt()
+    if claims.get("role") != "ipid":
+        return jsonify({"error": "Forbidden."}), 403
+
+    actor_id = get_jwt_identity()
+    payload = request.get_json(silent=True) or {}
+    try:
+        statement = get_ipid_service().add_case_statement(case_reference, actor_id, payload)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+    return jsonify(statement), 201
 
 
 @api_v1_bp.get("/ipid/disciplinary-cases")
@@ -583,7 +627,7 @@ def get_station_commander_docket(case_reference):
     if claims.get("role") != "station_commander":
         return jsonify({"error": "Forbidden."}), 403
 
-    docket = get_station_commander_service().get_docket(case_reference)
+    docket = get_station_commander_service().get_docket_detail(case_reference)
     if docket is None:
         return jsonify({"error": "Docket not found."}), 404
     return jsonify(docket)
@@ -914,6 +958,23 @@ def get_detective_docket(case_reference):
     return jsonify(docket)
 
 
+@api_v1_bp.post("/detective/dockets/<case_reference>/statements")
+@jwt_required()
+def create_detective_statement(case_reference):
+    claims = get_jwt()
+    if claims.get("role") != "detective":
+        return jsonify({"error": "Forbidden."}), 403
+
+    detective_id = get_jwt_identity()
+    payload = request.get_json(silent=True) or {}
+    try:
+        statement = get_investigation_service().add_statement(case_reference, detective_id, payload)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+    return jsonify(statement), 201
+
+
 @api_v1_bp.post("/detective/dockets/<case_reference>/investigation")
 @jwt_required()
 def create_detective_investigation(case_reference):
@@ -1059,6 +1120,39 @@ def list_detective_findings(investigation_id):
         status = 404 if "not found" in str(exc).lower() else 400
         return jsonify({"error": str(exc)}), status
     return jsonify(findings)
+
+
+@api_v1_bp.post("/detective/investigations/<investigation_id>/note-entries")
+@jwt_required()
+def create_detective_note_entry(investigation_id):
+    claims = get_jwt()
+    if claims.get("role") != "detective":
+        return jsonify({"error": "Forbidden."}), 403
+
+    detective_id = get_jwt_identity()
+    payload = request.get_json(silent=True) or {}
+    try:
+        note = get_investigation_service().add_note(investigation_id, detective_id, payload)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+    return jsonify(note), 201
+
+
+@api_v1_bp.get("/detective/investigations/<investigation_id>/note-entries")
+@jwt_required()
+def list_detective_note_entries(investigation_id):
+    claims = get_jwt()
+    if claims.get("role") != "detective":
+        return jsonify({"error": "Forbidden."}), 403
+
+    detective_id = get_jwt_identity()
+    try:
+        notes = get_investigation_service().list_notes(investigation_id, detective_id)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+    return jsonify(notes)
 
 
 @api_v1_bp.post("/detective/investigations/<investigation_id>/complete")

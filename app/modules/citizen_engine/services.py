@@ -63,11 +63,12 @@ class CitizenAuthenticationService:
 class CitizenDocketService:
     """Boundary for citizen-facing submission and status flows."""
 
-    def __init__(self, docket_manager=None, audit_service=None, escalation_service=None):
+    def __init__(self, docket_manager=None, audit_service=None, escalation_service=None, freeze_service=None):
         self._submissions = []
         self.docket_manager = docket_manager or DocketManagementService()
         self.audit_service = audit_service or AuditTrailService()
         self.escalation_service = escalation_service or EscalationService(audit_service=self.audit_service)
+        self.freeze_service = freeze_service
 
     @staticmethod
     def _utc_timestamp():
@@ -123,6 +124,24 @@ class CitizenDocketService:
 
     def get_docket(self, citizen_id, case_reference):
         return self.docket_manager.get_docket_for_citizen(citizen_id, case_reference)
+
+    def get_docket_with_freeze_status(self, citizen_id, case_reference):
+        """Read-only enrichment for the citizen docket-detail endpoint --
+        a citizen can't mutate a frozen docket anyway (post-registration
+        edits are already blocked by `_assert_draft`/`_assert_evidence_editable`),
+        but they should still be able to see that IPID has taken custody of
+        it. Deliberately separate from `get_docket`/`_get_case`, which every
+        mutation method reuses, so this display-only field never has to flow
+        through a write path."""
+        docket = self.get_docket(citizen_id, case_reference)
+        if docket is None or self.freeze_service is None:
+            return docket
+        docket = dict(docket)
+        freeze = self.freeze_service.get_current_freeze(case_reference)
+        docket["is_frozen"] = freeze is not None
+        docket["freeze_status"] = "FROZEN" if freeze else "NOT_FROZEN"
+        docket["freeze_reason"] = freeze.get("reason") if freeze else None
+        return docket
 
     def list_statements(self, citizen_id, case_reference):
         case = self._get_case(citizen_id, case_reference)
@@ -284,6 +303,9 @@ class CitizenDocketService:
                     "category": item.get("category"),
                     "description": item.get("description"),
                     "status": item.get("status"),
+                    "decision": item.get("decision"),
+                    "decision_reason": item.get("decision_reason"),
+                    "decision_at": item.get("decision_at"),
                     "created_at": item.get("created_at"),
                     "updated_at": item.get("updated_at"),
                 }

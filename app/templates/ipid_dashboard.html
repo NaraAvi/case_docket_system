@@ -22,5 +22,16 @@
         <p>Dismiss and Uphold decisions require a mandatory statutory rationale and are made from within a specific escalation's review workspace. Select an escalation above to proceed.</p>
       </div>
     </div>
+
+    <div class="panel-card wide-card">
+      <h3>Cases in Custody</h3>
+      <p class="field-hint">Dockets frozen from other officers while IPID reviews them. Open one to continue working the case.</p>
+      {{ docket_list_skeleton('ipidCustodyCasesList', 'stack-list', 'Loading cases in custody…') }}
+    </div>
+
+    <div class="panel-card wide-card">
+      <h3>Disciplinary Cases</h3>
+      {{ docket_list_skeleton('ipidDisciplinaryCasesList', 'stack-list', 'Loading disciplinary cases…') }}
+    </div>
   </div>
 {% endblock %}

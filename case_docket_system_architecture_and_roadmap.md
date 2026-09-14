@@ -574,6 +574,261 @@ cross-reference sweep after any future milestone before calling it done.
 Full suite green after all of the above: **212 tests total** — pytest: 105
 passed, 1 skipped; Vitest: 106 passed.
 
+**9. All seven open GitHub issues (#2–#8) closed, plus an app-wide toast-feedback audit.**
+Requested directly by the repo owner: fix every open issue, and specifically
+check that mutating actions — escalations and docket registration above
+all — give the user real feedback on success and failure. What shipped:
+
+- **#8 — constable-side related-case creation.** The Related Cases panel
+  (`constable_docket_review.html`) was read-only; added an inline
+  target-reference + notes form wired to the existing
+  `POST .../dockets/<ref>/related` endpoint (`constable.js::bindRelatedCaseForm`).
+- **#7 — citizen visibility into their own escalations.**
+  `CitizenDocketService.list_escalations()` returned a hand-built dict that
+  silently dropped `decision`/`decision_reason`/`decision_at` — a citizen
+  could escalate but never learn the outcome. Added those three fields, plus
+  a new "My Escalations" panel on `citizen_docket_detail.html`.
+- **#6 — station commander SLA-breach view.** New "SLA Breaches" panel on
+  `station_commander_dashboard.html`, backed by the already-working
+  `GET .../sla/breaches` endpoint; `buildStatusBadge()` in `core/ui.js` now
+  recognizes `BREACHED` (there was already an unused `.badge-breach` CSS
+  class waiting for exactly this).
+- **#5 — IPID disciplinary case view.** New "Disciplinary Cases" list panel
+  on `ipid_dashboard.html` plus a new read-only detail page/route
+  (`/ipid/disciplinary-cases/<id>`), both backed by the already-working
+  `GET /ipid/disciplinary-cases[/<id>]` endpoints that nothing in the UI
+  had ever called.
+- **#4 — detective "Complete Investigation" UI.** New modal
+  (`#completeInvestigationModal`, mirrors the existing Add Finding modal)
+  posting `{outcome, final_notes}` to the already-working
+  `POST .../investigations/<id>/complete` endpoint.
+- **#3 — IPID "take custody" of a docket under review.** Opening a review
+  never froze the docket, so other officers could keep mutating a case
+  IPID was actively reviewing (the "vanishes from the queue" half of this
+  issue was already fixed — see item 7 above). Added
+  `IPIDReviewService.take_custody()` / `POST .../escalations/<id>/take-custody`
+  and a "Take Custody & Freeze Docket" button next to Dismiss/Uphold on
+  `ipid_escalation_detail.html`, using the same reauth-modal pattern.
+  > **Note on an approach that was tried and reverted:** the first attempt
+  > wired freezing automatically into `start_review()` (open-for-review =
+  > auto-freeze). That broke `test_uphold_creates_a_disciplinary_case...`
+  > and its own live equivalent: `AssignmentService.create_replacement_assignment()`
+  > hard-blocks *any* reassignment on a frozen case, including a station
+  > commander assigning who's accountable for the escalation, which
+  > realistically has to happen *during* the review window, not before it.
+  > Freezing is therefore an explicit IPID action, not an automatic
+  > side-effect of opening a review.
+- **#2 — multiple investigation notes, evidence-linked, plus citizen
+  visibility into "investigation opened".** Scoped down from the issue's
+  broader ask to what's concretely useful: a new `investigation_notes`
+  table (`InvestigationNote` model, `InvestigationNoteRepository`) supports
+  many notes per investigation, each optionally tied to one evidence item
+  (`evidence_reference`, validated against the case's own evidence list) —
+  additive to, not a replacement for, the existing single-field working
+  `notes` textarea. New `POST`/`GET .../investigations/<id>/note-entries`
+  routes; a "Notes & Evidence Annotations" panel on
+  `detective_case_workspace.html`. Separately, `InvestigationService.create_investigation()`
+  now appends an `investigation_opened` entry to the *case's own* timeline
+  (previously only logged to the investigation's internal timeline and the
+  audit log under a different action name, `investigation_created`) — so it
+  now surfaces automatically via the citizen's existing
+  `GET .../dockets/<ref>/timeline` endpoint with no new route needed.
+  > **New table, no migration needed:** `investigation_notes` is a brand
+  > new table, so `db.create_all()` (called at every app startup) creates
+  > it against the existing dev SQLite file with no `ALTER TABLE` required.
+  > This only works because it's a *new table* — adding a column to an
+  > existing table (e.g. `investigation_findings`) would need a real Alembic
+  > migration, since `create_all()` never alters tables that already exist.
+- **App-wide toast-feedback audit.** Every citizen/constable/detective/
+  station-commander mutating action already showed a toast on both success
+  and failure — not a bug. The real gaps, all on the IPID side:
+  `configureReauthModal()`'s (`core/ui.js`) error handler only ever wrote
+  the modal's own inline `data-reauth-error` text, never a toast — so
+  Dismiss/Uphold/Take-Custody failures were easy to miss if the modal
+  wasn't being watched closely. Fixed once, generically, in the shared
+  handler, so it covers all three actions (and any future reauth-gated
+  action) rather than patching each module separately. Also added a toast
+  to `ipid.js`'s auto `OPEN → UNDER_REVIEW` transition (previously silent
+  either way) and to the constable/detective Related Cases fetch-failure
+  paths (previously inline-only, unlike every other fetch failure in the
+  app).
+- **Two more real bugs found via the mandatory manual walkthrough** (not
+  bug reports — see the standing rule at the top of this section):
+  1. `InvestigationService._get_investigation_by_case()` (used by
+     `get_docket_for_detective()`) only ever returned an `OPEN`/`IN_PROGRESS`
+     investigation — so the instant a detective completed one via the new
+     #4 UI, the workspace reverted to "no investigation has been started,"
+     hiding the findings/notes/outcome the completion flow exists to
+     preserve. Fixed with a display-only `_get_latest_investigation_by_case()`
+     (falls back to the most recent investigation regardless of status);
+     `_get_investigation_by_case()` itself is untouched and still governs
+     whether a *new* investigation may be opened. The frontend now also
+     explicitly disables Add Finding / Add Note / Save Note / Complete
+     Investigation once `investigation.status === 'COMPLETED'`
+     (`detective.js`'s `mutableInvestigationId`), since simply surfacing the
+     completed investigation would otherwise re-enable controls the backend
+     correctly rejects.
+  2. `IPIDReviewService.uphold_escalation()` resolved the escalation
+     (`status → RESOLVED`, `decision → UPHELD`) and froze the docket
+     *before* checking whether an officer was actually assigned to revoke.
+     A case with an escalation but no active assignment (a realistic
+     scenario — assignment can happen after review starts, see the #3 note
+     above) hit the "no active officer assignment" `ValueError` *after*
+     both of those mutations had already committed, leaving the docket
+     permanently frozen and the escalation permanently
+     RESOLVED/UPHELD-with-no-disciplinary-case — and no recovery path,
+     since Dismiss requires `UNDER_REVIEW` and a second Uphold requires
+     not-already-resolved. Found live in the browser, reproduced in
+     `test_uphold_without_an_assigned_officer_fails_cleanly_without_resolving_or_freezing`.
+     Fixed by moving every validation check (officer assignment, officer
+     identity, freeze-ability) before any mutation.
+  > **Invariant:** any multi-step "decision" method that mutates several
+  > independent pieces of state (escalation status, freeze, officer access,
+  > disciplinary case) must validate *everything* it needs up front and
+  > mutate nothing until every precondition has already passed — there's no
+  > transaction/rollback layer here to undo a partial failure. `dismiss_escalation()`
+  > already followed this shape by luck (its only side effect, unfreezing,
+  > is naturally idempotent-safe); `uphold_escalation()` didn't, and that's
+  > exactly what broke.
+
+Full suite green after all of the above: **235 tests total** — pytest: 112
+passed, 1 skipped; Vitest: 122 passed. All seven GitHub issues closed.
+
+**10. IPID "Cases in Custody" section, plus frozen-docket visibility for every other role.**
+Direct follow-up request after item 9: an IPID reviewer had no dedicated
+place to find every docket they'd taken custody of, and no non-IPID role
+could see that a docket was frozen without triggering the 400 from trying
+to mutate it.
+
+- **Cases in Custody.** `FreezeRepository.list_active()` (new) →
+  `FreezeService.list_active_freezes(source=...)` (new) →
+  `IPIDReviewService.list_custody_cases()` (new) → `GET /ipid/custody-cases`
+  → a new "Cases in Custody" panel on `ipid_dashboard.html`. Every custody
+  freeze is escalation-scoped (both `take_custody()` and
+  `uphold_escalation()` always set `related_escalation_id`), so each entry
+  links to `/ipid/escalations/<escalation_id>` — the existing review
+  workspace — rather than a new page. A freeze from an upheld escalation is
+  deliberately never auto-released, so upheld cases stay listed here
+  alongside ones still mid-review; `escalation_status`/`escalation_decision`
+  in the response let the UI (or a future one) tell the two apart.
+- **"Work on" the case, not just see it.** The review workspace
+  (`ipid_escalation_detail.html` / `ipid.js::hydrateIpidDetail`) already
+  fetched the citizen's statement, evidence, and case timeline as part of
+  `case_context` (`IPIDReviewService._build_case_context`) but never
+  rendered them — only metadata, assignment, review notes/findings, and
+  audit history were shown. Added three panels (Citizen Statement,
+  Evidence, Case Timeline) using the same `renderEvidenceTable`/
+  `renderTimelineList` helpers every other role's detail page already uses,
+  so IPID can actually read what happened before deciding, not just see
+  who's assigned.
+- **Frozen status visible to every non-IPID role.** Previously only
+  `StationCommanderService._attach_current_assignment()` exposed
+  `is_frozen`/`freeze_status`/`freeze_reason`; citizen, constable, and
+  detective docket-detail responses didn't carry them at all. Added the
+  same three fields to `InvestigationService.get_docket_for_detective()`
+  and `ConstableRegistrationService.get_docket()` directly (both already
+  build a fresh dict per call, so no risk to any write path), and a
+  dedicated `CitizenDocketService.get_docket_with_freeze_status()` wrapper
+  for the citizen route specifically — kept separate from `get_docket()`/
+  `_get_case()`, which every citizen mutation method reuses, so a
+  display-only field never has to flow anywhere near `update_case()`. Each
+  of `citizen_docket_detail.html`, `constable_docket_review.html`, and
+  `detective_case_workspace.html` got a hidden-until-frozen "Frozen — under
+  IPID review: `<reason>`" badge next to the existing status badge. The
+  shared docket-card renderer (`core/ui.js::renderDocketCard`, used by the
+  detective dashboard and the shared Active Cases / Evidence Vault pages)
+  now also shows a small `FROZEN` badge per card when `item.is_frozen` is
+  true — that list already carried the field via
+  `StationCommanderService.list_dockets()`, it just wasn't drawn.
+  > **Invariant found while wiring this up:** `GET /constable/dockets/<ref>`
+  > (`ConstableRegistrationService.get_docket`) is only reachable while a
+  > case is `AWAITING_CONSTABLE_REGISTRATION` — pre-existing, documented in
+  > item 2 of this section — and `freeze_case()` requires `REGISTERED`. The
+  > two states never overlap, so a constable can never actually view a
+  > frozen case through their own per-docket route; the field was added
+  > there anyway for consistency with the other three engines, but the
+  > *reachable* surface for constable-visible freeze status is the shared
+  > Active Cases / Evidence Vault list, not that route. Don't write a test
+  > (or build a feature) that assumes a constable can open a REGISTERED
+  > docket's own detail page — they can't, by design.
+
+Full suite green after all of the above: **244 tests total** — pytest: 117
+passed, 1 skipped; Vitest: 127 passed.
+
+**11. "Case Frozen" blocking screen, cross-role victim statements, and constable-assignment access — direct follow-up requests.**
+
+- **Frozen dockets are now blocked, not just flagged, for detective/
+  constable/station commander.** Item 10 gave these three roles a badge
+  alongside full case content while frozen; this request changed that to
+  withholding the content entirely. `InvestigationService.get_docket_for_detective()`,
+  `ConstableRegistrationService.get_docket()`, and a new
+  `StationCommanderService.get_docket_detail()` (kept separate from
+  `get_docket()`, which `force_reassign_docket()` and the audit/assignment
+  sub-routes still need unrestricted, and which the oversight *list*
+  continues to use so a frozen case still shows there with its FROZEN
+  badge) now return a minimal `{case_reference, status, is_frozen,
+  freeze_status, freeze_reason, frozen_at, frozen_by}` payload instead of
+  statements/evidence/timeline/investigation/SLA/assignment detail once
+  frozen. Each of `detective_case_workspace.html`,
+  `constable_docket_review.html`, and `station_commander_docket_detail.html`
+  wraps its real content in a `#xDocketContent` div and adds a sibling
+  `#xFrozenNotice` "🔒 Case Frozen" panel; the JS hydrators check
+  `docket.is_frozen` immediately after the first fetch and, if true, show
+  the notice and `return` before any of the further findings/flags/related/
+  audit/SLA/reassignment fetches that the minimal payload can't support
+  anyway. IPID is deliberately exempt — the review workspace (item 10) is
+  how they're meant to keep working a case they've taken into custody.
+- **Detective and IPID can add victim/witness statements to the case
+  docket, visible everywhere `docket.statements` is already read.** New
+  `InvestigationService.add_statement()` (`POST /detective/dockets/<ref>/statements`,
+  requires REGISTERED + not frozen, same gating as every other detective
+  mutation) and `IPIDReviewService.add_case_statement()`
+  (`POST /ipid/dockets/<ref>/statements`, case-reference-scoped like the
+  pre-existing `reassign_case_officer`) both append to the same
+  `case["statements"]` list the citizen's own statement already lives in,
+  tagged with `recorded_by`/`recorded_by_role` so the UI can distinguish
+  authors. **IPID's add deliberately does not check freeze** — IPID is the
+  actor who freezes a docket via take-custody/uphold and needs to keep
+  recording statements on a case under their own custody, not be locked
+  out of it. A new shared `renderStatementList()` (`core/ui.js`) replaced
+  four separate "show only `statements[statements.length - 1]`"
+  implementations (citizen, constable, detective, IPID) with one list
+  renderer showing every statement; the detective and IPID pages each
+  gained a "Statements" panel with an "Add Victim Statement" modal
+  following the same pattern as every other modal in the app.
+  > **Bug caught by this refactor, not by a report:** the citizen page used
+  > to seed its *own* editable statement textarea from
+  > `statements[statements.length - 1]` — safe when only the citizen could
+  > ever add one, broken the moment a detective's statement could be the
+  > most recent entry (their text would silently appear in the citizen's
+  > "editable" box, and saving it would have overwritten it as if the
+  > citizen had written it). Fixed by filtering to
+  > `!statement.recorded_by_role` (only the citizen's own additions lack
+  > that field) before taking "the latest," independent of what's shown in
+  > the new full-history panel.
+- **Verified, and fixed, the station-commander-assigns-an-unregistered-
+  docket flow end to end.** The backend rule itself
+  (`AssignmentService._assert_assignable_status`) was already correct from
+  a prior session (`AWAITING_CONSTABLE_REGISTRATION` + target role
+  `constable` is assignable) — confirmed via a new pytest that assigns,
+  then has that exact constable complete the interview and register the
+  docket, start to finish. What *wasn't* there: since `REGISTERED` also
+  accepts assignment of **any** officer role (not just constable, e.g. a
+  station commander adding a constable to assist a detective's REGISTERED
+  case), that constable had no way to ever open it — `ConstableRegistrationService.open_docket()`
+  hard-required `AWAITING_CONSTABLE_REGISTRATION` and rejected anything
+  else outright. Fixed by giving `open_docket()` a second path: a
+  `REGISTERED` docket is now also openable by whichever constable is
+  currently the assigned officer for it (checked via the newly-wired
+  `assignment_service`, added to `ConstableRegistrationService`'s
+  constructor and set post-construction in `app/__init__.py`, same pattern
+  as `freeze_service`). The original open-queue behavior (any constable,
+  pre-registration only) is untouched; an unassigned constable still gets
+  rejected from a `REGISTERED` docket.
+
+Full suite green after all of the above: **272 tests total** — pytest: 127
+passed, 1 skipped; Vitest: 133 passed.
+
 ---
 
 ### Milestone 4: Objective South African Regulatory & Decision Engine (ODDE)

@@ -126,6 +126,28 @@ class StationCommanderService:
                 return self._build_operational_summary(dict(case))
         return None
 
+    def get_docket_detail(self, case_reference):
+        """Like `get_docket`, but withholds case content (statements,
+        evidence, timeline, assignment/SLA detail) while the docket is
+        frozen -- a station commander can still see it listed (with a
+        FROZEN badge) via `list_dockets`, but opening it shows only enough
+        to render a "Case Frozen" notice. `get_docket` itself stays
+        unrestricted since `force_reassign_docket` and the audit/assignment
+        sub-routes only need existence, not content, from it."""
+        summary = self.get_docket(case_reference)
+        if summary is None or not summary.get("is_frozen"):
+            return summary
+        freeze = summary.get("current_freeze") or {}
+        return {
+            "case_reference": summary.get("case_reference"),
+            "status": summary.get("status"),
+            "is_frozen": True,
+            "freeze_status": summary.get("freeze_status"),
+            "freeze_reason": summary.get("freeze_reason"),
+            "frozen_at": freeze.get("frozen_at"),
+            "frozen_by": summary.get("frozen_by"),
+        }
+
     def get_case_audit(self, case_reference):
         return self.audit_service.get_for_case(case_reference)
 

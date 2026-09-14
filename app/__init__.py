@@ -93,6 +93,7 @@ def create_app(testing: bool = False, database_uri: str | None = None, upload_st
         evidence_service=evidence_service,
     )
     freeze_service = FreezeService(case_service=case_service, audit_service=audit_service)
+    citizen_docket_service.freeze_service = freeze_service
     investigation_service = InvestigationService(
         case_service=case_service,
         audit_service=audit_service,
@@ -106,6 +107,7 @@ def create_app(testing: bool = False, database_uri: str | None = None, upload_st
         freeze_service=freeze_service,
     )
     constable_registration_service.freeze_service = freeze_service
+    constable_registration_service.assignment_service = assignment_service
     automation_service = AutomationService(
         case_service=case_service,
         assignment_service=assignment_service,

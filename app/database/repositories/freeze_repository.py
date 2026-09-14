@@ -45,3 +45,9 @@ class FreezeRepository(BaseSqlAlchemyRepository):
             return None
         matches.sort(key=lambda item: str(item.get("frozen_at") or ""))
         return matches[-1]
+
+    def list_active(self):
+        instances = self.model.query.filter_by(status="ACTIVE").all()
+        matches = [self._serialize(instance) for instance in instances]
+        matches.sort(key=lambda item: str(item.get("frozen_at") or ""), reverse=True)
+        return matches

@@ -10,6 +10,7 @@
       </div>
       <div class="stack-row">
         <span class="badge badge-warning" id="citizenStatusBadge">Loading…</span>
+        <span class="badge badge-warning hidden" id="citizenFreezeBadge">Frozen</span>
         <button class="secondary-btn" type="button" id="escalateCaseBtn">Escalate Case</button>
       </div>
     </div>
@@ -56,6 +57,10 @@
           <button class="secondary-btn" type="button" id="saveCitizenStatement">Save Statement</button>
         </div>
         <p class="inline-error hidden" id="citizenStatementError"></p>
+        <label class="input-label" style="margin-top:14px; display:block;">Statement History</label>
+        <div class="stack-list" id="citizenStatementsList">
+          <p>Loading statements…</p>
+        </div>
       </div>
 
       <div class="panel-card">
@@ -85,6 +90,13 @@
         </div>
         <p class="field-hint">Every uploaded file is hashed with SHA-256 for chain-of-custody (CPA §212) when it's saved.</p>
         <p class="inline-error hidden" id="citizenEvidenceError"></p>
+      </div>
+
+      <div class="panel-card">
+        <h3>My Escalations</h3>
+        <div class="stack-list" id="citizenEscalationsList">
+          <div class="empty-state">Loading your escalations…</div>
+        </div>
       </div>
     </div>
 

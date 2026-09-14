@@ -40,6 +40,12 @@ class FreezeService:
     def get_freeze_history(self, case_reference):
         return self.repository.get_history_for_case(case_reference)
 
+    def list_active_freezes(self, source=None):
+        freezes = self.repository.list_active()
+        if source is None:
+            return freezes
+        return [freeze for freeze in freezes if freeze.get("source") == source]
+
     def freeze_case(self, case_reference, actor_id, actor_role, reason=None, source=None, related_escalation_id=None):
         case = self._get_case(case_reference)
         if case is None:

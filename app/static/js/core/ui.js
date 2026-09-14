@@ -65,6 +65,9 @@ export function showFlashedToast() {
 
 export function buildStatusBadge(status) {
   const value = (status || 'UNKNOWN').toString().toUpperCase();
+  if (value.includes('BREACHED')) {
+    return 'badge badge-breach';
+  }
   if (value.includes('REGISTERED') || value.includes('VERIFIED') || value.includes('ACTIVE')) {
     return 'badge badge-verified';
   }
@@ -161,6 +164,7 @@ export function configureReauthModal({ targetLabel, targetValue, actionLabel, su
         errorEl.textContent = error.message || 'Action failed.';
         errorEl.classList.remove('hidden');
       }
+      showToast(error.message || 'Action failed.', { type: 'error' });
     }
   };
 }
@@ -207,6 +211,10 @@ export function renderDocketCard(item, { reference, title, linkPrefix, actionLab
   const titleValue = resolveOption(title, item, item.location ?? item.title ?? 'Details unavailable');
   const statusValue = resolveOption(status, item, item.status ?? 'UNKNOWN');
   const link = linkPrefix ? `${linkPrefix}${referenceValue}` : null;
+  // `is_frozen` is only present on payloads that already carry freeze state
+  // (e.g. the shared station-commander docket list); anything else (an
+  // escalation, a disciplinary case, an SLA-breach row) simply omits it.
+  const frozenBadge = item.is_frozen ? '<span class="badge badge-warning">FROZEN</span>' : '';
 
   return `
     <article class="docket-card">
@@ -216,6 +224,7 @@ export function renderDocketCard(item, { reference, title, linkPrefix, actionLab
       </div>
       <div class="stack-row">
         <span class="${buildStatusBadge(statusValue)}">${statusValue}</span>
+        ${frozenBadge}
         ${link ? `<button class="secondary-btn small-btn" type="button" data-case-link="${link}">${actionLabel}</button>` : ''}
       </div>
     </article>
@@ -236,6 +245,38 @@ export function renderDocketCardList(container, items, options = {}) {
   }
   container.innerHTML = items.map((item) => renderDocketCard(item, options)).join('');
   bindCaseLinks(container);
+}
+
+/**
+ * Render every statement recorded on a docket -- the citizen's own plus any
+ * added by a detective or IPID reviewer -- as a list, newest first isn't
+ * assumed; items render in the order the API returns them. Shared by every
+ * role's docket detail view so a statement recorded by one role is visible
+ * to every other role handling the case.
+ */
+export function renderStatementList(container, statements) {
+  if (!container) {
+    return;
+  }
+  const items = Array.isArray(statements) ? statements : [];
+  if (!items.length) {
+    container.innerHTML = '<div class="empty-state">No statements have been recorded yet.</div>';
+    return;
+  }
+  container.innerHTML = items
+    .map((statement) => {
+      const recordedBy = statement.recorded_by_role ? `${statement.recorded_by_role} (${statement.recorded_by})` : 'Citizen';
+      return `
+        <article class="mini-case-card">
+          <div class="stack-row" style="justify-content:space-between;">
+            <strong>${recordedBy}</strong>
+            <span>${statement.created_at || ''}</span>
+          </div>
+          <p>${statement.statement_text}</p>
+        </article>
+      `;
+    })
+    .join('');
 }
 
 /**

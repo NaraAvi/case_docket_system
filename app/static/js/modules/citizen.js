@@ -3,7 +3,7 @@
  */
 
 import { fetchJson, postForm } from '../core/api.js';
-import { bindCaseLinks, bindFilePreview, bindMediaViewButtons, buildStatusBadge, flashToast, renderEvidenceTable, renderMediaViewButton, setEmptyState, showToast } from '../core/ui.js';
+import { bindCaseLinks, bindFilePreview, bindMediaViewButtons, buildStatusBadge, flashToast, renderEvidenceTable, renderMediaViewButton, renderStatementList, setEmptyState, showToast } from '../core/ui.js';
 
 export function getCitizenCaseReference() {
   const match = window.location.pathname.match(/^\/citizen\/dockets\/(?!new(?:\/)?$)([^/]+)/);
@@ -271,6 +271,40 @@ function bindCitizenEscalation(caseReference) {
   });
 }
 
+async function refreshCitizenEscalations(caseReference) {
+  const container = document.getElementById('citizenEscalationsList');
+  if (!container) {
+    return;
+  }
+  try {
+    const escalations = await fetchJson(`/api/v1/citizen/dockets/${caseReference}/escalations`);
+    if (!escalations.length) {
+      setEmptyState(container, 'You have not escalated this docket.');
+      return;
+    }
+    container.innerHTML = escalations
+      .map((item) => {
+        const resolved = (item.status || '').toUpperCase() === 'RESOLVED';
+        const decisionLine = resolved
+          ? `<p><strong>${item.decision || 'RESOLVED'}</strong>${item.decision_reason ? ` — ${item.decision_reason}` : ''}</p>`
+          : '<p>Awaiting IPID review.</p>';
+        return `
+          <article class="mini-case-card">
+            <div class="stack-row" style="justify-content:space-between;">
+              <strong>${item.category}</strong>
+              <span class="${buildStatusBadge(item.status)}">${item.status || 'OPEN'}</span>
+            </div>
+            <p>${item.description}</p>
+            ${decisionLine}
+          </article>
+        `;
+      })
+      .join('');
+  } catch (error) {
+    setEmptyState(container, error.message || 'Unable to load your escalations.');
+  }
+}
+
 export async function hydrateCitizenDetail() {
   const caseReference = getCitizenCaseReference();
   if (!caseReference) {
@@ -279,6 +313,7 @@ export async function hydrateCitizenDetail() {
   const meta = document.getElementById('citizenCaseMeta');
   const timeline = document.getElementById('citizenCaseTimeline');
   const statusBadge = document.getElementById('citizenStatusBadge');
+  const freezeBadge = document.getElementById('citizenFreezeBadge');
   const evidenceBody = document.getElementById('citizenCaseEvidence');
   if (!meta && !timeline) {
     return;
@@ -298,6 +333,14 @@ export async function hydrateCitizenDetail() {
       statusBadge.className = buildStatusBadge(docket.status);
       statusBadge.textContent = docket.status || 'DRAFT';
     }
+    if (freezeBadge) {
+      if (docket.is_frozen) {
+        freezeBadge.textContent = `Frozen — under IPID review${docket.freeze_reason ? `: ${docket.freeze_reason}` : ''}`;
+        freezeBadge.classList.remove('hidden');
+      } else {
+        freezeBadge.classList.add('hidden');
+      }
+    }
     if (timeline) {
       const items = Array.isArray(docket.timeline) && docket.timeline.length ? docket.timeline : [{ event_type: 'docket_recorded', timestamp: 'Pending', details: {} }];
       timeline.innerHTML = items
@@ -306,6 +349,12 @@ export async function hydrateCitizenDetail() {
     }
 
     const statements = Array.isArray(docket.statements) ? docket.statements : [];
+    // Once a detective or IPID reviewer can also add statements (post-
+    // registration), the *last* array item is no longer necessarily the
+    // citizen's own -- find their own latest self-authored one specifically
+    // for the editable textarea below; the full mixed-author list still
+    // renders in the read-only history panel.
+    const ownStatements = statements.filter((statement) => !statement.recorded_by_role);
     const isDraft = (docket.status || 'DRAFT') === 'DRAFT';
     const statementTextarea = document.getElementById('citizenStatementText');
     const statementSaveButton = document.getElementById('saveCitizenStatement');
@@ -313,8 +362,9 @@ export async function hydrateCitizenDetail() {
       statementTextarea.disabled = true;
       if (statementSaveButton) statementSaveButton.disabled = true;
     }
-    bindCitizenStatement(caseReference, statements[statements.length - 1]);
-    updateSubmitAvailability(statements.length > 0 && isDraft);
+    bindCitizenStatement(caseReference, ownStatements[ownStatements.length - 1]);
+    updateSubmitAvailability(ownStatements.length > 0 && isDraft);
+    renderStatementList(document.getElementById('citizenStatementsList'), statements);
     const submitButton = document.getElementById('submitCitizenDocketForReview');
     if (submitButton && !isDraft) {
       submitButton.disabled = true;
@@ -332,6 +382,7 @@ export async function hydrateCitizenDetail() {
     }
 
     bindCitizenEscalation(caseReference);
+    await refreshCitizenEscalations(caseReference);
   } catch (error) {
     if (meta) {
       meta.innerHTML = `<dt>Status</dt><dd>Unavailable</dd><dt>Details</dt><dd>${error.message}</dd>`;
