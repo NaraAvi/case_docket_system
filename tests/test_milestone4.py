@@ -359,3 +359,23 @@ class TestRegulatoryAndDecisionEndpoints:
         bad = client.post("/api/v1/decision/misconduct-tier", json={"infraction_type": "BOGUS"}, headers=ipid)
         assert bad.status_code == 400
         assert client.post("/api/v1/decision/misconduct-tier", json={}, headers=login(client, "constable")).status_code == 403
+
+
+class TestIpidUiSupport:
+    def test_review_workspace_exposes_statutory_source_and_suspended_officer(self, client):
+        case_reference = registered_case(client)
+        assign(client, case_reference)
+        escalate(client, case_reference, "The detective demanded a bribe to speed up the case.")
+        ipid = login(client, "ipid")
+        escalation_id = ipid_escalations(client)[0]["escalation_id"]
+        workspace = client.get(f"/api/v1/ipid/escalations/{escalation_id}/review-workspace", headers=ipid).get_json()
+        assert workspace["source"] == "IPID_STATUTORY_MANDATE"
+        assert workspace["rule_code"] == "IPID.S28.CORRUPTION"
+        assert workspace["statutory_basis"].startswith("IPID Act 1 of 2011")
+
+    def test_disciplinary_detail_template_has_determination_and_close_panel(self):
+        from pathlib import Path
+
+        source = (Path(__file__).resolve().parent.parent / "app" / "templates" / "ipid_disciplinary_case_detail.html").read_text()
+        for element_id in ("disciplinaryDeterminationMeta", "disciplinaryClosePanel", "disciplinaryCloseForm", "disciplinaryJustification"):
+            assert element_id in source

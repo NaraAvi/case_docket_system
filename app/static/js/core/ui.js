@@ -206,7 +206,7 @@ function resolveOption(value, item, fallback) {
   return value ?? fallback;
 }
 
-export function renderDocketCard(item, { reference, title, linkPrefix, actionLabel = 'Open', status } = {}) {
+export function renderDocketCard(item, { reference, title, linkPrefix, actionLabel = 'Open', status, badges } = {}) {
   const referenceValue = resolveOption(reference, item, item.case_reference ?? item.escalation_id ?? '');
   const titleValue = resolveOption(title, item, item.location ?? item.title ?? 'Details unavailable');
   const statusValue = resolveOption(status, item, item.status ?? 'UNKNOWN');
@@ -215,6 +215,11 @@ export function renderDocketCard(item, { reference, title, linkPrefix, actionLab
   // (e.g. the shared station-commander docket list); anything else (an
   // escalation, a disciplinary case, an SLA-breach row) simply omits it.
   const frozenBadge = item.is_frozen ? '<span class="badge badge-warning">FROZEN</span>' : '';
+  // Optional extra badges (e.g. the statutory-mandate marker); each entry is
+  // `{ label, className?, title? }`, supplied per item by the caller.
+  const extraBadges = (resolveOption(badges, item, []) || [])
+    .map((badge) => `<span class="badge ${badge.className || 'badge-statute'}"${badge.title ? ` title="${badge.title}"` : ''}>${badge.label}</span>`)
+    .join('');
 
   return `
     <article class="docket-card">
@@ -225,6 +230,7 @@ export function renderDocketCard(item, { reference, title, linkPrefix, actionLab
       <div class="stack-row">
         <span class="${buildStatusBadge(statusValue)}">${statusValue}</span>
         ${frozenBadge}
+        ${extraBadges}
         ${link ? `<button class="secondary-btn small-btn" type="button" data-case-link="${link}">${actionLabel}</button>` : ''}
       </div>
     </article>

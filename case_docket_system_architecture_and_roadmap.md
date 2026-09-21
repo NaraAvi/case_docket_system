@@ -866,6 +866,8 @@ investigation are rejected on a conflict (complainant is officer, implicated
 officer, open disciplinary case, prior complaint, declared conflict). Officers
 can declare conflicts (`/conflicts/declarations`).
 
+**UI:** IPID queue/custody cards show a STATUTORY §28 badge, disciplinary cards show the tier, the escalation review shows referral basis and the suspended officer, and the disciplinary case page shows the automated determination with a close-case form (justification enforced on deviation). These Vitest additions were written but could not be executed in the authoring environment.
+
 **API additions:** `/regulatory/*`, `/decision/*`, `/conflicts/*`.
 
 **Migration:** `flask db upgrade` is required on existing databases

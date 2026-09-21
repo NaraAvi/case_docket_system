@@ -142,6 +142,68 @@ describe('modules/ipid.js (integration)', () => {
     expect(document.getElementById('disciplinaryCaseReasonBox').textContent).toContain('Corroborated bribery allegation.');
   });
 
+  it('hydrateIpidDashboard marks statutory-mandate escalations with a badge', async () => {
+    document.body.innerHTML = '<div id="ipidQueueList"></div>';
+    setLocation('/ipid');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve([
+            { escalation_id: 'ESC-1', case_reference: 'CD-1', status: 'OPEN', source: 'IPID_STATUTORY_MANDATE', statutory_basis: 'IPID Act 1 of 2011, section 28(1)(g)' },
+            { escalation_id: 'ESC-2', case_reference: 'CD-2', status: 'OPEN', source: 'MANUAL' },
+          ]),
+      })
+    );
+
+    await hydrateIpidDashboard();
+
+    const badges = document.querySelectorAll('#ipidQueueList .badge-statute');
+    expect(badges).toHaveLength(1);
+    expect(badges[0].textContent).toContain('STATUTORY');
+  });
+
+  it('hydrateDisciplinaryCaseDetail renders the tier, mandatory sanction and close panel', async () => {
+    document.body.innerHTML = `
+      <dl id="disciplinaryCaseMeta"></dl>
+      <dl id="disciplinaryCaseReasonMeta"></dl>
+      <div id="disciplinaryCaseReasonBox"></div>
+      <span id="disciplinaryCaseStatusBadge"></span>
+      <dl id="disciplinaryDeterminationMeta"></dl>
+      <div id="disciplinaryClosePanel" hidden>
+        <form id="disciplinaryCloseForm">
+          <select id="disciplinaryFinalSanction"><option value="WARNING">W</option><option value="DISMISSAL">D</option></select>
+          <textarea id="disciplinaryJustification"></textarea>
+        </form>
+      </div>
+    `;
+    setLocation('/ipid/disciplinary-cases/DIC-000001');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            disciplinary_case_id: 'DIC-000001',
+            source_case_reference: 'CD-1',
+            status: 'OPEN',
+            misconduct_tier: 3,
+            infraction_type: 'CORRUPTION',
+            mandatory_sanction: 'DISMISSAL',
+          }),
+      })
+    );
+
+    await hydrateDisciplinaryCaseDetail();
+
+    const determination = document.getElementById('disciplinaryDeterminationMeta').textContent;
+    expect(determination).toContain('Tier 3');
+    expect(determination).toContain('DISMISSAL');
+    expect(document.getElementById('disciplinaryClosePanel').hidden).toBe(false);
+    expect(document.getElementById('disciplinaryFinalSanction').value).toBe('DISMISSAL');
+  });
+
   it('hydrateIpidDetail renders escalation meta, statement/evidence/timeline, review notes, findings, and audit history from the review workspace', async () => {
     document.body.innerHTML = `
       <dl id="ipidEscalationMeta"></dl>
