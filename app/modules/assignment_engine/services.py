@@ -28,6 +28,9 @@ class AssignmentService:
         self.identity_registry = identity_registry or TestIdentityRegistry()
         self.audit_service = audit_service or AuditTrailService()
         self.freeze_service = freeze_service or FreezeService(case_service=self.case_service, audit_service=self.audit_service)
+        # M4.4: wired after construction (the conflict service itself reads
+        # assignment history, so it cannot be a constructor dependency).
+        self.conflict_service = None
 
     @staticmethod
     def _utc_now():
@@ -68,8 +71,93 @@ class AssignmentService:
             "Assignment requires a registered case, or a constable assignment to a docket still awaiting constable registration."
         )
 
+    def _assert_no_conflict(self, case_reference, officer_id, actor_id=None, actor_role=None):
+        """Separation of duties / conflict of interest (PAJA s3): refuse to
+        make an assignment the decision engine has found conflicted."""
+        if self.conflict_service is not None:
+            self.conflict_service.assert_no_conflict(
+                case_reference,
+                officer_id,
+                operation="assignment",
+                actor_id=actor_id,
+                actor_role=actor_role,
+            )
+
     def get_current_assignment_for_case(self, case_reference):
         return self.repository.get_current_assignment_for_case(case_reference)
+
+    def get_suspended_assignments_for_case(self, case_reference):
+        return self.repository.list_suspended_for_case(case_reference)
+
+    def get_implicated_assignment(self, case_reference):
+        """The assignment that accountability decisions attach to: the active
+        one, or -- after a statutory freeze has stripped write permissions --
+        the most recently suspended one."""
+        current = self.repository.get_current_assignment_for_case(case_reference)
+        if current is not None:
+            return current
+        suspended = self.repository.list_suspended_for_case(case_reference)
+        return suspended[-1] if suspended else None
+
+    def suspend_active_assignments(self, case_reference, actor_id, actor_role, reason=None):
+        """Strip the assigned officer's write permissions without ending the
+        assignment (M4.3). Returns the suspended assignments."""
+        suspended = []
+        for assignment in self.repository.get_history_for_case(case_reference):
+            if assignment.get("status") != "ACTIVE":
+                continue
+            result = self.repository.suspend_assignment(assignment.get("assignment_id"), suspended_by=actor_id, reason=reason)
+            if result is None:
+                continue
+            suspended.append(result)
+            self.audit_service.log(
+                {
+                    "actor_id": actor_id,
+                    "actor_role": actor_role,
+                    "action": "assignment_suspended",
+                    "case_reference": case_reference,
+                    "rule_code": "CASE.FREEZE.RESTRICTED_MUTATION",
+                    "details": {
+                        "assignment_id": result.get("assignment_id"),
+                        "officer_id": result.get("officer_id"),
+                        "officer_role": result.get("officer_role"),
+                        "reason": reason,
+                    },
+                }
+            )
+        return suspended
+
+    def reinstate_suspended_assignments(self, case_reference, actor_id, actor_role, reason=None):
+        """Restore write permissions after IPID dismisses a referral."""
+        reinstated = []
+        for assignment in self.repository.list_suspended_for_case(case_reference):
+            result = self.repository.reinstate_assignment(assignment.get("assignment_id"))
+            if result is None:
+                continue
+            reinstated.append(result)
+            self.audit_service.log(
+                {
+                    "actor_id": actor_id,
+                    "actor_role": actor_role,
+                    "action": "assignment_reinstated",
+                    "case_reference": case_reference,
+                    "details": {
+                        "assignment_id": result.get("assignment_id"),
+                        "officer_id": result.get("officer_id"),
+                        "reason": reason,
+                    },
+                }
+            )
+        return reinstated
+
+    def end_suspended_assignments(self, case_reference, ended_by, ended_by_role, reason=None):
+        """Close out suspended assignments once an uphold decision is final."""
+        ended = []
+        for assignment in self.repository.list_suspended_for_case(case_reference):
+            result = self.end_assignment(assignment.get("assignment_id"), ended_by=ended_by, ended_by_role=ended_by_role, reason=reason)
+            if result is not None:
+                ended.append(result)
+        return ended
 
     def get_assignment_history_for_case(self, case_reference):
         return self.repository.get_history_for_case(case_reference)
@@ -124,8 +212,10 @@ class AssignmentService:
 
         resolved_role = self._resolve_target_officer(officer_id, officer_role)
         self._assert_assignable_status(case, resolved_role)
-
         current = self.get_current_assignment_for_case(case_reference)
+        if not (current and current.get("status") == "ACTIVE" and str(current.get("officer_id")) == str(officer_id)):
+            self._assert_no_conflict(case_reference, officer_id, assigned_by if override_authority else None, assigned_by_role if override_authority else None)
+
         if current and current.get("status") == "ACTIVE":
             if str(current.get("officer_id")) == str(officer_id):
                 raise ValueError("This case is already assigned to this officer.")
@@ -184,8 +274,12 @@ class AssignmentService:
 
         resolved_role = self._resolve_target_officer(officer_id, officer_role)
         self._assert_assignable_status(case, resolved_role)
-
         current = self.get_current_assignment_for_case(case_reference)
+        if not (current and current.get("status") == "ACTIVE" and str(current.get("officer_id")) == str(officer_id)):
+            # (Re-assigning the officer who already holds the case is rejected
+            # below with the existing "already assigned" message.)
+            self._assert_no_conflict(case_reference, officer_id, assigned_by if override_authority else None, assigned_by_role if override_authority else None)
+
         if current and current.get("status") == "ACTIVE":
             if str(current.get("officer_id")) == str(officer_id):
                 raise ValueError("The case is already assigned to this officer.")

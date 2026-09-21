@@ -113,6 +113,91 @@ class LegalReferenceService:
             "source_type": "official_legislation",
             "source_provenance": "South African Government / Administrative justice legislation",
         },
+        # --- Milestone 4: Objective Deterministic Decision Engine references ---
+        "RSA-IPID-2011": {
+            "legislation_id": "RSA-IPID-2011",
+            "act_name": "Independent Police Investigative Directorate Act",
+            "act_number": "1",
+            "year": 2011,
+            "section": "Section 28(1)",
+            "subsection": "(a)-(h)",
+            "title": "Matters the Directorate must investigate",
+            "description": (
+                "Deaths in police custody or as a result of police action, discharge of an official "
+                "firearm, rape by or in the custody of police, torture or assault, corruption within the "
+                "police, and matters prescribed by the Minister must be referred to and investigated by IPID."
+            ),
+            "source_reference": "Independent Police Investigative Directorate Act 1 of 2011",
+            "effective_from": "2012-04-01",
+            "effective_to": None,
+            "version": "2011",
+            "status": "ACTIVE",
+            "source_type": "official_legislation",
+            "source_provenance": "South African Government / Police oversight legislation",
+            "verification_status": "CODIFIED_FROM_STATUTE_TEXT",
+        },
+        "RSA-SAPS-DISCIPLINE-2016": {
+            "legislation_id": "RSA-SAPS-DISCIPLINE-2016",
+            "act_name": "South African Police Service Discipline Regulations",
+            "act_number": "Regulations",
+            "year": 2016,
+            "section": "Misconduct and sanctions",
+            "subsection": None,
+            "title": "Misconduct tiers and disciplinary sanctions",
+            "description": "Defines categories of misconduct and the sanctions available for members of the Service.",
+            "source_reference": "SAPS Discipline Regulations, 2016",
+            "effective_from": "2016-01-01",
+            "effective_to": None,
+            "version": "2016",
+            "status": "ACTIVE",
+            "source_type": "official_regulation",
+            "source_provenance": "South African Government / SAPS Act 68 of 1995 regulations",
+            "verification_status": "PROTOTYPE_CODIFICATION",
+            "verification_note": (
+                "The misconduct tiers and sanction progression matrix are a prototype codification and "
+                "must be confirmed against the gazetted Regulations before production use."
+            ),
+        },
+        "RSA-SAPS-NI-3-2011": {
+            "legislation_id": "RSA-SAPS-NI-3-2011",
+            "act_name": "SAPS National Instruction 3 of 2011",
+            "act_number": "National Instruction 3/2011",
+            "year": 2011,
+            "section": "Docket inspection and registration window",
+            "subsection": None,
+            "title": "72-hour docket registration and attendance window",
+            "description": "Sets the 72-hour window within which a docket must be registered and attended to.",
+            "source_reference": "SAPS National Instruction 3/2011",
+            "effective_from": "2011-01-01",
+            "effective_to": None,
+            "version": "2011",
+            "status": "ACTIVE",
+            "source_type": "internal_instruction",
+            "source_provenance": "South African Police Service / National Instructions",
+            "verification_status": "PROTOTYPE_CODIFICATION",
+            "verification_note": "Cited as specified by the project roadmap; confirm the instruction text before production use.",
+        },
+        "RSA-PRECCA-S34": {
+            "legislation_id": "RSA-PRECCA-S34",
+            "act_name": "Prevention and Combating of Corrupt Activities Act",
+            "act_number": "12",
+            "year": 2004,
+            "section": "Section 34",
+            "subsection": "(1)-(2)",
+            "title": "Duty to report corrupt transactions",
+            "description": (
+                "A person in a position of authority who knows or ought reasonably to have known or suspected "
+                "an offence of corruption must report it to a police official; failure to do so is an offence."
+            ),
+            "source_reference": "Prevention and Combating of Corrupt Activities Act 12 of 2004, section 34",
+            "effective_from": "2004-04-27",
+            "effective_to": None,
+            "version": "2004",
+            "status": "ACTIVE",
+            "source_type": "official_legislation",
+            "source_provenance": "South African Government / Anti-corruption legislation",
+            "verification_status": "CODIFIED_FROM_STATUTE_TEXT",
+        },
     }
 
     def list_references(self):

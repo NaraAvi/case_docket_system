@@ -11,6 +11,7 @@ from app.ui.routes import ui_bp
 from app.config import get_config
 from app.database.repositories.audit_event_repository import AuditEventRepository
 from app.database.repositories.case_repository import CaseRepository
+from app.database.repositories.conflict_declaration_repository import ConflictDeclarationRepository
 from app.database.repositories.disciplinary_case_repository import DisciplinaryCaseRepository
 from app.database.repositories.review_finding_repository import ReviewFindingRepository
 from app.database.repositories.review_note_repository import ReviewNoteRepository
@@ -22,6 +23,7 @@ from app.modules.case_engine.services import DocketManagementService
 from app.modules.citizen_engine.services import CitizenAuthenticationService, CitizenDocketService
 from app.modules.compliance_engine.services import ComplianceService
 from app.modules.constable_engine.services import ConstableRegistrationService
+from app.modules.decision_engine import ConflictOfInterestService, ObjectiveDecisionEngine, StatutoryReferralService
 from app.modules.assignment_engine.services import AssignmentService
 from app.modules.automation_engine.services import AutomationService
 from app.modules.discipline_engine.services import DisciplinaryCaseService
@@ -131,6 +133,44 @@ def create_app(testing: bool = False, database_uri: str | None = None, upload_st
     review_finding_repository = ReviewFindingRepository()
     disciplinary_case_repository = DisciplinaryCaseRepository()
     disciplinary_case_service = DisciplinaryCaseService(repository=disciplinary_case_repository, audit_service=audit_service)
+
+    # --- Milestone 4: Objective Deterministic Decision Engine -------------------
+    conflict_declaration_repository = ConflictDeclarationRepository()
+    decision_engine = ObjectiveDecisionEngine(
+        case_service=case_service,
+        assignment_service=assignment_service,
+        investigation_service=investigation_service,
+        freeze_service=freeze_service,
+        disciplinary_service=disciplinary_case_service,
+        audit_service=audit_service,
+    )
+    statutory_referral_service = StatutoryReferralService(
+        decision_engine=decision_engine,
+        case_service=case_service,
+        escalation_service=escalation_service,
+        freeze_service=freeze_service,
+        assignment_service=assignment_service,
+        audit_service=audit_service,
+        integrity_service=integrity_service,
+    )
+    conflict_service = ConflictOfInterestService(
+        case_service=case_service,
+        assignment_service=assignment_service,
+        escalation_service=escalation_service,
+        disciplinary_service=disciplinary_case_service,
+        declaration_repository=conflict_declaration_repository,
+        identity_registry=identity_registry,
+        constable_service=constable_registration_service,
+        audit_service=audit_service,
+    )
+    # M4.3: citizen submissions/escalations and constable flags are screened.
+    citizen_docket_service.referral_service = statutory_referral_service
+    constable_registration_service.referral_service = statutory_referral_service
+    # M4.4: assignments, docket opening and investigation opening enforce recusal.
+    assignment_service.conflict_service = conflict_service
+    constable_registration_service.conflict_service = conflict_service
+    investigation_service.conflict_service = conflict_service
+
     ipid_service = IPIDReviewService(
         case_service=case_service,
         audit_service=audit_service,
@@ -143,6 +183,7 @@ def create_app(testing: bool = False, database_uri: str | None = None, upload_st
         review_finding_repository=review_finding_repository,
         identity_registry=identity_registry,
         disciplinary_service=disciplinary_case_service,
+        decision_engine=decision_engine,
     )
 
     app.extensions["identity_registry"] = identity_registry
@@ -163,6 +204,9 @@ def create_app(testing: bool = False, database_uri: str | None = None, upload_st
     app.extensions["escalation_service"] = escalation_service
     app.extensions["disciplinary_case_service"] = disciplinary_case_service
     app.extensions["ipid_service"] = ipid_service
+    app.extensions["decision_engine"] = decision_engine
+    app.extensions["statutory_referral_service"] = statutory_referral_service
+    app.extensions["conflict_service"] = conflict_service
     app.extensions["media_manager"] = media_manager
 
     app.register_blueprint(health_bp)

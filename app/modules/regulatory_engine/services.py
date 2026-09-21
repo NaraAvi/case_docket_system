@@ -2,6 +2,169 @@
 
 from __future__ import annotations
 
+from app.modules.regulatory_engine import corpus
+
+
+def _slug(code):
+    return "RULE-" + code.replace(".", "-").replace("_", "-")
+
+
+def _build_statutory_rules():
+    """Derive the Milestone 4 rules from the codified corpus so the rule
+    registry and the decision engine can never drift apart."""
+    rules = {}
+
+    for code, category in corpus.S28_CATEGORIES.items():
+        subsection = category["subsection"]
+        rules[code] = {
+            "rule_id": _slug(code),
+            "rule_code": code,
+            "rule_name": f"IPID Act s{subsection}: {category['title']}",
+            "description": (
+                f"An allegation falling under IPID Act 1 of 2011 section {subsection} ({category['title']}) "
+                "must be referred to IPID and the docket frozen; it cannot be resolved locally."
+            ),
+            "legal_reference_id": category["legal_reference_id"],
+            "rule_version": corpus.CORPUS_VERSION,
+            "effective_from": "2012-04-01",
+            "effective_to": None,
+            "status": "ACTIVE",
+            "priority": 120,
+            "conditions": ["allegation_matches_s28_category"] if category["auto_detect"] else ["ministerial_prescription"],
+            "required_controls": ["mandatory_ipid_referral", "case_freeze", "immutable_audit_record"],
+            "prohibited_actions": ["local_resolution", "dismissal_without_ipid_review", "continued_operational_handling"],
+            "resulting_action": "refer_to_ipid_and_freeze",
+            "explanation": f"Statutory referral under {corpus.IPID_SECTION_28_BASIS}, paragraph {subsection.split(')', 1)[1]}.",
+            "subsection": subsection,
+            "auto_detect": category["auto_detect"],
+        }
+
+    rules["PRECCA.S34.REPORTING_DUTY"] = {
+        "rule_id": _slug("PRECCA.S34.REPORTING_DUTY"),
+        "rule_code": "PRECCA.S34.REPORTING_DUTY",
+        "rule_name": "Duty to report corrupt activity",
+        "description": "A corruption allegation must be reported; the system records the report and refers the matter to IPID.",
+        "legal_reference_id": "RSA-PRECCA-S34",
+        "rule_version": corpus.CORPUS_VERSION,
+        "effective_from": "2004-04-27",
+        "effective_to": None,
+        "status": "ACTIVE",
+        "priority": 115,
+        "conditions": ["corruption_allegation_logged"],
+        "required_controls": ["reporting_record", "mandatory_ipid_referral"],
+        "prohibited_actions": ["suppress_corruption_report"],
+        "resulting_action": "record_report_and_refer",
+        "explanation": "PRECCA section 34 places a reporting duty on persons in positions of authority.",
+    }
+    rules["SAPS.NI3_2011.REGISTRATION_WINDOW"] = {
+        "rule_id": _slug("SAPS.NI3_2011.REGISTRATION_WINDOW"),
+        "rule_code": "SAPS.NI3_2011.REGISTRATION_WINDOW",
+        "rule_name": "72-hour docket registration window",
+        "description": "A submitted docket must be registered within 72 hours of submission.",
+        "legal_reference_id": corpus.SLA_THRESHOLDS["legal_reference_id"],
+        "rule_version": corpus.CORPUS_VERSION,
+        "effective_from": "2011-01-01",
+        "effective_to": None,
+        "status": "ACTIVE",
+        "priority": 70,
+        "conditions": ["docket_submitted", "not_registered_within_window"],
+        "required_controls": ["sla_evaluation"],
+        "prohibited_actions": ["unlawful_delay"],
+        "resulting_action": "flag_sla_breach",
+        "explanation": "Delay beyond the statutory window is objectively measured and feeds misconduct tiering.",
+        "window_hours": corpus.SLA_THRESHOLDS["registration_hours"],
+    }
+    rules["SAPS.NI3_2011.ATTENDANCE_WINDOW"] = {
+        "rule_id": _slug("SAPS.NI3_2011.ATTENDANCE_WINDOW"),
+        "rule_code": "SAPS.NI3_2011.ATTENDANCE_WINDOW",
+        "rule_name": "72-hour docket attendance window",
+        "description": "A registered docket must be attended to (investigation opened) within 72 hours of assignment.",
+        "legal_reference_id": corpus.SLA_THRESHOLDS["legal_reference_id"],
+        "rule_version": corpus.CORPUS_VERSION,
+        "effective_from": "2011-01-01",
+        "effective_to": None,
+        "status": "ACTIVE",
+        "priority": 70,
+        "conditions": ["docket_registered", "no_investigation_within_window"],
+        "required_controls": ["sla_evaluation"],
+        "prohibited_actions": ["unlawful_delay"],
+        "resulting_action": "flag_sla_breach",
+        "explanation": "Delay beyond the statutory window is objectively measured and feeds misconduct tiering.",
+        "window_hours": corpus.SLA_THRESHOLDS["attendance_hours"],
+    }
+    rules["SAPS.DISCIPLINE.MISCONDUCT_TIERING"] = {
+        "rule_id": _slug("SAPS.DISCIPLINE.MISCONDUCT_TIERING"),
+        "rule_code": "SAPS.DISCIPLINE.MISCONDUCT_TIERING",
+        "rule_name": "Misconduct tiering",
+        "description": "Every upheld infraction is placed in tier 1, 2 or 3 by the misconduct schedule; only objective aggravators can raise it.",
+        "legal_reference_id": corpus.MISCONDUCT_LEGAL_REFERENCE_ID,
+        "rule_version": corpus.CORPUS_VERSION,
+        "effective_from": "2016-01-01",
+        "effective_to": None,
+        "status": "ACTIVE",
+        "priority": 60,
+        "conditions": ["disciplinary_finding_upheld"],
+        "required_controls": ["misconduct_schedule_lookup"],
+        "prohibited_actions": ["discretionary_tier_selection"],
+        "resulting_action": "assign_misconduct_tier",
+        "explanation": "Tiering removes discretion from the classification of misconduct.",
+    }
+    rules["SAPS.DISCIPLINE.SANCTION_MATRIX"] = {
+        "rule_id": _slug("SAPS.DISCIPLINE.SANCTION_MATRIX"),
+        "rule_code": "SAPS.DISCIPLINE.SANCTION_MATRIX",
+        "rule_name": "Mandatory sanction matrix",
+        "description": "The mandatory sanction is a function of misconduct tier and the officer's qualifying prior history.",
+        "legal_reference_id": corpus.MISCONDUCT_LEGAL_REFERENCE_ID,
+        "rule_version": corpus.CORPUS_VERSION,
+        "effective_from": "2016-01-01",
+        "effective_to": None,
+        "status": "ACTIVE",
+        "priority": 60,
+        "conditions": ["misconduct_tier_assigned"],
+        "required_controls": ["disciplinary_history_lookup"],
+        "prohibited_actions": ["discretionary_sanction_selection", "unrecorded_deviation"],
+        "resulting_action": "determine_mandatory_sanction",
+        "explanation": "Identical facts and history always yield the identical sanction; deviations must be justified on the record.",
+    }
+    rules["CASE.CONFLICT_OF_INTEREST"] = {
+        "rule_id": _slug("CASE.CONFLICT_OF_INTEREST"),
+        "rule_code": "CASE.CONFLICT_OF_INTEREST",
+        "rule_name": "Conflict of interest recusal",
+        "description": (
+            "An officer may not handle a docket where they are the complainant or the implicated officer, "
+            "where the complainant has previously complained about them, or where a conflict is declared."
+        ),
+        "legal_reference_id": "RSA-PAJA-2000",
+        "rule_version": corpus.CORPUS_VERSION,
+        "effective_from": "2000-01-01",
+        "effective_to": None,
+        "status": "ACTIVE",
+        "priority": 92,
+        "conditions": ["identity_match_complainant_or_implicated", "prior_complaint_by_complainant", "declared_conflict"],
+        "required_controls": ["identity_matching", "conflict_declaration_check"],
+        "prohibited_actions": ["assign_conflicted_officer", "open_conflicted_docket", "open_conflicted_investigation"],
+        "resulting_action": "deny_operation",
+        "explanation": "PAJA section 3 requires a decision-maker free of bias or reasonable suspicion of bias.",
+    }
+    rules["CASE.ASSIGNMENT.ACTIVE_DISCIPLINARY_BLOCK"] = {
+        "rule_id": _slug("CASE.ASSIGNMENT.ACTIVE_DISCIPLINARY_BLOCK"),
+        "rule_code": "CASE.ASSIGNMENT.ACTIVE_DISCIPLINARY_BLOCK",
+        "rule_name": "No assignment while a disciplinary case is open",
+        "description": "An officer with an open disciplinary case may not be assigned new dockets until it is closed.",
+        "legal_reference_id": "RSA-PACA-2004",
+        "rule_version": corpus.CORPUS_VERSION,
+        "effective_from": "2004-01-01",
+        "effective_to": None,
+        "status": "ACTIVE",
+        "priority": 89,
+        "conditions": ["assignee_has_open_disciplinary_case"],
+        "required_controls": ["disciplinary_status_check"],
+        "prohibited_actions": ["case_assignment"],
+        "resulting_action": "deny_operation",
+        "explanation": "Integrity-restricted officers must not take on new accountability-sensitive work.",
+    }
+    return rules
+
 
 class RegulatoryRuleService:
     """System-controlled rule corpus with legal provenance and versioning.
@@ -116,11 +279,50 @@ class RegulatoryRuleService:
         },
     }
 
+    RULES.update(_build_statutory_rules())
+
     def __init__(self, legal_reference_service=None):
         self.legal_reference_service = legal_reference_service
 
-    def list_rules(self):
-        return [dict(rule) for rule in self.RULES.values()]
+    def list_rules(self, rule_family=None):
+        """All rules, optionally narrowed to a code prefix (for example
+        ``"IPID.S28"`` or ``"SAPS.DISCIPLINE"``)."""
+        rules = [dict(rule) for rule in self.RULES.values()]
+        if rule_family:
+            prefix = str(rule_family).upper()
+            rules = [rule for rule in rules if str(rule["rule_code"]).upper().startswith(prefix)]
+        return rules
+
+    # --- Milestone 4 corpus accessors (read-only views of regulatory_engine.corpus) ---
+
+    @staticmethod
+    def get_statutory_categories():
+        return {code: dict(category) for code, category in corpus.S28_CATEGORIES.items()}
+
+    @staticmethod
+    def get_misconduct_schedule():
+        return {
+            "legal_reference_id": corpus.MISCONDUCT_LEGAL_REFERENCE_ID,
+            "infractions": {key: dict(value) for key, value in corpus.MISCONDUCT_SCHEDULE.items()},
+            "escalation_category_map": dict(corpus.ESCALATION_CATEGORY_TO_INFRACTION),
+            "aggravators": dict(corpus.AGGRAVATORS),
+            "max_tier": corpus.MAX_TIER,
+        }
+
+    @staticmethod
+    def get_sanction_matrix():
+        return {
+            "legal_reference_id": corpus.MISCONDUCT_LEGAL_REFERENCE_ID,
+            "matrix": {tier: list(row) for tier, row in corpus.SANCTION_MATRIX.items()},
+            "descriptions": dict(corpus.SANCTION_DESCRIPTIONS),
+            "prior_history_window_months": corpus.PRIOR_HISTORY_WINDOW_MONTHS,
+            "deviation_requires_justification": corpus.DEVIATION_REQUIRES_JUSTIFICATION,
+            "corpus_version": corpus.CORPUS_VERSION,
+        }
+
+    @staticmethod
+    def get_sla_thresholds():
+        return dict(corpus.SLA_THRESHOLDS)
 
     def get_rule(self, code):
         rule = self.RULES.get(str(code))

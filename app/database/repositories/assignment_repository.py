@@ -61,3 +61,31 @@ class AssignmentRepository(BaseSqlAlchemyRepository):
         instance.end_reason = reason
         self._commit()
         return self._serialize(instance)
+
+    def list_suspended_for_case(self, case_reference):
+        instances = self.model.query.filter_by(case_reference=case_reference, status="SUSPENDED").all()
+        matches = [self._serialize(instance) for instance in instances]
+        matches.sort(key=lambda item: str(item.get("assigned_at") or ""))
+        return matches
+
+    def suspend_assignment(self, assignment_id, suspended_by=None, reason=None):
+        instance = self.model.query.filter_by(assignment_id=assignment_id, status="ACTIVE").first()
+        if instance is None:
+            return None
+        instance.status = "SUSPENDED"
+        instance.suspended_at = self._utc_now()
+        instance.suspended_by = suspended_by
+        instance.suspension_reason = reason
+        self._commit()
+        return self._serialize(instance)
+
+    def reinstate_assignment(self, assignment_id):
+        instance = self.model.query.filter_by(assignment_id=assignment_id, status="SUSPENDED").first()
+        if instance is None:
+            return None
+        instance.status = "ACTIVE"
+        instance.suspended_at = None
+        instance.suspended_by = None
+        instance.suspension_reason = None
+        self._commit()
+        return self._serialize(instance)

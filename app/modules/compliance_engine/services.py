@@ -41,6 +41,7 @@ class ComplianceService:
         claimed_role=None,
         evidence=None,
         integrity_state=None,
+        conflict_state=None,
     ):
         if identity_state is None:
             identity_state = {}
@@ -54,6 +55,20 @@ class ComplianceService:
                 legal_reference="RSA-PACA-2004",
                 required_controls=["identity_registry_check"],
                 violations=["revoked_access"],
+            )
+
+        # M4.4: a ConflictOfInterestService.evaluate() result. Any conflict
+        # found for this actor and docket denies the operation.
+        if conflict_state and conflict_state.get("conflicted"):
+            conflicts = conflict_state.get("conflicts") or []
+            first = conflicts[0] if conflicts else {}
+            return ComplianceResult(
+                allowed=False,
+                rule_code=first.get("rule_code") or "CASE.CONFLICT_OF_INTEREST",
+                reason=first.get("reason") or "A conflict of interest prevents this operation.",
+                legal_reference=first.get("legal_reference_id") or "RSA-PAJA-2000",
+                required_controls=["conflict_declaration_check", "identity_matching"],
+                violations=[item.get("type") for item in conflicts] or ["conflict_of_interest"],
             )
 
         if actor_role and claimed_role and str(actor_role).lower() != str(claimed_role).lower():

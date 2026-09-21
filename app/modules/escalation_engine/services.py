@@ -18,6 +18,13 @@ class EscalationService:
         "SUSPECTED_MALPRACTICE",
         "OTHER",
     }
+    # Only the decision engine may raise this category (M4.3); it is
+    # deliberately absent from VALID_CATEGORIES so a citizen cannot select it.
+    STATUTORY_CATEGORY = "MANDATORY_IPID_REFERRAL"
+    SOURCE_MANUAL = "MANUAL"
+    SOURCE_STATUTORY = "IPID_STATUTORY_MANDATE"
+    SYSTEM_ACTOR_ID = "SYSTEM_ODDE"
+    SYSTEM_ACTOR_ROLE = "system_automation"
     VALID_STATUSES = {"OPEN", "UNDER_REVIEW", "RESOLVED"}
 
     def __init__(self, repository=None, audit_service=None):
@@ -43,6 +50,8 @@ class EscalationService:
             "status": escalation.get("status"),
             "created_at": escalation.get("created_at"),
             "updated_at": escalation.get("updated_at"),
+            "source": escalation.get("source") or self.SOURCE_MANUAL,
+            "statutory_basis": escalation.get("statutory_basis"),
         }
 
     def get_by_id(self, escalation_id):
@@ -157,6 +166,7 @@ class EscalationService:
                 "category": category_value,
                 "description": description_value,
                 "status": "OPEN",
+                "source": self.SOURCE_MANUAL,
                 "created_at": self._utc_now(),
                 "updated_at": self._utc_now(),
             }
@@ -211,3 +221,105 @@ class EscalationService:
 
     def public_list(self, escalations):
         return [self._serialize_public(item) for item in escalations]
+
+    # ------------------------------------------------------------------
+    # Milestone 4.3: statutory (IPID Act s28) referrals
+    # ------------------------------------------------------------------
+    def list_all(self):
+        return [dict(item) for item in self.repository.list()]
+
+    def is_statutory(self, escalation):
+        return bool(escalation) and escalation.get("source") == self.SOURCE_STATUTORY
+
+    def find_unresolved_statutory(self, case_reference):
+        """Statutory escalations on ``case_reference`` that IPID has not yet
+        decided, oldest first."""
+        return [
+            item
+            for item in self.list_for_case(case_reference)
+            if self.is_statutory(item) and str(item.get("status") or "").upper() != "RESOLVED"
+        ]
+
+    def create_statutory_escalation(
+        self,
+        case_reference,
+        statutory_basis,
+        rule_code,
+        description,
+        trigger,
+        implicated_officer_id=None,
+    ):
+        """Raise an IPID escalation on behalf of the decision engine. The
+        creator is the system actor, never a person."""
+        if not case_reference:
+            raise ValueError("Case reference is required.")
+        description_value = str(description or "").strip()
+        if not description_value:
+            raise ValueError("Escalation description is required.")
+
+        escalation = self.repository.create(
+            {
+                "case_reference": str(case_reference),
+                "created_by": self.SYSTEM_ACTOR_ID,
+                "created_by_role": self.SYSTEM_ACTOR_ROLE,
+                "category": self.STATUTORY_CATEGORY,
+                "description": description_value,
+                "status": "OPEN",
+                "source": self.SOURCE_STATUTORY,
+                "statutory_basis": statutory_basis,
+                "rule_code": rule_code,
+                "referral_trigger": trigger,
+                "implicated_officer_id": str(implicated_officer_id) if implicated_officer_id else None,
+                "created_at": self._utc_now(),
+                "updated_at": self._utc_now(),
+            }
+        )
+        self.audit_service.log(
+            {
+                "actor_id": self.SYSTEM_ACTOR_ID,
+                "actor_role": self.SYSTEM_ACTOR_ROLE,
+                "action": "escalation_created",
+                "case_reference": case_reference,
+                "rule_code": str(rule_code).split(",")[0] if rule_code else None,
+                "legal_reference": statutory_basis,
+                "details": {
+                    "escalation_id": escalation.get("escalation_id"),
+                    "category": self.STATUTORY_CATEGORY,
+                    "status": "OPEN",
+                    "source": self.SOURCE_STATUTORY,
+                    "trigger": trigger,
+                },
+            }
+        )
+        return dict(escalation)
+
+    def mark_statutory(self, escalation_id, statutory_basis, rule_code, trigger, implicated_officer_id=None):
+        """Upgrade an escalation a person already filed (for example a
+        citizen's own complaint) to a statutory referral, without creating a
+        duplicate ticket."""
+        escalation = self.repository.get_by_id(escalation_id)
+        if escalation is None:
+            raise ValueError("Escalation not found.")
+        updated = dict(escalation)
+        updated["source"] = self.SOURCE_STATUTORY
+        updated["statutory_basis"] = statutory_basis
+        updated["rule_code"] = rule_code
+        updated["referral_trigger"] = trigger
+        if implicated_officer_id:
+            updated["implicated_officer_id"] = str(implicated_officer_id)
+        updated["updated_at"] = self._utc_now()
+        return dict(self.repository.update(escalation_id, updated))
+
+    def extend_statutory(self, escalation_id, statutory_basis, rule_code, description=None):
+        """Fold newly detected s28 categories into the case's existing open
+        statutory escalation so one docket never carries duplicate tickets."""
+        escalation = self.repository.get_by_id(escalation_id)
+        if escalation is None:
+            raise ValueError("Escalation not found.")
+        updated = dict(escalation)
+        updated["statutory_basis"] = statutory_basis
+        updated["rule_code"] = rule_code
+        if description:
+            updated["description"] = f"{escalation.get('description') or ''}\n{description}".strip()
+        updated["updated_at"] = self._utc_now()
+        return dict(self.repository.update(escalation_id, updated))

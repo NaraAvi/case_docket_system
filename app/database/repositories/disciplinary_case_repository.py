@@ -39,3 +39,7 @@ class DisciplinaryCaseRepository(BaseSqlAlchemyRepository):
     def list_for_case(self, case_reference):
         instances = self.model.query.filter_by(source_case_reference=case_reference).all()
         return [self._serialize(instance) for instance in instances]
+
+    def list_for_officer(self, officer_id):
+        instances = self.model.query.filter_by(implicated_officer_id=str(officer_id)).all()
+        return [self._serialize(instance) for instance in instances]

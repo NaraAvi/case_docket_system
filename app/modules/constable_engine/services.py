@@ -46,6 +46,9 @@ class ConstableRegistrationService:
         self.related_case_repository = related_case_repository or RelatedCaseRepository()
         self.freeze_service = freeze_service
         self.assignment_service = assignment_service
+        # M4: wired after construction (they depend on services built later).
+        self.referral_service = None
+        self.conflict_service = None
         self._interviews = self.__class__._shared_interviews
         self._recordings = self.__class__._shared_recordings
 
@@ -71,6 +74,12 @@ class ConstableRegistrationService:
             if case.get("case_reference") == case_reference:
                 return case
         return None
+
+    def _assert_not_frozen(self, case_reference):
+        """A docket frozen by a statutory referral can be frozen before it is
+        registered, so registration steps must respect the freeze too."""
+        if self.freeze_service and self.freeze_service.is_case_frozen(case_reference):
+            raise ValueError("Case is frozen and operational mutation is restricted.")
 
     def _append_timeline_event(self, case, event_type, actor_id, actor_role, details=None):
         if case is None:
@@ -162,6 +171,13 @@ class ConstableRegistrationService:
                 raise ValueError("Docket is not awaiting constable registration.")
         else:
             raise ValueError("Docket is not awaiting constable registration.")
+        frozen = bool(self.freeze_service and self.freeze_service.is_case_frozen(case_reference))
+        # A frozen docket only exposes a minimal read-only payload, so the
+        # conflict gate (which protects operational access) is not applied.
+        if self.conflict_service is not None and not frozen:
+            self.conflict_service.assert_no_conflict(
+                case_reference, constable_id, operation="open_docket", actor_id=constable_id, actor_role="constable"
+            )
         self.audit_service.log(
             {
                 "actor_id": constable_id,
@@ -218,7 +234,19 @@ class ConstableRegistrationService:
                 "details": {"flag_id": flag_id, "category": category, "status": status},
             }
         )
-        return dict(flag)
+
+        # M4.3: a constable logging an allegation of corruption, assault or
+        # firearm discharge triggers the mandatory IPID referral.
+        result = dict(flag)
+        if self.referral_service is not None:
+            referral = self.referral_service.screen_constable_flag(case_reference, flag, constable_id)
+            if referral.get("referred"):
+                result["statutory_referral"] = {
+                    "escalation_id": referral["escalation"].get("escalation_id"),
+                    "freeze_id": referral["freeze"].get("freeze_id"),
+                    "statutory_basis": referral["triage"]["statutory_basis"],
+                }
+        return result
 
     def list_flags_for_case(self, case_reference):
         return [dict(flag) for flag in self.flag_repository.list_for_case(case_reference)]
@@ -386,6 +414,7 @@ class ConstableRegistrationService:
             raise ValueError("Docket not found.")
         if case.get("status") != "AWAITING_CONSTABLE_REGISTRATION":
             raise ValueError("Docket is not awaiting constable registration.")
+        self._assert_not_frozen(case_reference)
 
         for interview in self._interviews.values():
             if interview.get("case_reference") == case_reference:
@@ -492,6 +521,8 @@ class ConstableRegistrationService:
         case = self._get_docket_by_reference(interview.get("case_reference"))
         if case is None:
             raise ValueError("Docket not found.")
+        if actor_role == "constable":
+            self._assert_not_frozen(case.get("case_reference"))
 
         filename = (payload.get("filename") if isinstance(payload, dict) else None) or f"{recording_type}.wav"
 
@@ -585,6 +616,7 @@ class ConstableRegistrationService:
             raise ValueError("Docket not found.")
         if case.get("status") != "AWAITING_CONSTABLE_REGISTRATION":
             raise ValueError("Docket is not awaiting constable registration.")
+        self._assert_not_frozen(case.get("case_reference"))
         if interview.get("status") != "COMPLETED":
             raise ValueError("Interview is incomplete.")
         if interview.get("citizen_recording") is None or interview.get("constable_recording") is None:
