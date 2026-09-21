@@ -5,6 +5,15 @@
 import { fetchJson } from '../core/api.js';
 import { buildStatusBadge, configureReauthModal, flashToast, renderDocketCardList, renderEvidenceTable, renderStatementList, renderTimelineList, setEmptyState, showToast } from '../core/ui.js';
 
+const STATUTORY_SOURCE = 'IPID_STATUTORY_MANDATE';
+
+function statutoryBadges(item) {
+  if (item && item.source === STATUTORY_SOURCE) {
+    return [{ label: 'STATUTORY §28', className: 'badge-statute', title: item.statutory_basis || 'IPID Act s28(1) mandatory referral' }];
+  }
+  return [];
+}
+
 export function getIpidEscalationId() {
   const match = window.location.pathname.match(/\/ipid\/escalations\/([^/]+)/);
   return match ? match[1] : null;
@@ -23,6 +32,7 @@ export async function hydrateIpidDashboard() {
       title: (item) => item.case_reference || 'Case reference unavailable',
       status: (item) => item.status || 'RECEIVED',
       linkPrefix: '/ipid/escalations/',
+      badges: statutoryBadges,
       actionLabel: 'Review',
       emptyMessage: 'No escalations are awaiting IPID review.',
     });
@@ -39,6 +49,7 @@ export async function hydrateIpidDashboard() {
         title: (item) => item.case_reference || 'Case reference unavailable',
         status: () => 'FROZEN',
         linkPrefix: '/ipid/escalations/',
+        badges: statutoryBadges,
         actionLabel: 'Open',
         emptyMessage: 'No cases are currently in IPID custody.',
       });
@@ -56,6 +67,7 @@ export async function hydrateIpidDashboard() {
         title: (item) => item.source_case_reference || 'Case reference unavailable',
         status: (item) => item.status || 'OPEN',
         linkPrefix: '/ipid/disciplinary-cases/',
+        badges: (item) => (item.misconduct_tier ? [{ label: `TIER ${item.misconduct_tier}`, className: 'badge-warning', title: item.mandatory_sanction || '' }] : []),
         actionLabel: 'View',
         emptyMessage: 'No disciplinary cases have been opened.',
       });
@@ -68,6 +80,42 @@ export async function hydrateIpidDashboard() {
 export function getIpidDisciplinaryCaseId() {
   const match = window.location.pathname.match(/\/ipid\/disciplinary-cases\/([^/]+)/);
   return match ? match[1] : null;
+}
+
+function bindDisciplinaryClose(record, disciplinaryCaseId) {
+  const panel = document.getElementById('disciplinaryClosePanel');
+  const form = document.getElementById('disciplinaryCloseForm');
+  if (!panel || !form) {
+    return;
+  }
+  const closed = String(record.status || '').toUpperCase() === 'CLOSED';
+  panel.hidden = closed;
+  if (closed) {
+    return;
+  }
+  const sanction = document.getElementById('disciplinaryFinalSanction');
+  if (sanction && record.mandatory_sanction && !sanction.value) {
+    sanction.value = record.mandatory_sanction;
+  }
+  form.onsubmit = async (event) => {
+    event.preventDefault();
+    const justification = (document.getElementById('disciplinaryJustification')?.value || '').trim();
+    const finalSanction = sanction?.value || record.mandatory_sanction;
+    if (record.mandatory_sanction && finalSanction !== record.mandatory_sanction && !justification) {
+      showToast('A written justification is required to depart from the mandatory sanction.', { type: 'error' });
+      return;
+    }
+    try {
+      await fetchJson(`/api/v1/ipid/disciplinary-cases/${disciplinaryCaseId}/close`, {
+        method: 'POST',
+        body: { final_sanction: finalSanction, justification },
+      });
+      showToast('Disciplinary case closed.');
+      await hydrateDisciplinaryCaseDetail();
+    } catch (error) {
+      showToast(error.message || 'Unable to close disciplinary case.', { type: 'error' });
+    }
+  };
 }
 
 export async function hydrateDisciplinaryCaseDetail() {
@@ -90,6 +138,19 @@ export async function hydrateDisciplinaryCaseDetail() {
         <dt>Status</dt><dd>${record.status || 'OPEN'}</dd>
       `;
     }
+    const determinationMeta = document.getElementById('disciplinaryDeterminationMeta');
+    if (determinationMeta) {
+      determinationMeta.innerHTML = record.misconduct_tier
+        ? `
+        <dt>Misconduct Tier</dt><dd>Tier ${record.misconduct_tier}</dd>
+        <dt>Infraction</dt><dd>${record.infraction_type || 'Unspecified'}</dd>
+        <dt>Mandatory Sanction</dt><dd>${record.mandatory_sanction || 'Unavailable'}</dd>
+        ${record.final_sanction ? `<dt>Final Sanction</dt><dd>${record.final_sanction}</dd>` : ''}
+        ${record.deviation_justification ? `<dt>Deviation Justification</dt><dd>${record.deviation_justification}</dd>` : ''}
+      `
+        : '<dt>Determination</dt><dd>No automated determination was recorded for this case.</dd>';
+    }
+    bindDisciplinaryClose(record, disciplinaryCaseId);
     if (statusBadge) {
       statusBadge.className = buildStatusBadge(record.status);
       statusBadge.textContent = record.status || 'OPEN';
@@ -279,6 +340,7 @@ export async function hydrateIpidDetail() {
         <dt>Category</dt><dd>${workspace.category || 'Unspecified'}</dd>
         <dt>Submitted By</dt><dd>${caseContext.citizen_id || 'Unavailable'}</dd>
         <dt>Status</dt><dd>${workspace.status || 'RECEIVED'}</dd>
+        ${workspace.source === STATUTORY_SOURCE ? `<dt>Referral</dt><dd>Automatic statutory referral &mdash; ${workspace.statutory_basis || 'IPID Act s28(1)'}</dd>` : ''}
       `;
     }
     if (statusBadge) {
@@ -288,6 +350,7 @@ export async function hydrateIpidDetail() {
     if (assignmentMeta) {
       assignmentMeta.innerHTML = `
         <dt>Assigned Officer</dt><dd>${caseContext.assigned_officer_id || 'Not assigned'}</dd>
+        ${caseContext.suspended_officer_id ? `<dt>Suspended Officer</dt><dd>${caseContext.suspended_officer_id} (access suspended pending IPID decision)</dd>` : ''}
         <dt>Freeze Status</dt><dd>${caseContext.freeze_status || 'NOT_FROZEN'}</dd>
         <dt>Access State</dt><dd>${caseContext.is_frozen ? 'RESTRICTED' : 'ACTIVE'}</dd>
       `;

@@ -41,6 +41,8 @@ class InvestigationService:
         self.flag_repository = flag_repository or FlagRepository()
         self.related_case_repository = related_case_repository or RelatedCaseRepository()
         self.freeze_service = freeze_service
+        # M4.4: wired after construction (see ConflictOfInterestService).
+        self.conflict_service = None
 
     @staticmethod
     def _utc_now():
@@ -255,6 +257,10 @@ class InvestigationService:
             raise ValueError("Detective investigation can only start for a registered docket.")
         if self.freeze_service and self.freeze_service.is_case_frozen(case_reference):
             raise ValueError("Case is frozen and operational mutation is restricted.")
+        if self.conflict_service is not None:
+            self.conflict_service.assert_no_conflict(
+                case_reference, detective_id, operation="open_investigation", actor_id=detective_id, actor_role="detective"
+            )
 
         existing = self._get_investigation_by_case(case_reference)
         if existing is not None:

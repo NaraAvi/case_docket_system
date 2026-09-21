@@ -831,27 +831,76 @@ passed, 1 skipped; Vitest: 133 passed.
 
 ---
 
-### Milestone 4: Objective South African Regulatory & Decision Engine (ODDE)
+## COMPLETED Milestone 4: Objective South African Regulatory & Decision Engine (ODDE)
+
+Assignee / contributor: **Yashay** (Developer B: regulatory and backend logic).
+Branch: `yashay-m4-decision-engine`.
+
+**4.1 Corpus.** `app/modules/regulatory_engine/corpus.py` holds the pure-data
+codification: IPID Act s28(1)(a)-(h) categories, PRECCA s34, SAPS NI 3/2011
+72-hour windows, and the SAPS Discipline Regulations 2016 misconduct schedule
+and sanction matrix. Each is registered as a rule (`IPID.S28.*`,
+`PRECCA.S34.REPORTING_DUTY`, `SAPS.NI3_2011.*`, `SAPS.DISCIPLINE.*`,
+`CASE.CONFLICT_OF_INTEREST`) linked to new entries in the legal catalogue.
+The Discipline Regulations and NI 3/2011 content is a **prototype
+codification** and is flagged `verification_status` in the catalogue; confirm
+against the gazetted text before production use.
+
+**4.2 ODDE.** `app/modules/decision_engine/` (`triage`, `sla`, `tiering`,
+`service`) are deterministic functions over the corpus: sentence-level
+police-actor + offence detection with negation handling, SLA windows with
+frozen-time exclusion, tiering with objective aggravators, and a sanction
+matrix by tier and prior history in a 24-month window. Departing from the
+mandatory sanction needs a written justification (`POST
+/ipid/disciplinary-cases/<id>/close`).
+
+**4.3 Referral and freeze.** Docket submission, citizen escalations and
+constable flags are screened. A hit creates (or extends) an escalation with
+source `IPID_STATUTORY_MANDATE`, freezes the docket (allowed before
+registration), suspends the implicated assignee's permissions (reversible on
+dismissal) and writes audit records citing IPID Act s28(1).
+
+**4.4 Conflict of interest.** `ConflictOfInterestService` matches complainant,
+implicated officer and assignee; assignment, opening a docket and opening an
+investigation are rejected on a conflict (complainant is officer, implicated
+officer, open disciplinary case, prior complaint, declared conflict). Officers
+can declare conflicts (`/conflicts/declarations`).
+
+**UI:** IPID queue/custody cards show a STATUTORY §28 badge, disciplinary cards show the tier, the escalation review shows referral basis and the suspended officer, and the disciplinary case page shows the automated determination with a close-case form (justification enforced on deviation). These Vitest additions were written but could not be executed in the authoring environment.
+
+**API additions:** `/regulatory/*`, `/decision/*`, `/conflicts/*`.
+
+**Migration:** `flask db upgrade` is required on existing databases
+(`c4d8e1f0a7b2`).
+
+**Tests:** `tests/test_decision_engine.py` (unit) and
+`tests/test_milestone4.py` (API/integration). Existing tests that used bribery
+wording as neutral filler now use neutral text, since that wording now
+(correctly) triggers a statutory referral.
+
+---
+
+### Milestone 4: Objective South African Regulatory & Decision Engine (ODDE) -- COMPLETED (assignee: Yashay, Developer B)
 *Goal: Eliminate human bias by automating accountability, misconduct tiering, and statutory sanctions.*
 
-- [ ] **Task 4.1: Expand Regulatory Rule Corpus (`app/modules/regulatory_engine/`)**
+- [x] **Task 4.1: Expand Regulatory Rule Corpus (`app/modules/regulatory_engine/`)**
   - Codify full rule set for IPID Act Section 28 (Mandatory referral categories).
   - Codify SAPS Disciplinary Regulations 2016 (Schedule 1: Misconduct definitions & sanction matrix).
   - Codify SAPS National Instruction 3/2011 (72-hour docket inspection and registration window).
   - Codify Prevention and Combating of Corrupt Activities Act (PRECCA) Section 34 reporting duties.
-- [ ] **Task 4.2: Build the Objective Deterministic Decision Engine (ODDE)**
+- [x] **Task 4.2: Build the Objective Deterministic Decision Engine (ODDE)**
   - Create `app/modules/decision_engine/service.py`:
     - `evaluate_statutory_triage(docket_data)`: Inspects incident descriptions and categories for Section 28 keywords/flags.
     - `evaluate_sla_compliance(case_reference)`: Evaluates delay intervals against statutory thresholds.
     - `calculate_misconduct_tier(officer_id, infraction_type, evidence_context)`: Determines Tier 1, 2, or 3 misconduct.
     - `determine_mandatory_sanction(officer_id, misconduct_tier)`: Queries past officer disciplinary history and calculates mandatory, non-biased sanction (Warning, Final Warning, Suspension, Dismissal).
-- [ ] **Task 4.3: Automated Referral & Freeze Automation**
+- [x] **Task 4.3: Automated Referral & Freeze Automation**
   - If a citizen or constable logs an allegation of corruption, assault, or firearm discharge:
     - ODDE automatically generates an IPID Escalation ticket.
     - Automatically executes `freeze_service.freeze_case(..., source="IPID_STATUTORY_MANDATE")`.
     - Automatically strips local assigned officer write permissions.
     - Logs immutable audit record citing IPID Act Sec 28(1).
-- [ ] **Task 4.4: Enforce Separation of Duties & Conflict of Interest (PAJA Sec 3)**
+- [x] **Task 4.4: Enforce Separation of Duties & Conflict of Interest (PAJA Sec 3)**
   - Implement automated identity matching between Complainant, Accused/Implicated Officer, and Assignee.
   - Reject docket assignment if assignee has an active disciplinary case or interpersonal conflict.
 

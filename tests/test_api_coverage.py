@@ -111,7 +111,7 @@ class TestMiscEndpoints:
         citizen_token = _login(app_client, "citizen")
         escalation_response = app_client.post(
             f"/api/v1/citizen/dockets/{case_reference}/escalations",
-            json={"category": "OFFICER_CONDUCT", "description": "Officer demanded a bribe to proceed."},
+            json={"category": "OFFICER_CONDUCT", "description": "Officer ignored my repeated follow-up requests."},
             headers=_auth_headers(citizen_token),
         )
         escalation_id = escalation_response.get_json()["escalation_id"]
@@ -371,7 +371,7 @@ class TestIpidReviewNotesFindingsAndDisciplinaryCases:
         citizen_token = _login(app_client, "citizen")
         escalation_response = app_client.post(
             f"/api/v1/citizen/dockets/{case_reference}/escalations",
-            json={"category": "OFFICER_CONDUCT", "description": "Officer demanded a bribe to proceed."},
+            json={"category": "OFFICER_CONDUCT", "description": "Officer ignored my repeated follow-up requests."},
             headers=_auth_headers(citizen_token),
         )
         escalation_id = escalation_response.get_json()["escalation_id"]
@@ -390,7 +390,7 @@ class TestIpidReviewNotesFindingsAndDisciplinaryCases:
         citizen_token = _login(app_client, "citizen")
         escalation_response = app_client.post(
             f"/api/v1/citizen/dockets/{case_reference}/escalations",
-            json={"category": "OFFICER_CONDUCT", "description": "Officer demanded a bribe to proceed."},
+            json={"category": "OFFICER_CONDUCT", "description": "Officer ignored my repeated follow-up requests."},
             headers=_auth_headers(citizen_token),
         )
         escalation_id = escalation_response.get_json()["escalation_id"]

@@ -35,6 +35,29 @@
           <p>Loading reason…</p>
         </div>
       </div>
+
+      <div class="detail-card">
+        <h3>Automated Determination {{ statutory_badge('SAPS Discipline Regs 2016', 'Tier and mandatory sanction are computed deterministically by the decision engine from the codified misconduct schedule and sanction matrix.') }}</h3>
+        <dl class="meta-list" id="disciplinaryDeterminationMeta">
+          <dt>Misconduct Tier</dt><dd>Loading…</dd>
+        </dl>
+      </div>
+
+      <div class="detail-card" id="disciplinaryClosePanel" hidden>
+        <h3>Record Hearing Outcome</h3>
+        <form id="disciplinaryCloseForm">
+          <label for="disciplinaryFinalSanction">Final sanction</label>
+          <select id="disciplinaryFinalSanction" class="input">
+            <option value="WARNING">Warning</option>
+            <option value="FINAL_WARNING">Final warning</option>
+            <option value="SUSPENSION">Suspension</option>
+            <option value="DISMISSAL">Dismissal</option>
+          </select>
+          <label for="disciplinaryJustification" style="margin-top:12px;">Justification (required to depart from the mandatory sanction)</label>
+          <textarea id="disciplinaryJustification" class="input" rows="3"></textarea>
+          <button class="primary-btn full-width" type="submit" style="margin-top:12px;">Close Case</button>
+        </form>
+      </div>
     </div>
   </section>
 {% endblock %}

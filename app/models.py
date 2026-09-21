@@ -73,6 +73,12 @@ class Assignment(db.Model):
     ended_by = db.Column(db.String(100))
     ended_by_role = db.Column(db.String(50))
     end_reason = db.Column(db.Text)
+    # M4.3: an ACTIVE assignment is SUSPENDED (write permissions stripped) when
+    # a statutory IPID referral freezes the docket; it is reinstated if IPID
+    # dismisses the referral and ended if the referral is upheld.
+    suspended_at = db.Column(db.String(50))
+    suspended_by = db.Column(db.String(100))
+    suspension_reason = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=_utc_now)
 
 
@@ -191,6 +197,13 @@ class Escalation(db.Model):
     decision_by_role = db.Column(db.String(50))
     decision_reason = db.Column(db.Text)
     decision_at = db.Column(db.String(50))
+    # M4.3: statutory (IPID Act s28) referral metadata. `source` is MANUAL for
+    # ordinary escalations and IPID_STATUTORY_MANDATE for ODDE referrals.
+    source = db.Column(db.String(50), default="MANUAL", nullable=False)
+    statutory_basis = db.Column(db.Text)
+    rule_code = db.Column(db.String(300))
+    referral_trigger = db.Column(db.String(50))
+    implicated_officer_id = db.Column(db.String(100))
 
 
 class AuditEvent(db.Model):
@@ -293,6 +306,37 @@ class DisciplinaryCase(db.Model):
     category = db.Column(db.String(100))
     created_at = db.Column(db.String(50))
     updated_at = db.Column(db.String(50))
+    # M4.2: objective determination made by the decision engine at uphold time.
+    misconduct_tier = db.Column(db.Integer)
+    infraction_type = db.Column(db.String(60))
+    mandatory_sanction = db.Column(db.String(30))
+    determination = db.Column(db.JSON)
+    determined_at = db.Column(db.String(50))
+    # Closure: any departure from the mandatory sanction needs a justification.
+    final_sanction = db.Column(db.String(30))
+    deviation_justification = db.Column(db.Text)
+    closed_at = db.Column(db.String(50))
+    closed_by = db.Column(db.String(100))
+
+
+class ConflictDeclaration(db.Model):
+    """M4.4: a declared conflict of interest (family, business, personal...)
+    between an officer and a docket or a party (typically the complainant)."""
+
+    __tablename__ = "conflict_declarations"
+
+    id = db.Column(db.Integer, primary_key=True)
+    declaration_id = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    officer_id = db.Column(db.String(100), nullable=False, index=True)
+    officer_role = db.Column(db.String(50))
+    case_reference = db.Column(db.String(50), index=True)
+    party_id = db.Column(db.String(100), index=True)
+    relationship_type = db.Column(db.String(30), nullable=False)
+    description = db.Column(db.Text)
+    status = db.Column(db.String(20), default="ACTIVE", nullable=False)
+    declared_by = db.Column(db.String(100))
+    declared_by_role = db.Column(db.String(50))
+    declared_at = db.Column(db.String(50))
 
 
 class IntegrityEvent(db.Model):

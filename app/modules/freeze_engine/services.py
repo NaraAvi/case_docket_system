@@ -13,6 +13,13 @@ class FreezeService:
     """Shared case freeze lifecycle used by future oversight and access-control boundaries."""
 
     VALID_STATUSES = {"ACTIVE", "RELEASED"}
+    SOURCE_IPID_REVIEW = "IPID_REVIEW"
+    # M4.3: freezes raised automatically by the decision engine for an IPID
+    # Act s28 matter. These bypass the "registered case" requirement because a
+    # statutory matter can surface before registration (for example a
+    # corruption allegation in the very docket being submitted).
+    SOURCE_IPID_STATUTORY = "IPID_STATUTORY_MANDATE"
+    IPID_SOURCES = {SOURCE_IPID_REVIEW, SOURCE_IPID_STATUTORY}
 
     def __init__(self, repository=None, case_service=None, audit_service=None):
         self.repository = repository or FreezeRepository()
@@ -50,7 +57,7 @@ class FreezeService:
         case = self._get_case(case_reference)
         if case is None:
             raise ValueError("Case not found.")
-        if case.get("status") != "REGISTERED":
+        if source != self.SOURCE_IPID_STATUTORY and case.get("status") != "REGISTERED":
             raise ValueError("Freeze requires a registered case.")
 
         current = self.repository.get_current_for_case(case_reference)
@@ -97,7 +104,7 @@ class FreezeService:
                 continue
             if escalation_id and freeze.get("related_escalation_id") == escalation_id:
                 return dict(freeze)
-            if freeze.get("source") == "IPID_REVIEW" and (escalation_id is None or freeze.get("related_escalation_id") == escalation_id):
+            if freeze.get("source") in self.IPID_SOURCES and (escalation_id is None or freeze.get("related_escalation_id") == escalation_id):
                 return dict(freeze)
         return None
 
@@ -129,6 +136,33 @@ class FreezeService:
                     "reason": reason,
                     "status": "RELEASED",
                     "related_escalation_id": updated.get("related_escalation_id"),
+                },
+            }
+        )
+        return dict(updated)
+
+    def transfer_freeze(self, freeze_id, new_escalation_id, actor_id, actor_role, reason=None):
+        """Re-point an active IPID freeze at another escalation so that
+        resolving the first does not lift a freeze a second, still-open
+        statutory referral depends on."""
+        current = self.repository.get_by_id(freeze_id)
+        if current is None or current.get("status") != "ACTIVE":
+            raise ValueError("Active freeze not found.")
+        updated = dict(current)
+        updated["related_escalation_id"] = new_escalation_id
+        updated["source"] = self.SOURCE_IPID_STATUTORY
+        self.repository.update(freeze_id, updated)
+        self.audit_service.log(
+            {
+                "actor_id": actor_id,
+                "actor_role": actor_role,
+                "action": "case_freeze_transferred",
+                "case_reference": current.get("case_reference"),
+                "details": {
+                    "freeze_id": freeze_id,
+                    "previous_escalation_id": current.get("related_escalation_id"),
+                    "related_escalation_id": new_escalation_id,
+                    "reason": reason,
                 },
             }
         )

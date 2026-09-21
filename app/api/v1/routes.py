@@ -68,6 +68,26 @@ def get_ipid_service():
     return current_app.extensions["ipid_service"]
 
 
+def get_decision_engine():
+    return current_app.extensions["decision_engine"]
+
+
+def get_conflict_service():
+    return current_app.extensions["conflict_service"]
+
+
+def get_regulatory_rule_service():
+    return current_app.extensions["regulatory_rule_service"]
+
+
+def get_legal_reference_service():
+    return current_app.extensions["legal_reference_service"]
+
+
+def _error_status(exc):
+    return 404 if "not found" in str(exc).lower() else 400
+
+
 @api_v1_bp.get("/status")
 def api_status():
     return jsonify({"status": "ok", "version": "v1"})
@@ -516,6 +536,21 @@ def get_ipid_disciplinary_case(disciplinary_case_id):
         case = get_ipid_service().get_disciplinary_case(disciplinary_case_id)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 404
+    return jsonify(case)
+
+
+@api_v1_bp.post("/ipid/disciplinary-cases/<disciplinary_case_id>/close")
+@jwt_required()
+def close_ipid_disciplinary_case(disciplinary_case_id):
+    claims = get_jwt()
+    if claims.get("role") != "ipid":
+        return jsonify({"error": "Forbidden."}), 403
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        case = get_ipid_service().close_disciplinary_case(disciplinary_case_id, get_jwt_identity(), payload)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), _error_status(exc)
     return jsonify(case)
 
 
@@ -1274,3 +1309,173 @@ def get_recording_file(stored_filename):
         download_name=recording.get("filename") or stored_filename,
         as_attachment=False,
     )
+
+
+# ---------------------------------------------------------------------------
+# Milestone 4: regulatory corpus, decision engine and conflict of interest.
+# ---------------------------------------------------------------------------
+
+
+@api_v1_bp.get("/regulatory/rules")
+@jwt_required()
+def list_regulatory_rules():
+    return jsonify(get_regulatory_rule_service().list_rules(rule_family=request.args.get("family")))
+
+
+@api_v1_bp.get("/regulatory/rules/<rule_code>")
+@jwt_required()
+def get_regulatory_rule(rule_code):
+    rule = get_regulatory_rule_service().get_rule(rule_code)
+    if rule is None:
+        return jsonify({"error": "Rule not found."}), 404
+    rule["version_history"] = get_regulatory_rule_service().get_version_history(rule_code)
+    return jsonify(rule)
+
+
+@api_v1_bp.get("/regulatory/legal-references")
+@jwt_required()
+def list_legal_references():
+    return jsonify(get_legal_reference_service().list_references())
+
+
+@api_v1_bp.get("/regulatory/sanction-matrix")
+@jwt_required()
+def get_sanction_matrix():
+    return jsonify(get_regulatory_rule_service().get_sanction_matrix())
+
+
+@api_v1_bp.get("/regulatory/misconduct-schedule")
+@jwt_required()
+def get_misconduct_schedule():
+    return jsonify(get_regulatory_rule_service().get_misconduct_schedule())
+
+
+@api_v1_bp.get("/regulatory/statutory-categories")
+@jwt_required()
+def get_statutory_categories():
+    return jsonify(get_regulatory_rule_service().get_statutory_categories())
+
+
+@api_v1_bp.get("/regulatory/sla-thresholds")
+@jwt_required()
+def get_sla_thresholds():
+    return jsonify(get_regulatory_rule_service().get_sla_thresholds())
+
+
+@api_v1_bp.post("/decision/triage")
+@jwt_required()
+def preview_statutory_triage():
+    """Side-effect free preview of the statutory triage for a piece of text
+    or a docket-shaped payload. Nothing is referred, frozen or stored."""
+    claims = get_jwt()
+    if claims.get("role") not in OPERATIONAL_ROLES:
+        return jsonify({"error": "Forbidden."}), 403
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Request body must be a JSON object."}), 400
+    extra = [("text", payload.get("text"))] if payload.get("text") else None
+    return jsonify(get_decision_engine().evaluate_statutory_triage(payload, extra))
+
+
+@api_v1_bp.get("/decision/dockets/<case_reference>/sla")
+@jwt_required()
+def evaluate_docket_sla(case_reference):
+    claims = get_jwt()
+    if claims.get("role") not in OPERATIONAL_ROLES:
+        return jsonify({"error": "Forbidden."}), 403
+
+    try:
+        return jsonify(get_decision_engine().evaluate_sla_compliance(case_reference))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), _error_status(exc)
+
+
+@api_v1_bp.post("/decision/misconduct-tier")
+@jwt_required()
+def calculate_misconduct_tier():
+    claims = get_jwt()
+    if claims.get("role") not in {"ipid", "station_commander"}:
+        return jsonify({"error": "Forbidden."}), 403
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Request body must be a JSON object."}), 400
+    context = payload.get("evidence_context")
+    if context is not None and not isinstance(context, dict):
+        return jsonify({"error": "evidence_context must be a JSON object."}), 400
+    try:
+        result = get_decision_engine().calculate_misconduct_tier(
+            payload.get("officer_id"), payload.get("infraction_type"), context
+        )
+    except (ValueError, TypeError) as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(result)
+
+
+@api_v1_bp.get("/decision/officers/<officer_id>/sanction")
+@jwt_required()
+def determine_mandatory_sanction(officer_id):
+    claims = get_jwt()
+    if claims.get("role") not in {"ipid", "station_commander"}:
+        return jsonify({"error": "Forbidden."}), 403
+
+    try:
+        return jsonify(get_decision_engine().determine_mandatory_sanction(officer_id, request.args.get("tier")))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@api_v1_bp.post("/conflicts/declarations")
+@jwt_required()
+def declare_conflict_of_interest():
+    claims = get_jwt()
+    role = claims.get("role")
+    if role not in {"constable", "detective", "station_commander", "ipid"}:
+        return jsonify({"error": "Forbidden."}), 403
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"error": "Request body must be a JSON object."}), 400
+    actor_id = get_jwt_identity()
+    officer_id = payload.get("officer_id") or actor_id
+    try:
+        record = get_conflict_service().declare_conflict(officer_id, payload, actor_id, role)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else (403 if "Only the officer" in str(exc) else 400)
+        return jsonify({"error": str(exc)}), status
+    return jsonify(record), 201
+
+
+@api_v1_bp.get("/conflicts/declarations")
+@jwt_required()
+def list_conflict_declarations():
+    claims = get_jwt()
+    role = claims.get("role")
+    if role not in {"constable", "detective", "station_commander", "ipid"}:
+        return jsonify({"error": "Forbidden."}), 403
+
+    actor_id = get_jwt_identity()
+    officer_id = request.args.get("officer_id")
+    if role in {"constable", "detective"}:
+        # Officers see only their own declarations.
+        officer_id = actor_id
+    return jsonify(get_conflict_service().list_declarations(officer_id=officer_id, case_reference=request.args.get("case_reference")))
+
+
+@api_v1_bp.get("/conflicts/check")
+@jwt_required()
+def check_conflict_of_interest():
+    claims = get_jwt()
+    if claims.get("role") not in {"station_commander", "ipid"}:
+        return jsonify({"error": "Forbidden."}), 403
+
+    case_reference = request.args.get("case_reference")
+    officer_id = request.args.get("officer_id")
+    if not case_reference or not officer_id:
+        return jsonify({"error": "case_reference and officer_id are required."}), 400
+    try:
+        result = get_conflict_service().evaluate(case_reference, officer_id, request.args.get("operation") or "assignment")
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), _error_status(exc)
+    return jsonify(result)

@@ -69,6 +69,9 @@ class CitizenDocketService:
         self.audit_service = audit_service or AuditTrailService()
         self.escalation_service = escalation_service or EscalationService(audit_service=self.audit_service)
         self.freeze_service = freeze_service
+        # M4.3: wired after construction; screens newly logged allegations for
+        # IPID Act s28(1) matters and enforces the mandatory referral.
+        self.referral_service = None
 
     @staticmethod
     def _utc_timestamp():
@@ -287,6 +290,14 @@ class CitizenDocketService:
         )
         self._append_timeline_event(case, "citizen_escalation_submitted", {"escalation_id": escalation["escalation_id"], "category": category})
         self.docket_manager.update_docket(case)
+
+        # M4.3: screened only *after* the docket write above, so the referral's
+        # own timeline entry is not overwritten by this method's stale copy.
+        if self.referral_service is not None:
+            referral = self.referral_service.screen_citizen_escalation(case_reference, escalation, citizen_id)
+            if referral.get("referred"):
+                escalation = dict(referral["escalation"])
+                escalation["statutory_referral"] = True
         return escalation
 
     def list_escalations(self, citizen_id, case_reference):
@@ -294,7 +305,11 @@ class CitizenDocketService:
         escalations = self.escalation_service.list_for_case(case_reference)
         enriched = []
         for item in escalations:
-            if str(item.get("created_by")) != str(citizen_id):
+            # A citizen sees the escalations they filed and any statutory
+            # referral the system raised on their own docket (M4.3).
+            is_own = str(item.get("created_by")) == str(citizen_id)
+            is_statutory_on_own_docket = item.get("source") == EscalationService.SOURCE_STATUTORY
+            if not (is_own or is_statutory_on_own_docket):
                 continue
             enriched.append(
                 {
@@ -308,6 +323,8 @@ class CitizenDocketService:
                     "decision_at": item.get("decision_at"),
                     "created_at": item.get("created_at"),
                     "updated_at": item.get("updated_at"),
+                    "source": item.get("source") or EscalationService.SOURCE_MANUAL,
+                    "statutory_basis": item.get("statutory_basis"),
                 }
             )
         return enriched
@@ -332,7 +349,21 @@ class CitizenDocketService:
                 "details": {"status": case["status"]},
             }
         )
-        return self.get_docket(citizen_id, case_reference)
+
+        # M4.3: the whole docket text is screened once, at submission.
+        referral = None
+        if self.referral_service is not None:
+            referral = self.referral_service.screen_docket_submission(case_reference, citizen_id)
+
+        docket = self.get_docket(citizen_id, case_reference)
+        if referral and referral.get("referred") and docket is not None:
+            docket = dict(docket)
+            docket["statutory_referral"] = {
+                "escalation_id": referral["escalation"].get("escalation_id"),
+                "freeze_id": referral["freeze"].get("freeze_id"),
+                "statutory_basis": referral["triage"]["statutory_basis"],
+            }
+        return docket
 
     def submit_docket_payload(self, payload):
         self._submissions.append(payload)
