@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% from 'components/_docket_card.html' import docket_list_skeleton %}
+
+{% block content %}
+  <section class="page-hero">
+    <div>
+      <p class="eyebrow">Operational Overview</p>
+      <h1>Active Cases</h1>
+    </div>
+  </section>
+
+  <section class="panel-block">
+    <div class="panel-head">
+      <h2>Current Case Load</h2>
+      <span class="badge badge-muted">Live docket inventory</span>
+    </div>
+
+    {{ docket_list_skeleton('activeCaseList', 'case-grid', 'Loading active case inventory…') }}
+  </section>
+{% endblock %}

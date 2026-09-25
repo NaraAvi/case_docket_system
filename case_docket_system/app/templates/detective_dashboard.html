@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% from 'components/_docket_card.html' import docket_list_skeleton %}
+
+{% block content %}
+  <section class="page-hero">
+    <div>
+      <p class="eyebrow">Detective Workspace</p>
+      <h1>Review active investigations and evidence trails.</h1>
+    </div>
+  </section>
+
+  <div class="cards-grid multi-panel">
+    <div class="panel-card">
+      <h3>Current Investigations</h3>
+      {{ docket_list_skeleton('detectiveInvestigationList', 'stack-list', 'Loading registered investigations…') }}
+    </div>
+
+    <div class="panel-card">
+      <h3>Operational Summary</h3>
+      <div class="statement-box">
+        <p><strong>Active status:</strong> Case review workflows are available to the assigned detective.</p>
+        <p><strong>Evidence:</strong> Statement records, interview metadata, and flags remain visible within the case workspace.</p>
+      </div>
+    </div>
+  </div>
+{% endblock %}

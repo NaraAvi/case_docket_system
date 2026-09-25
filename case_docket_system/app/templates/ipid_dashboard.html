@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% from 'components/_docket_card.html' import docket_list_skeleton %}
+
+{% block content %}
+<section class="ipid-reference-dashboard">
+  <div class="ipid-overview-head">
+    <div>
+      <p class="ipid-eyebrow"><span class="ipid-eyebrow-line"></span> SYSTEM OVERVIEW</p>
+      <h1>Escalation queue &amp; accountability<br class="ipid-title-break"> review</h1>
+    </div>
+    <div class="ipid-sync-status"><span></span> Last synced just now</div>
+  </div>
+
+  <div class="ipid-security-banner">
+    <div class="ipid-banner-icon">!</div>
+    <div>
+      <strong>Security restriction</strong>
+      <p>Internal findings and notes remain restricted to IPID review only.</p>
+    </div>
+  </div>
+
+  <div class="ipid-primary-grid">
+    <section class="ipid-review-card">
+      <div class="ipid-card-heading">
+        <div>
+          <p class="ipid-card-kicker">LIVE REVIEW FEED</p>
+          <h2>Active queue</h2>
+        </div>
+        <span class="ipid-pending-badge">▣ pending</span>
+      </div>
+
+      <div class="ipid-queue-frame">
+        <div id="ipidQueueEmptyVisual">
+        <div class="ipid-empty-icon-wrap">
+          <div class="ipid-empty-icon">▱</div>
+          <span class="ipid-empty-dot"></span>
+        </div>
+        <h3>Queue is clear</h3>
+        <p>No escalations are awaiting IPID review. New<br>assignments will appear here automatically.</p>
+        <div class="ipid-empty-tools" aria-hidden="true">
+          <span>◌</span><span>T</span><span>⌕</span><span>▢</span>
+        </div>
+        </div>
+        <div id="ipidQueueList" class="ipid-live-list">
+          {{ docket_list_skeleton('ipidQueueLoading', 'stack-list', 'Loading escalation queue…') }}
+        </div>
+      </div>
+    </section>
+
+    <aside class="ipid-decision-card">
+      <div class="ipid-decision-head">
+        <div>
+          <p class="ipid-card-kicker">REQUIRED PROCESS</p>
+          <h2>Decision rationale</h2>
+        </div>
+        <div class="ipid-scales-icon">⚖</div>
+      </div>
+      <p>Dismiss and Uphold decisions require a mandatory statutory rationale and are made from within a specific escalation's review workspace.</p>
+      <div class="ipid-decision-divider"></div>
+      <button class="ipid-disabled-action" type="button" disabled>Select an escalation to proceed</button>
+    </aside>
+  </div>
+
+  <div class="ipid-secondary-grid">
+    <section class="ipid-secondary-card">
+      <p class="ipid-card-kicker">CASES IN CUSTODY</p>
+      <h2>Frozen review cases</h2>
+      <p class="ipid-secondary-copy">Dockets currently held in the IPID review workspace.</p>
+      <div id="ipidCustodyCasesList" class="stack-list">
+        {{ docket_list_skeleton('ipidCustodyLoading', 'stack-list', 'Loading cases in custody…') }}
+      </div>
+    </section>
+    <section class="ipid-secondary-card">
+      <p class="ipid-card-kicker">DISCIPLINARY CASES</p>
+      <h2>Open disciplinary matters</h2>
+      <div id="ipidDisciplinaryCasesList" class="stack-list">
+        {{ docket_list_skeleton('ipidDisciplinaryLoading', 'stack-list', 'Loading disciplinary cases…') }}
+      </div>
+    </section>
+  </div>
+</section>
+{% endblock %}

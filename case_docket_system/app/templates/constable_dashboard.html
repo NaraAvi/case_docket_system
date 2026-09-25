@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% from 'components/_docket_card.html' import docket_list_skeleton %}
+
+{% block content %}
+  <section class="page-hero">
+    <div>
+      <p class="eyebrow">Constable Queue</p>
+      <h1>Review and register dockets awaiting operational triage.</h1>
+    </div>
+  </section>
+
+  <section class="panel-block">
+    <div class="panel-head">
+      <h2>Unregistered Dockets</h2>
+      <div class="table-tools">
+        <input id="constableSearch" type="search" placeholder="Search docket reference or location" />
+        <button class="secondary-btn" type="button" id="constableSearchBtn">Search</button>
+      </div>
+    </div>
+
+    {{ docket_list_skeleton('constableQueueState', 'stack-list', 'Loading triage queue…') }}
+  </section>
+{% endblock %}

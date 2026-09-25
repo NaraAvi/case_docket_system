@@ -1,0 +1,15 @@
+{
+  "name": "pdas-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Frontend unit/integration/system tests for the PDAS Milestone 2 ES6 module split.",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "jsdom": "^29.1.1",
+    "vitest": "^5.0.0"
+  }
+}

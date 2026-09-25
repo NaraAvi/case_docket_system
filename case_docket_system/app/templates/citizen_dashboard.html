@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <section class="page-hero">
+    <div>
+      <p class="eyebrow">Citizen Portal</p>
+      <h1>Track your submitted dockets and status updates.</h1>
+    </div>
+  </section>
+
+  <div class="cta-complete">
+    <button class="primary-btn large-btn" type="button" id="newCitizenDocketBtn">+ Submit New Docket</button>
+  </div>
+
+  <section class="panel-block">
+    <div class="panel-head">
+      <h2>My Dockets</h2>
+      <span class="badge badge-muted">Live status</span>
+    </div>
+    <div id="citizenDockets" class="stack-list"></div>
+  </section>
+{% endblock %}

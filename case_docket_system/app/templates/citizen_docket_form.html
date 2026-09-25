@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <section class="file-step-shell">
+    <div class="step-header">
+      <button class="icon-btn" type="button" id="backToCitizenDashboard">←</button>
+      <h2>New Docket</h2>
+      <span class="step-indicator">STEP 2 / 2</span>
+    </div>
+
+    <div class="wizard-card">
+      <div class="wizard-row">
+        <label>Crime Type</label>
+        <input id="crimeType" type="text" placeholder="e.g. Theft / Property Damage" />
+      </div>
+      <div class="wizard-row">
+        <label>Location</label>
+        <input id="incidentLocation" type="text" placeholder="e.g. 123 Main St, Springfield Sector 4" />
+      </div>
+      <div class="wizard-row">
+        <label>Incident Date</label>
+        <input id="incidentDate" type="date" />
+      </div>
+      <div class="wizard-row">
+        <label>Description</label>
+        <textarea id="description" rows="5" placeholder="Provide the key facts of the incident..."></textarea>
+      </div>
+      <p class="field-hint">You'll add your statement and any evidence on the next screen, before submitting the docket for review.</p>
+      <p class="inline-error hidden" id="citizenFormError"></p>
+
+      <div class="submit-row">
+        <button class="primary-btn large-btn" type="button" id="submitCitizenDocket">Create Docket</button>
+      </div>
+    </div>
+  </section>
+{% endblock %}

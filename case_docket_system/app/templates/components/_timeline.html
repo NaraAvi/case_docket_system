@@ -1,0 +1,16 @@
+{#
+  Chronological timeline / audit-list skeleton.
+  Renders the `<ul id="{{ list_id }}">` container with a single loading
+  placeholder row; the owning JS module (core/ui.js::renderTimelineList)
+  replaces the contents once the real events are fetched. Centralizing this
+  markup keeps every detail page's initial-paint state identical instead of
+  each template hand-writing its own "Loading..." row.
+
+  Usage: {% from 'components/_timeline.html' import timeline_skeleton %}
+         {{ timeline_skeleton('stationCommanderAuditList', 'Loading audit trail') }}
+#}
+{% macro timeline_skeleton(list_id, message='Loading…') %}
+  <ul class="timeline-list" id="{{ list_id }}">
+    <li><span class="timeline-dot"></span><div><strong>{{ message }}</strong><small>Please wait…</small></div></li>
+  </ul>
+{% endmacro %}

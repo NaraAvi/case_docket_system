@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pdas-flask",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "flask", "--app", "app:create_app", "run", "--port", "5055"],
+      "port": 5055
+    }
+  ]
+}

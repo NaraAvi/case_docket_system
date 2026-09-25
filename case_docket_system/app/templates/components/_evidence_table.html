@@ -1,0 +1,28 @@
+{#
+  Evidence table skeleton: items, source, status and (once Milestone 6 wires
+  up CPA Sec 212 hashing) SHA-256 verification. The owning JS module
+  (core/ui.js::renderEvidenceTable) fills `<tbody id="{{ body_id }}">` with
+  one row per evidence item once fetched.
+
+  Usage: {% from 'components/_evidence_table.html' import evidence_table_skeleton %}
+         {{ evidence_table_skeleton('detectiveCaseEvidence') }}
+#}
+{% macro evidence_table_skeleton(body_id, message='Loading evidence…') %}
+  <div class="table-scroll">
+    <table class="data-table evidence-table">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>Type</th>
+          <th>Source</th>
+          <th>Status</th>
+          <th>SHA-256 Hash</th>
+          <th>File</th>
+        </tr>
+      </thead>
+      <tbody id="{{ body_id }}">
+        <tr><td colspan="6">{{ message }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+{% endmacro %}

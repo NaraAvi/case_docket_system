@@ -1,0 +1,136 @@
+{% extends 'base.html' %}
+{% from 'components/_evidence_table.html' import evidence_table_skeleton %}
+
+{% block content %}
+  <section class="detail-shell">
+    <div class="page-head-row">
+      <div>
+        <p class="eyebrow">Case Reference</p>
+        <h1>{{ case_reference }}</h1>
+      </div>
+      <div class="stack-row">
+        <span class="badge badge-warning" id="citizenStatusBadge">Loading…</span>
+        <span class="badge badge-warning hidden" id="citizenFreezeBadge">Frozen</span>
+        <button class="secondary-btn" type="button" id="escalateCaseBtn">Escalate Case</button>
+      </div>
+    </div>
+
+    <div class="detail-grid">
+      <div class="detail-card">
+        <h3>Case Information</h3>
+        <dl class="meta-list" id="citizenCaseMeta">
+          <dt>Status</dt><dd>Loading…</dd>
+          <dt>Location</dt><dd>Loading…</dd>
+          <dt>Incident Date</dt><dd>Loading…</dd>
+        </dl>
+      </div>
+
+      <div class="detail-card">
+        <h3>Timeline</h3>
+        <ul class="timeline-list" id="citizenCaseTimeline">
+          <li><span class="timeline-dot"></span><div><strong>Loading case timeline</strong><small>Please wait…</small></div></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="detail-card hidden" id="citizenInterviewPanel" style="margin-top:18px;">
+      <h3>Interview Recording</h3>
+      <div class="statement-box" id="citizenInterviewStatus">
+        <p>Loading interview status…</p>
+      </div>
+      <div class="file-input-row" style="margin-top:14px;">
+        <label class="input-label">Recording File</label>
+        <input type="file" id="citizenRecordingFile" accept="audio/*,video/*" />
+        <p class="file-name-preview hidden" id="citizenRecordingFilePreview"></p>
+      </div>
+      <div class="stack-row" style="justify-content:flex-end; margin-top:10px;">
+        <button class="secondary-btn" type="button" id="submitCitizenRecording">Submit My Recording</button>
+      </div>
+      <p class="inline-error hidden" id="citizenRecordingError"></p>
+    </div>
+
+    <div class="cards-grid" style="margin-top:18px;">
+      <div class="panel-card">
+        <h3>Your Statement</h3>
+        <textarea rows="5" placeholder="Describe what happened, in your own words..." id="citizenStatementText"></textarea>
+        <div class="stack-row" style="margin-top:10px; justify-content:flex-end;">
+          <button class="secondary-btn" type="button" id="saveCitizenStatement">Save Statement</button>
+        </div>
+        <p class="inline-error hidden" id="citizenStatementError"></p>
+        <label class="input-label" style="margin-top:14px; display:block;">Statement History</label>
+        <div class="stack-list" id="citizenStatementsList">
+          <p>Loading statements…</p>
+        </div>
+      </div>
+
+      <div class="panel-card">
+        <h3>Evidence</h3>
+        {{ evidence_table_skeleton('citizenCaseEvidence') }}
+        <div class="wizard-row" style="margin-top:14px;">
+          <label>Type</label>
+          <select class="field-select" id="citizenEvidenceType">
+            <option value="PHOTO">Photo</option>
+            <option value="VIDEO">Video</option>
+            <option value="DOCUMENT">Document</option>
+            <option value="AUDIO">Audio</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </div>
+        <div class="file-input-row">
+          <label class="input-label">File</label>
+          <input type="file" id="citizenEvidenceFile" />
+          <p class="file-name-preview hidden" id="citizenEvidenceFilePreview"></p>
+        </div>
+        <div class="wizard-row">
+          <label>Description</label>
+          <textarea rows="2" id="citizenEvidenceDescription" placeholder="What does this evidence show?"></textarea>
+        </div>
+        <div class="stack-row" style="justify-content:flex-end;">
+          <button class="secondary-btn" type="button" id="addCitizenEvidence">Add Evidence</button>
+        </div>
+        <p class="field-hint">Every uploaded file is hashed with SHA-256 for chain-of-custody (CPA §212) when it's saved.</p>
+        <p class="inline-error hidden" id="citizenEvidenceError"></p>
+      </div>
+
+      <div class="panel-card">
+        <h3>My Escalations</h3>
+        <div class="stack-list" id="citizenEscalationsList">
+          <div class="empty-state">Loading your escalations…</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="stack-row" style="margin-top:18px; justify-content:flex-end;">
+      <button class="primary-btn" type="button" id="submitCitizenDocketForReview" disabled>Submit Docket for Review</button>
+    </div>
+    <p class="field-hint" id="submitDocketHint" style="text-align:right;"></p>
+  </section>
+
+  <div class="reauth-modal hidden" id="escalateModal" aria-hidden="true">
+    <div class="reauth-card">
+      <div class="reauth-header">
+        <span class="lock-icon">⚠️</span>
+        <span>Escalate to IPID</span>
+      </div>
+      <p class="reauth-subtitle">Use this if the docket process itself was mishandled — refused registration, unlawful delay, officer conduct, or suspected malpractice.</p>
+
+      <label class="input-label">Category</label>
+      <select class="field-select" id="escalateCategory">
+        <option value="REFUSAL_TO_REGISTER">Refusal to Register</option>
+        <option value="UNLAWFUL_DELAY">Unlawful Delay</option>
+        <option value="OFFICER_CONDUCT">Officer Conduct</option>
+        <option value="SUSPECTED_MALPRACTICE">Suspected Malpractice</option>
+        <option value="OTHER">Other</option>
+      </select>
+
+      <label class="input-label" style="margin-top:12px; display:block;">Description</label>
+      <textarea rows="4" placeholder="Describe what happened (minimum 10 characters)..." id="escalateDescription"></textarea>
+      <p class="inline-error hidden" id="escalateModalError"></p>
+
+      <div class="modal-actions">
+        <button type="button" class="secondary-btn" id="closeEscalateModal">Cancel</button>
+        <button type="button" class="primary-btn" id="submitEscalateModal">Submit Escalation</button>
+      </div>
+    </div>
+  </div>
+{% endblock %}

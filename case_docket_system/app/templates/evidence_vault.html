@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% from 'components/_docket_card.html' import docket_list_skeleton %}
+
+{% block content %}
+  <section class="page-hero">
+    <div>
+      <p class="eyebrow">Evidence Management</p>
+      <h1>Evidence Vault</h1>
+    </div>
+  </section>
+
+  <section class="panel-block">
+    <div class="panel-head">
+      <h2>Stored Evidence Records</h2>
+      <span class="badge badge-muted">Case-linked metadata</span>
+    </div>
+
+    {{ docket_list_skeleton('evidenceVaultList', 'evidence-vault-grid', 'Loading evidence vault…') }}
+  </section>
+{% endblock %}

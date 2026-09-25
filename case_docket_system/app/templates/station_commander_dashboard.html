@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% from 'components/_docket_card.html' import docket_list_skeleton %}
+
+{% block content %}
+  <section class="page-hero">
+    <div>
+      <p class="eyebrow">Station Commander Portal</p>
+      <h1>Operational oversight, freeze status, and reassignment controls.</h1>
+    </div>
+  </section>
+
+  <div class="cards-grid multi-panel">
+    <div class="panel-card wide-card">
+      <h3>Operational Dashboard</h3>
+      {{ docket_list_skeleton('stationCommanderCaseList', 'stack-list', 'Loading tracked dockets…') }}
+    </div>
+
+    <div class="panel-card">
+      <h3>Assignment Controls</h3>
+      <div class="statement-box">
+        <p>Reassignment requires a specific case. Open a docket from the list above, then use its <strong>Reassignment</strong> panel to select a target officer and confirm.</p>
+      </div>
+    </div>
+
+    <div class="panel-card wide-card">
+      <h3>SLA Breaches</h3>
+      {{ docket_list_skeleton('stationCommanderSlaBreachList', 'stack-list', 'Loading SLA breach summary…') }}
+    </div>
+  </div>
+{% endblock %}

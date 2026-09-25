@@ -1,0 +1,125 @@
+{% extends 'base.html' %}
+{% from 'components/_timeline.html' import timeline_skeleton %}
+{% from 'components/_evidence_table.html' import evidence_table_skeleton %}
+{% from 'components/_statutory_badge.html' import statutory_badge %}
+
+{% block content %}
+  <section class="detail-shell">
+    <div class="page-head-row">
+      <div>
+        <p class="eyebrow">Constable Review</p>
+        <h1>{{ case_reference }}</h1>
+      </div>
+      <div class="stack-row">
+        <span class="badge badge-warning" id="constableStatusBadge">Awaiting Registration</span>
+        <span class="badge badge-warning hidden" id="constableFreezeBadge">Frozen</span>
+        <button class="secondary-btn" type="button" id="openFlagModal">Flag Concern</button>
+      </div>
+    </div>
+
+    <div class="panel-card wide-card hidden" id="constableFrozenNotice">
+      <h3>🔒 Case Frozen</h3>
+      <p id="constableFrozenReason">This docket has been frozen by IPID while under independent review. Case content is not viewable until the freeze is released.</p>
+    </div>
+
+    <div id="constableDocketContent">
+      <div class="detail-grid">
+        <div class="detail-card">
+          <h3>Citizen Submission</h3>
+          <dl class="meta-list" id="constableCaseMeta">
+            <dt>Title</dt><dd>Loading…</dd>
+            <dt>Location</dt><dd>Loading…</dd>
+            <dt>Incident Date</dt><dd>Loading…</dd>
+            <dt>Status</dt><dd>Loading…</dd>
+          </dl>
+          <div class="stack-list" style="margin-top:14px;" id="constableStatementsList">
+            <p>Loading statements…</p>
+          </div>
+        </div>
+
+        <div class="detail-card">
+          <h3>Potential Invalidity Flags {{ statutory_badge('PAJA §3', 'Every administrative status change requires a recorded justification.') }}</h3>
+          <div class="stack-list" id="constableFlagList">
+            <div class="empty-state">Loading flags…</div>
+          </div>
+          <div class="stack-row" style="margin-top:16px;">
+            <button class="primary-btn" type="button" id="continueToInterview">Continue to Interview</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="cards-grid" style="margin-top:18px;">
+        <div class="panel-card">
+          <h3>Evidence</h3>
+          {{ evidence_table_skeleton('constableCaseEvidence') }}
+        </div>
+
+        <div class="panel-card">
+          <h3>Related Cases</h3>
+          <div class="statement-box" id="constableRelatedCases">
+            <p>Loading related case links…</p>
+          </div>
+          <label class="input-label" style="margin-top:12px; display:block;">Link Another Docket</label>
+          <input id="relatedCaseReference" type="text" placeholder="Case reference (e.g. CD-20260101-000001)" style="margin-bottom:8px;" />
+          <textarea id="relatedCaseNotes" rows="2" placeholder="Notes (optional)"></textarea>
+          <p class="inline-error hidden" id="relatedCaseError"></p>
+          <button class="secondary-btn" type="button" id="addRelatedCaseBtn" style="margin-top:8px;">Link Case</button>
+        </div>
+
+        <div class="panel-card wide-card hidden" id="constableInterviewPanel">
+          <h3>Interview & Recording</h3>
+          <div class="statement-box" id="constableInterviewStatus">
+            <p>Loading interview status…</p>
+          </div>
+          <div class="file-input-row" style="margin-top:14px;">
+            <label class="input-label">Recording File</label>
+            <input type="file" id="constableRecordingFile" accept="audio/*,video/*" />
+            <p class="file-name-preview hidden" id="constableRecordingFilePreview"></p>
+          </div>
+          <div class="stack-row" style="justify-content:flex-end; margin-top:10px;">
+            <button class="secondary-btn" type="button" id="submitConstableRecording">Submit My Recording</button>
+          </div>
+          <p class="inline-error hidden" id="constableRecordingError"></p>
+          <div class="stack-row" style="margin-top:16px; justify-content:flex-end;">
+            <button class="primary-btn" type="button" id="registerDocketBtn" disabled>Register Docket</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="reauth-modal hidden" id="flagModal" aria-hidden="true">
+    <div class="reauth-card">
+      <div class="reauth-header">
+        <span class="lock-icon">🚩</span>
+        <span id="flagModalTitle">Flag a Potential Invalidity</span>
+      </div>
+      <p class="reauth-subtitle">Flags are recorded against the docket and reviewed by the assigned detective before investigation proceeds.</p>
+
+      <label class="input-label">Category</label>
+      <select class="field-select" id="flagCategory">
+        <option value="INCONSISTENT_INFORMATION">Inconsistent Information</option>
+        <option value="INSUFFICIENT_INFORMATION">Insufficient Information</option>
+        <option value="CONFLICTING_ACCOUNT">Conflicting Account</option>
+        <option value="DUPLICATE_OR_RELATED_REPORT">Duplicate or Related Report</option>
+        <option value="OTHER">Other</option>
+      </select>
+
+      <label class="input-label" style="margin-top:12px; display:block;">Status</label>
+      <select class="field-select" id="flagStatus">
+        <option value="OPEN">Open</option>
+        <option value="RESOLVED">Resolved</option>
+        <option value="DISMISSED">Dismissed</option>
+      </select>
+
+      <label class="input-label" style="margin-top:12px; display:block;">Notes</label>
+      <textarea rows="3" placeholder="Describe the concern..." id="flagNotes"></textarea>
+      <p class="inline-error hidden" id="flagModalError"></p>
+
+      <div class="modal-actions">
+        <button type="button" class="secondary-btn" id="closeFlagModal">Cancel</button>
+        <button type="button" class="primary-btn" id="submitFlagModal">Save Flag</button>
+      </div>
+    </div>
+  </div>
+{% endblock %}
