@@ -19,15 +19,18 @@ class AuditEventRepository(BaseSqlAlchemyRepository):
         return datetime.now(UTC).isoformat()
 
     def _generate_event_id(self):
-        sequence = self.model.query.count() + 1
+        with self._app_context():
+            sequence = self.session.query(self.model).count() + 1
         return f"AUDIT-{sequence:06d}"
 
     def _serialize(self, instance):
         data = super()._serialize(instance)
         if data is None:
             return None
-        data["metadata"] = data.pop("metadata_json", {})
-        data["details"] = data.pop("details_json", {})
+        if "metadata" not in data and "metadata_json" in data:
+            data["metadata"] = data.pop("metadata_json", {})
+        if "details" not in data and "details_json" in data:
+            data["details"] = data.pop("details_json", {})
         return data
 
     def create(self, payload):
@@ -43,11 +46,13 @@ class AuditEventRepository(BaseSqlAlchemyRepository):
         return super().create(payload)
 
     def list_for_case(self, case_reference):
-        instances = self.model.query.filter_by(case_reference=case_reference).order_by(self.model.id.asc()).all()
+        with self._app_context():
+            instances = self.session.query(self.model).filter_by(case_reference=case_reference).order_by(self.model.id.asc()).all()
         return [self._serialize(instance) for instance in instances]
 
     def list_for_actor(self, actor_id):
-        instances = self.model.query.filter_by(actor_id=str(actor_id)).order_by(self.model.id.asc()).all()
+        with self._app_context():
+            instances = self.session.query(self.model).filter_by(actor_id=str(actor_id)).order_by(self.model.id.asc()).all()
         return [self._serialize(instance) for instance in instances]
 
     def update(self, identifier, payload):

@@ -19,7 +19,8 @@ class EscalationRepository(BaseSqlAlchemyRepository):
         return datetime.now(UTC).isoformat()
 
     def _generate_escalation_id(self):
-        sequence = self.model.query.count() + 1
+        with self._app_context():
+            sequence = self.session.query(self.model).count() + 1
         return f"ESC-{sequence:06d}"
 
     def create(self, payload):
@@ -35,11 +36,13 @@ class EscalationRepository(BaseSqlAlchemyRepository):
         return super().create(payload)
 
     def list_by_case(self, case_reference):
-        instances = self.model.query.filter_by(case_reference=case_reference).all()
+        with self._app_context():
+            instances = self.session.query(self.model).filter_by(case_reference=case_reference).all()
         return [self._serialize(instance) for instance in instances]
 
     def list_open(self):
-        instances = self.model.query.filter_by(status="OPEN").all()
+        with self._app_context():
+            instances = self.session.query(self.model).filter_by(status="OPEN").all()
         return [self._serialize(instance) for instance in instances]
 
     def list_unresolved(self):
@@ -47,22 +50,25 @@ class EscalationRepository(BaseSqlAlchemyRepository):
         default IPID queue view so an escalation doesn't disappear from the
         dashboard the moment a reviewer opens it (which transitions it from
         OPEN to UNDER_REVIEW) but before a decision has actually been made."""
-        instances = self.model.query.filter(self.model.status.in_(["OPEN", "UNDER_REVIEW"])).all()
+        with self._app_context():
+            instances = self.session.query(self.model).filter(self.model.status.in_(["OPEN", "UNDER_REVIEW"])).all()
         return [self._serialize(instance) for instance in instances]
 
     def list_by_status(self, status):
         target = str(status or "").upper()
-        instances = self.model.query.filter_by(status=target).all()
+        with self._app_context():
+            instances = self.session.query(self.model).filter_by(status=target).all()
         return [self._serialize(instance) for instance in instances]
 
     def update_status(self, escalation_id, new_status):
-        instance = self.model.query.filter_by(escalation_id=escalation_id).first()
-        if instance is None:
-            return None
-        instance.status = str(new_status or "").upper()
-        instance.updated_at = self._now_iso()
-        self._commit()
-        return self._serialize(instance)
+        with self._app_context():
+            instance = self.session.query(self.model).filter_by(escalation_id=escalation_id).first()
+            if instance is None:
+                return None
+            instance.status = str(new_status or "").upper()
+            instance.updated_at = self._now_iso()
+            self._commit()
+            return self._serialize(instance)
 
     def update(self, escalation_id, payload):
         payload = dict(payload)

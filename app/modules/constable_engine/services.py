@@ -15,8 +15,6 @@ from app.services.case_service import CaseService
 class ConstableRegistrationService:
     """Boundary for docket registration and interview workflows."""
 
-    _shared_interviews = {}
-    _shared_recordings = {}
     VALID_FLAG_CATEGORIES = {
         "INCONSISTENT_INFORMATION",
         "INSUFFICIENT_INFORMATION",
@@ -37,20 +35,34 @@ class ConstableRegistrationService:
         related_case_repository=None,
         freeze_service=None,
         assignment_service=None,
+        app=None,
+        freeze_gate=None,
+        conflict_gate=None,
+        interview_gate=None,
+        registration_gate=None,
+        citizen_submission_service=None,
+        incident_candidate_service=None,
     ):
-        self.case_service = case_service or CaseService()
+        self.app = app
+        self.case_service = case_service or CaseService(app=app)
         self.audit_service = audit_service or AuditTrailService()
         self.media_manager = media_manager or MediaManager()
         self.evidence_service = evidence_service or EvidenceManagementService()
-        self.flag_repository = flag_repository or FlagRepository()
-        self.related_case_repository = related_case_repository or RelatedCaseRepository()
+        self.flag_repository = flag_repository or FlagRepository(app=app)
+        self.related_case_repository = related_case_repository or RelatedCaseRepository(app=app)
         self.freeze_service = freeze_service
         self.assignment_service = assignment_service
+        self.freeze_gate = freeze_gate
+        self.conflict_gate = conflict_gate
+        self.interview_gate = interview_gate
+        self.registration_gate = registration_gate
+        self.citizen_submission_service = citizen_submission_service
+        self.incident_candidate_service = incident_candidate_service
         # M4: wired after construction (they depend on services built later).
         self.referral_service = None
         self.conflict_service = None
-        self._interviews = self.__class__._shared_interviews
-        self._recordings = self.__class__._shared_recordings
+        self._interviews = {}
+        self._recordings = {}
 
     @staticmethod
     def _utc_now():
@@ -78,6 +90,11 @@ class ConstableRegistrationService:
     def _assert_not_frozen(self, case_reference):
         """A docket frozen by a statutory referral can be frozen before it is
         registered, so registration steps must respect the freeze too."""
+        if self.freeze_gate is not None:
+            result = self.freeze_gate.check(case_reference, actor_id=None, actor_role="constable", operation="register")
+            if not result.allowed:
+                raise ValueError(result.message)
+            return
         if self.freeze_service and self.freeze_service.is_case_frozen(case_reference):
             raise ValueError("Case is frozen and operational mutation is restricted.")
 
@@ -110,6 +127,112 @@ class ConstableRegistrationService:
             if case.get("status") == "AWAITING_CONSTABLE_REGISTRATION"
         ]
 
+    def _resolve_protected_submission_context(self, case):
+        """Return the read-only source chain for a procedural case.
+
+        The procedural docket remains authoritative for operational workflow, but
+        the underlying protected submission and derived analysis remain the
+        source of truth for what the citizen reported and what the system
+        concluded from it.
+        """
+        if case is None:
+            return {
+                "citizen_submission": None,
+                "citizen_assertions": [],
+                "citizen_claims": [],
+                "incident_candidate": None,
+                "relationships": [],
+                "citizen_evidence": [],
+            }
+
+        if self.citizen_submission_service is None and self.app is not None:
+            self.citizen_submission_service = self.app.extensions.get("citizen_submission_service")
+        if self.incident_candidate_service is None and self.app is not None:
+            self.incident_candidate_service = self.app.extensions.get("incident_candidate_service")
+
+        submission_id = case.get("source_submission_id")
+        candidate_id = case.get("source_candidate_id")
+        citizen_submission_service = self.citizen_submission_service
+        incident_candidate_service = self.incident_candidate_service
+
+        citizen_submission = None
+        assertions = []
+        claims = []
+        candidate = None
+        relationships = []
+        evidence = []
+
+        if submission_id and citizen_submission_service is not None:
+            repository = getattr(citizen_submission_service, "repository", None)
+            if repository is not None:
+                citizen_submission = repository.get_by_id(submission_id)
+            assertion_repository = getattr(citizen_submission_service, "assertion_repository", None)
+            if assertion_repository is not None:
+                assertions = assertion_repository.list_for_submission(submission_id)
+            claim_repository = getattr(citizen_submission_service, "claim_repository", None)
+            if claim_repository is not None:
+                claims = claim_repository.list_for_submission(submission_id)
+            evidence_repository = getattr(citizen_submission_service, "evidence_repository", None)
+            if evidence_repository is not None:
+                evidence = evidence_repository.list_for_submission(submission_id)
+
+        if candidate_id and incident_candidate_service is not None:
+            candidate_repository = getattr(incident_candidate_service, "candidate_repository", None)
+            if candidate_repository is not None:
+                candidate = candidate_repository.get_by_id(candidate_id)
+
+        if incident_candidate_service is not None:
+            relationship_repository = getattr(incident_candidate_service, "relationship_repository", None)
+            if relationship_repository is not None:
+                relationships = relationship_repository.list_for_submission(submission_id) if submission_id else []
+                if candidate_id:
+                    relationships = [
+                        item for item in relationships if str(item.get("candidate_id") or "") == str(candidate_id) or str(item.get("source_submission_id") or "") == str(submission_id)
+                    ]
+
+        if candidate is None and submission_id and incident_candidate_service is not None:
+            candidate_repository = getattr(incident_candidate_service, "candidate_repository", None)
+            if candidate_repository is not None:
+                candidates = candidate_repository.list_for_submission(submission_id)
+                if candidates:
+                    candidate = candidates[0]
+
+        return {
+            "citizen_submission": citizen_submission,
+            "citizen_assertions": assertions,
+            "citizen_claims": claims,
+            "incident_candidate": candidate,
+            "relationships": relationships,
+            "citizen_evidence": evidence,
+        }
+
+    def _resolve_procedural_assessment(self, case):
+        if case is None:
+            return None
+
+        current_assessment = case.get("procedural_assessment")
+        if isinstance(current_assessment, dict) and current_assessment.get("indicator_codes"):
+            return current_assessment
+
+        protected_context = self._resolve_protected_submission_context(case)
+        source_submission = protected_context.get("citizen_submission") or {}
+        original_content = source_submission.get("original_content") if isinstance(source_submission, dict) else {}
+        if not isinstance(original_content, dict):
+            original_content = {}
+
+        payload = dict(case)
+        if original_content:
+            payload["original_content"] = original_content
+        payload["citizen_submission"] = source_submission
+        payload["evidence"] = case.get("evidence") or protected_context.get("citizen_evidence") or []
+
+        assessment = self.case_service.generate_procedural_assessment(payload)
+        if assessment is not None:
+            case["procedural_assessment"] = assessment
+            if case.get("id") is not None:
+                self.case_service.update_case(case)
+        return assessment
+
     def get_docket(self, case_reference):
         case = self._get_docket_by_reference(case_reference)
         if case is None:
@@ -127,6 +250,9 @@ class ConstableRegistrationService:
                 "frozen_at": freeze.get("frozen_at"),
                 "frozen_by": freeze.get("actor_id"),
             }
+
+        protected_context = self._resolve_protected_submission_context(case)
+        procedural_assessment = self._resolve_procedural_assessment(case)
         return {
             "id": case.get("id"),
             "case_reference": case.get("case_reference"),
@@ -136,6 +262,10 @@ class ConstableRegistrationService:
             "incident_date": case.get("incident_date"),
             "location": case.get("location"),
             "status": case.get("status"),
+            "source_submission_id": case.get("source_submission_id"),
+            "source_candidate_id": case.get("source_candidate_id"),
+            "case_origin": case.get("case_origin"),
+            "gate_decision": case.get("gate_decision"),
             "statement_count": len(case.get("statements", [])),
             "evidence": case.get("evidence", []),
             "statements": case.get("statements", []),
@@ -144,6 +274,13 @@ class ConstableRegistrationService:
             "is_frozen": False,
             "freeze_status": "NOT_FROZEN",
             "freeze_reason": None,
+            "procedural_assessment": procedural_assessment,
+            "citizen_submission": protected_context["citizen_submission"],
+            "citizen_assertions": protected_context["citizen_assertions"],
+            "citizen_claims": protected_context["citizen_claims"],
+            "incident_candidate": protected_context["incident_candidate"],
+            "relationships": protected_context["relationships"],
+            "citizen_evidence": protected_context["citizen_evidence"],
         }
 
     def open_docket(self, case_reference, constable_id):
@@ -461,8 +598,113 @@ class ConstableRegistrationService:
                 return dict(recording)
         return None
 
+    def _rehydrate_interview_from_case(self, interview_id=None, case_reference=None, actor_id=None, actor_role=None):
+        if not interview_id and not case_reference:
+            return None
+
+        case = None
+        if case_reference:
+            case = self._get_docket_by_reference(case_reference)
+        else:
+            for candidate in self.case_service.get_all_cases():
+                if str(candidate.get("interview_id") or "") == str(interview_id):
+                    case = candidate
+                    break
+
+        if case is None:
+            return None
+
+        interview_id = str(interview_id or case.get("interview_id") or "").strip()
+        if not interview_id:
+            return None
+
+        timeline = case.get("timeline") or []
+        interview = {
+            "interview_id": interview_id,
+            "case_reference": case.get("case_reference"),
+            "citizen_id": case.get("citizen_id"),
+            "constable_id": actor_id or case.get("constable_id") or None,
+            "status": "STARTED",
+            "start_timestamp": None,
+            "completion_timestamp": None,
+            "citizen_recording": None,
+            "constable_recording": None,
+            "created_at": case.get("submitted_at") or case.get("created_at") or self._utc_now(),
+            "updated_at": case.get("updated_at") or self._utc_now(),
+        }
+
+        for event in timeline:
+            details = event.get("details") or {}
+            if str(details.get("interview_id") or "") != str(interview_id):
+                continue
+
+            if event.get("event_type") == "constable_registration_interview_started":
+                interview["start_timestamp"] = event.get("timestamp") or interview["start_timestamp"]
+                interview["created_at"] = interview["start_timestamp"] or interview["created_at"]
+                actor = event.get("actor_id")
+                if actor:
+                    interview["constable_id"] = actor
+                interview["status"] = "STARTED"
+            elif event.get("event_type") == "citizen_recording_submitted":
+                recording = {
+                    "recording_id": details.get("recording_id"),
+                    "interview_id": interview_id,
+                    "case_reference": case.get("case_reference"),
+                    "recorder_id": case.get("citizen_id"),
+                    "recorder_role": "citizen",
+                    "recording_type": "citizen_recording",
+                    "status": "SUBMITTED",
+                    "filename": "citizen_recording.wav",
+                    "storage_reference": details.get("storage_reference"),
+                    "content_type": None,
+                    "size_bytes": None,
+                    "sha256_hash": None,
+                    "created_at": event.get("timestamp"),
+                    "submitted_at": event.get("timestamp"),
+                }
+                interview["citizen_recording"] = recording
+                self._recordings[recording["recording_id"]] = recording
+                if interview["status"] != "COMPLETED":
+                    interview["status"] = "AWAITING_AUDIO"
+            elif event.get("event_type") == "constable_recording_submitted":
+                recording = {
+                    "recording_id": details.get("recording_id"),
+                    "interview_id": interview_id,
+                    "case_reference": case.get("case_reference"),
+                    "recorder_id": interview.get("constable_id") or actor_id or case.get("citizen_id"),
+                    "recorder_role": "constable",
+                    "recording_type": "constable_recording",
+                    "status": "SUBMITTED",
+                    "filename": "constable_recording.wav",
+                    "storage_reference": details.get("storage_reference"),
+                    "content_type": None,
+                    "size_bytes": None,
+                    "sha256_hash": None,
+                    "created_at": event.get("timestamp"),
+                    "submitted_at": event.get("timestamp"),
+                }
+                interview["constable_recording"] = recording
+                self._recordings[recording["recording_id"]] = recording
+                if interview["status"] != "COMPLETED":
+                    interview["status"] = "AWAITING_AUDIO"
+            elif event.get("event_type") == "interview_completed":
+                interview["status"] = "COMPLETED"
+                interview["completion_timestamp"] = event.get("timestamp") or interview["completion_timestamp"]
+                interview["updated_at"] = event.get("timestamp") or interview["updated_at"]
+
+        if interview.get("status") == "STARTED" and interview.get("citizen_recording") and interview.get("constable_recording"):
+            interview["status"] = "COMPLETED" if interview.get("completion_timestamp") else "AWAITING_AUDIO"
+
+        if interview.get("status") == "COMPLETED" and interview.get("completion_timestamp") is None:
+            interview["completion_timestamp"] = interview.get("updated_at")
+
+        self._interviews[interview_id] = dict(interview)
+        return dict(interview)
+
     def get_interview_by_id(self, interview_id):
         interview = self._interviews.get(interview_id)
+        if interview is None:
+            interview = self._rehydrate_interview_from_case(interview_id=interview_id)
         if interview is None:
             return None
         return dict(interview)
@@ -470,17 +712,27 @@ class ConstableRegistrationService:
     def get_interview_for_citizen(self, citizen_id, interview_id):
         interview = self._interviews.get(interview_id)
         if interview is None:
+            interview = self._rehydrate_interview_from_case(interview_id=interview_id)
+        if interview is None:
             return None
-        if interview.get("citizen_id") != citizen_id:
+        if interview.get("citizen_id") not in (None, citizen_id) and str(interview.get("citizen_id") or "") != str(citizen_id):
             return None
+        if interview.get("citizen_id") is None:
+            interview["citizen_id"] = citizen_id
+            self._interviews[interview_id] = dict(interview)
         return dict(interview)
 
     def get_interview_for_constable(self, constable_id, interview_id):
         interview = self._interviews.get(interview_id)
         if interview is None:
+            interview = self._rehydrate_interview_from_case(interview_id=interview_id)
+        if interview is None:
             return None
-        if interview.get("constable_id") != constable_id:
+        if interview.get("constable_id") not in (None, constable_id) and str(interview.get("constable_id") or "") != str(constable_id):
             return None
+        if interview.get("constable_id") is None:
+            interview["constable_id"] = constable_id
+            self._interviews[interview_id] = dict(interview)
         return dict(interview)
 
     def _ensure_interview_complete(self, interview):
@@ -614,17 +866,23 @@ class ConstableRegistrationService:
         case = self._get_docket_by_reference(interview.get("case_reference"))
         if case is None:
             raise ValueError("Docket not found.")
-        if case.get("status") != "AWAITING_CONSTABLE_REGISTRATION":
-            raise ValueError("Docket is not awaiting constable registration.")
-        self._assert_not_frozen(case.get("case_reference"))
-        if interview.get("status") != "COMPLETED":
-            raise ValueError("Interview is incomplete.")
-        if interview.get("citizen_recording") is None or interview.get("constable_recording") is None:
-            raise ValueError("Both recordings are required before registration.")
-        if interview["citizen_recording"].get("status") != "SUBMITTED":
-            raise ValueError("Citizen recording is missing.")
-        if interview["constable_recording"].get("status") != "SUBMITTED":
-            raise ValueError("Constable recording is missing.")
+
+        if self.registration_gate is not None:
+            result = self.registration_gate.check(case=case, interview=interview, constable_id=constable_id, actor_id=constable_id, actor_role="constable")
+            if not result.allowed:
+                raise ValueError(result.message)
+        else:
+            if case.get("status") != "AWAITING_CONSTABLE_REGISTRATION":
+                raise ValueError("Docket is not awaiting constable registration.")
+            self._assert_not_frozen(case.get("case_reference"))
+            if interview.get("status") != "COMPLETED":
+                raise ValueError("Interview is incomplete.")
+            if interview.get("citizen_recording") is None or interview.get("constable_recording") is None:
+                raise ValueError("Both recordings are required before registration.")
+            if interview["citizen_recording"].get("status") != "SUBMITTED":
+                raise ValueError("Citizen recording is missing.")
+            if interview["constable_recording"].get("status") != "SUBMITTED":
+                raise ValueError("Constable recording is missing.")
 
         case["status"] = "REGISTERED"
         case["registered_at"] = self._utc_now()

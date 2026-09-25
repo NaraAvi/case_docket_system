@@ -45,6 +45,60 @@ describe('modules/detective.js (integration)', () => {
     expect(container.textContent).not.toContain('CD-2');
   });
 
+  it('renders a state-derived workflow rail for the detective stages and distinguishes findings from final reasoning', async () => {
+    document.body.innerHTML = `
+      <div id="detectiveWorkflowRail"></div>
+      <dl id="detectiveCaseMeta"></dl>
+      <span id="detectiveStatusBadge"></span>
+      <div id="detectiveDeposition"></div>
+      <div id="detectiveStatementBox"></div>
+      <ul id="detectiveCaseTimeline"></ul>
+      <ul id="detectiveCaseEvidence"></ul>
+      <textarea id="investigationNotes"></textarea>
+      <button id="saveInvestigationNote"></button>
+      <p id="investigationNotesError" class="hidden"></p>
+      <div id="detectiveFindingsList"></div>
+      <div id="detectiveFlagsList"></div>
+      <div id="detectiveRelatedCases"></div>
+      <button id="openFindingModal"></button>
+      <button id="startInvestigation"></button>
+    `;
+    setLocation('/detective/dockets/CD-1');
+    const fetchMock = vi.fn((url) => {
+      if (url.endsWith('/findings')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([{ finding_type: 'VALID', notes: 'Consistent with evidence.' }]) });
+      }
+      if (url.endsWith('/flags') || url.endsWith('/related')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            location: 'Main St',
+            status: 'REGISTERED',
+            timeline: [],
+            evidence: [{ description: 'Photo of the scene' }],
+            statements: [{ statement_text: 'Victim statement.' }],
+            investigation: { investigation_id: 'INV-1', detective_id: 'DET-1', status: 'IN_PROGRESS', notes: 'Initial notes.' },
+          }),
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await hydrateDetectiveCase();
+
+    const rail = document.getElementById('detectiveWorkflowRail');
+    expect(rail.textContent).toContain('Case Review');
+    expect(rail.textContent).toContain('Statements & Evidence');
+    expect(rail.textContent).toContain('Investigation');
+    expect(rail.textContent).toContain('Findings');
+    expect(rail.textContent).toContain('Final Reasoning');
+    expect(rail.textContent).toContain('Completion');
+    expect(rail.textContent).toContain('Investigation Finding');
+    expect(rail.querySelectorAll('.workflow-step.current').length).toBeGreaterThan(0);
+  });
+
   it('hydrateDetectiveCase renders detail and wires Start Investigation when no investigation exists yet', async () => {
     document.body.innerHTML = `
       <dl id="detectiveCaseMeta"></dl>
@@ -215,8 +269,7 @@ describe('modules/detective.js (integration)', () => {
         <select id="completeInvestigationOutcome">
           <option value="VALID">Valid</option>
           <option value="INVALID">Invalid</option>
-          <option value="GUILTY">Guilty</option>
-          <option value="NOT_GUILTY">Not Guilty</option>
+          <option value="REVIEW_REQUIRED">Review Required</option>
         </select>
         <textarea id="completeInvestigationNotes"></textarea>
         <p id="completeInvestigationModalError" class="hidden"></p>
@@ -261,7 +314,7 @@ describe('modules/detective.js (integration)', () => {
     document.getElementById('openCompleteInvestigationModal').click();
     expect(document.getElementById('completeInvestigationModal').classList.contains('hidden')).toBe(false);
 
-    document.getElementById('completeInvestigationOutcome').value = 'GUILTY';
+    document.getElementById('completeInvestigationOutcome').value = 'VALID';
     document.getElementById('completeInvestigationNotes').value = 'Evidence and testimony are conclusive.';
     document.getElementById('submitCompleteInvestigationModal').click();
 
@@ -272,7 +325,7 @@ describe('modules/detective.js (integration)', () => {
       )
     );
     const [, options] = fetchMock.mock.calls.find(([url]) => url.endsWith('/complete'));
-    expect(JSON.parse(options.body)).toEqual({ outcome: 'GUILTY', final_notes: 'Evidence and testimony are conclusive.' });
+    expect(JSON.parse(options.body)).toEqual({ outcome: 'VALID', final_notes: 'Evidence and testimony are conclusive.' });
     await vi.waitFor(() => expect(sessionStorage.getItem('pdasFlashMessage')).toContain('Investigation completed'));
   });
 

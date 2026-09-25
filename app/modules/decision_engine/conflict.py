@@ -41,7 +41,7 @@ class ConflictOfInterestService:
     """Identity matching and recusal enforcement for operational officers."""
 
     RELATIONSHIP_TYPES = {"FAMILY", "BUSINESS", "PERSONAL", "FORMER_COMPLAINT", "OTHER"}
-    OPERATIONS = {"assignment", "open_docket", "open_investigation"}
+    OPERATIONS = {"assignment", "open_docket", "open_investigation", "complete_investigation"}
     DECLARING_ROLES = {"constable", "detective", "station_commander", "ipid"}
     DECLARE_ON_BEHALF_ROLES = {"station_commander", "ipid"}
 
@@ -116,14 +116,26 @@ class ConflictOfInterestService:
         references.discard(None)
         return references
 
-    def _prior_complaints(self, complainant_id, officer_id, cases):
-        """Undismissed complaints by ``complainant_id`` about work ``officer_id`` handled."""
+    def _prior_complaints(self, complainant_id, officer_id, cases, case_reference=None):
+        """Undismissed complaints by ``complainant_id`` about work ``officer_id`` handled.
+
+        The current docket is excluded because it is not a prior complaint; it is
+        the case under evaluation, and the same-case assignment history should not
+        create a false recusal signal.
+        """
         if self.escalation_service is None:
             return []
+        if isinstance(cases, list):
+            case_map = {str(item.get("case_reference")): item for item in cases if item.get("case_reference") is not None}
+        else:
+            case_map = cases or {}
         officer_cases = self._officer_case_references(officer_id)
         matches = []
         for escalation in self.escalation_service.list_all():
-            if escalation.get("case_reference") not in officer_cases:
+            escalation_case_reference = escalation.get("case_reference")
+            if escalation_case_reference == case_reference:
+                continue
+            if escalation_case_reference not in officer_cases:
                 continue
             if str(escalation.get("status") or "").upper() == "RESOLVED" and str(escalation.get("decision") or "").upper() == "DISMISSED":
                 continue
@@ -132,7 +144,7 @@ class ConflictOfInterestService:
             else:
                 # Statutory referrals are raised by the system on behalf of
                 # the docket's complainant.
-                filed_by = str((cases.get(escalation.get("case_reference")) or {}).get("citizen_id"))
+                filed_by = str((case_map.get(escalation_case_reference) or {}).get("citizen_id"))
             if filed_by == str(complainant_id):
                 matches.append(escalation)
         return matches
@@ -184,7 +196,7 @@ class ConflictOfInterestService:
                     )
                 )
 
-        prior = self._prior_complaints(complainant_id, officer_id, cases)
+        prior = self._prior_complaints(complainant_id, officer_id, cases, case_reference)
         if prior:
             conflicts.append(
                 self._conflict(
@@ -211,13 +223,13 @@ class ConflictOfInterestService:
                     )
                 )
 
-        if operation == "open_investigation" and self.constable_service is not None and case.get("interview_id"):
+        if operation in {"open_investigation", "complete_investigation"} and self.constable_service is not None and case.get("interview_id"):
             interview = self.constable_service.get_interview_by_id(case.get("interview_id"))
             if interview and str(interview.get("constable_id")) == officer_id:
                 conflicts.append(
                     self._conflict(
                         "SAME_OFFICER_REGISTERED_AND_INVESTIGATED",
-                        "The officer who registered this docket cannot also open its investigation.",
+                        "The officer who registered this docket cannot also open or complete its investigation.",
                         rule_code=RULE_SEPARATION,
                         interview_id=case.get("interview_id"),
                     )

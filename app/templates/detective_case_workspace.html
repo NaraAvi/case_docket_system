@@ -21,6 +21,21 @@
       <p id="detectiveFrozenReason">This docket has been frozen by IPID while under independent review. Case content is not viewable until the freeze is released.</p>
     </div>
 
+    <div class="workflow-rail-shell">
+      <div class="workflow-rail-header">
+        <h3>Workflow Progress</h3>
+        <span class="workflow-rail-subtitle">Current stage</span>
+      </div>
+      <div id="detectiveWorkflowRail" class="workflow-rail" aria-label="Detective workflow">
+        <div class="workflow-step current"><span class="workflow-step-number">1</span><div class="workflow-step-copy"><strong>Case Review</strong><small>Case record reviewed</small></div></div>
+        <div class="workflow-step upcoming"><span class="workflow-step-number">2</span><div class="workflow-step-copy"><strong>Statements &amp; Evidence</strong><small>Review recorded items</small></div></div>
+        <div class="workflow-step upcoming"><span class="workflow-step-number">3</span><div class="workflow-step-copy"><strong>Investigation</strong><small>Open the investigation</small></div></div>
+        <div class="workflow-step upcoming"><span class="workflow-step-number">4</span><div class="workflow-step-copy"><strong>Findings</strong><small>Investigation Finding</small></div></div>
+        <div class="workflow-step upcoming"><span class="workflow-step-number">5</span><div class="workflow-step-copy"><strong>Final Reasoning</strong><small>Final Outcome</small></div></div>
+        <div class="workflow-step upcoming"><span class="workflow-step-number">6</span><div class="workflow-step-copy"><strong>Completion</strong><small>Complete investigation</small></div></div>
+      </div>
+    </div>
+
     <div id="detectiveDocketContent">
       <div class="detail-grid">
         <div class="detail-card">
@@ -135,14 +150,13 @@
         <span class="lock-icon">🔎</span>
         <span>Add Investigation Finding</span>
       </div>
-      <p class="reauth-subtitle">Findings form the auditable basis for the investigation's eventual outcome.</p>
+      <p class="reauth-subtitle">Findings record the evidence-backed assessment that supports the final investigative conclusion.</p>
 
       <label class="input-label">Finding Type</label>
       <select class="field-select" id="findingType">
         <option value="VALID">Valid</option>
         <option value="INVALID">Invalid</option>
-        <option value="GUILTY">Guilty</option>
-        <option value="NOT_GUILTY">Not Guilty</option>
+        <option value="REVIEW_REQUIRED">Review Required</option>
       </select>
 
       <label class="input-label" style="margin-top:12px; display:block;">Notes</label>
@@ -162,14 +176,13 @@
         <span class="lock-icon">🔒</span>
         <span>Complete Investigation</span>
       </div>
-      <p class="reauth-subtitle">This records the final statutory outcome and closes the investigation to further findings.</p>
+      <p class="reauth-subtitle">This records the final investigative conclusion and preserves the evidence-based reasoning trail. It does not make a legal or disciplinary determination.</p>
 
-      <label class="input-label">Outcome</label>
+      <label class="input-label">Investigative Conclusion</label>
       <select class="field-select" id="completeInvestigationOutcome">
         <option value="VALID">Valid</option>
         <option value="INVALID">Invalid</option>
-        <option value="GUILTY">Guilty</option>
-        <option value="NOT_GUILTY">Not Guilty</option>
+        <option value="REVIEW_REQUIRED">Review Required</option>
       </select>
 
       <label class="input-label" style="margin-top:12px; display:block;">Final Reasoning</label>

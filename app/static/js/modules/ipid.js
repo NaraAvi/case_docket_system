@@ -94,7 +94,7 @@ function bindDisciplinaryClose(record, disciplinaryCaseId) {
     return;
   }
   const sanction = document.getElementById('disciplinaryFinalSanction');
-  if (sanction && record.mandatory_sanction && !sanction.value) {
+  if (sanction && record.mandatory_sanction && sanction.value !== record.mandatory_sanction) {
     sanction.value = record.mandatory_sanction;
   }
   form.onsubmit = async (event) => {

@@ -127,6 +127,55 @@ describe('modules/constable.js (integration)', () => {
     `;
   }
 
+  it('renders a state-derived workflow rail for the constable docket stages', async () => {
+    document.body.innerHTML = `
+      <div id="constableWorkflowRail"></div>
+      ${reviewMarkup()}
+    `;
+    setLocation('/constable/dockets/CD-1');
+    const fetchMock = vi.fn((url) => {
+      if (url.endsWith('/interview')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ interview_id: 'INT-1', status: 'STARTED' }) });
+      }
+      if (url.endsWith('/interviews/INT-1')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ status: 'STARTED', citizen_recording: null, constable_recording: null }),
+        });
+      }
+      if (url.endsWith('/flags')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      if (url.endsWith('/related')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            title: 'Vandalism',
+            location: 'Main St',
+            status: 'AWAITING_CONSTABLE_REGISTRATION',
+            timeline: [],
+            statements: [{ statement_text: 'Someone broke my window.' }],
+            evidence: [{ evidence_type: 'photo', description: 'Broken window photo' }],
+            interview_id: 'INT-1',
+            is_frozen: false,
+          }),
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await hydrateConstableReview();
+
+    const rail = document.getElementById('constableWorkflowRail');
+    expect(rail.textContent).toContain('Review Docket');
+    expect(rail.textContent).toContain('Interview');
+    expect(rail.textContent).toContain('Recordings');
+    expect(rail.textContent).toContain('Registration');
+    expect(rail.querySelectorAll('.workflow-step.current').length).toBeGreaterThan(0);
+  });
+
   it('hydrateConstableReview renders meta/statement/evidence/flags/related, and Continue to Interview reveals the interview panel in place', async () => {
     document.body.innerHTML = reviewMarkup();
     setLocation('/constable/dockets/CD-1');
@@ -180,6 +229,130 @@ describe('modules/constable.js (integration)', () => {
     expect(document.getElementById('continueToInterview').classList.contains('hidden')).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/constable/dockets/CD-1/interview', expect.objectContaining({ method: 'POST' }));
     expect(document.getElementById('constableInterviewStatus').textContent).toContain('STARTED');
+  });
+
+  it('prefers protected citizen evidence when the docket legacy evidence list is empty', async () => {
+    document.body.innerHTML = reviewMarkup();
+    setLocation('/constable/dockets/CD-1');
+    const fetchMock = vi.fn((url) => {
+      if (url.endsWith('/flags')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      if (url.endsWith('/related')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            title: 'Witness report',
+            location: 'Main St',
+            status: 'AWAITING_CONSTABLE_REGISTRATION',
+            timeline: [],
+            statements: [{ statement_text: 'I saw the incident.' }],
+            evidence: [],
+            citizen_evidence: [{ evidence_type: 'photo', description: 'Witness photo', source: 'citizen_submission', storage_reference: 'evidence/abc.jpg' }],
+            interview_id: null,
+          }),
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await hydrateConstableReview();
+
+    expect(document.getElementById('constableCaseEvidence').textContent).toContain('Witness photo');
+    expect(document.getElementById('constableCaseEvidence').textContent).not.toContain('No evidence has been submitted yet');
+  });
+
+  it('shows the protected source chain and provenance for the citizen submission in the constable review', async () => {
+    document.body.innerHTML = `
+      <span id="constableStatusBadge"></span>
+      <span id="constableFreezeBadge" class="hidden"></span>
+      <div id="constableFrozenNotice" class="hidden"><p id="constableFrozenReason"></p></div>
+      <div id="constableDocketContent">
+        <dl id="constableCaseMeta"></dl>
+        <div id="constableStatementsList"></div>
+        <div id="constableProtectedSource"></div>
+        <div id="constableSourceProvenance"></div>
+        <table><tbody id="constableCaseEvidence"></tbody></table>
+        <div id="constableFlagList"></div>
+        <div id="constableProceduralAssessment"></div>
+        <div id="constableRelatedCases"></div>
+        <button id="continueToInterview"></button>
+        <button id="openFlagModal"></button>
+        <div id="flagModal" class="hidden">
+          <span id="flagModalTitle"></span>
+          <select id="flagCategory"></select>
+          <select id="flagStatus"></select>
+          <textarea id="flagNotes"></textarea>
+          <p id="flagModalError" class="hidden"></p>
+          <button id="closeFlagModal"></button>
+          <button id="submitFlagModal"></button>
+        </div>
+        <div id="constableInterviewPanel" class="hidden">
+          <div id="constableInterviewStatus"></div>
+          <input type="file" id="constableRecordingFile" />
+          <p id="constableRecordingFilePreview" class="hidden"></p>
+          <button id="submitConstableRecording"></button>
+          <p id="constableRecordingError" class="hidden"></p>
+          <button id="registerDocketBtn" disabled></button>
+        </div>
+      </div>
+      <div class="toast-container" id="toastContainer"></div>
+    `;
+    setLocation('/constable/dockets/CD-1');
+    const fetchMock = vi.fn((url) => {
+      if (url.endsWith('/flags')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      if (url.endsWith('/related')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            title: 'Witness report',
+            location: 'Station Gate',
+            status: 'AWAITING_CONSTABLE_REGISTRATION',
+            timeline: [],
+            statements: [],
+            evidence: [],
+            citizen_submission: {
+              submission_id: 'SUB-000001',
+              original_content: {
+                reporter_relationship: 'Witness',
+                incident_type: 'PUBLIC_SAFETY_HAZARD',
+                location: 'Station Gate',
+                description: 'Threatened staff near the station gate.',
+                current_safety_question: 'AFTER_EVENT_SAFE',
+                current_safety_summary: 'No immediate risk remains.',
+              },
+            },
+            citizen_assertions: [{ assertion_id: 'AST-1', assertion_text: 'I saw the officer at the station gate.', provenance: 'CITIZEN_ASSERTED' }],
+            citizen_claims: [{ claim_id: 'CLM-1', claim_type: 'asserted_fact', subject: 'officer', predicate: 'present_at_location', object_value: 'station gate' }],
+            incident_candidate: { candidate_id: 'CND-1', gate_decision: 'ALLOWED' },
+            interview_id: null,
+            procedural_assessment: {
+              assessment_id: 'PA-CD-1-001',
+              attention_level: 'HIGH',
+              indicator_codes: ['POLICE_INVOLVEMENT', 'WITNESS_PRESENT', 'CURRENT_SAFETY_CONCERN'],
+              summary: 'System-generated procedural assessment only. No legal conclusion has been made.',
+            },
+          }),
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await hydrateConstableReview();
+
+    expect(document.getElementById('constableProtectedSource').textContent).toContain('Witness');
+    expect(document.getElementById('constableProtectedSource').textContent).toContain('PUBLIC_SAFETY_HAZARD');
+    expect(document.getElementById('constableSourceProvenance').textContent).toContain('I saw the officer at the station gate.');
+    expect(document.getElementById('constableSourceProvenance').textContent).toContain('present_at_location');
+    expect(document.getElementById('constableProceduralAssessment').textContent).toContain('SYSTEM PROCEDURAL ASSESSMENT');
+    expect(document.getElementById('constableProceduralAssessment').textContent).toContain('HIGH');
+    expect(document.getElementById('constableProceduralAssessment').textContent).toContain('POLICE_INVOLVEMENT');
   });
 
   it('shows the interview panel immediately when the docket already has an interview, submits a recording, and enables Register once complete', async () => {

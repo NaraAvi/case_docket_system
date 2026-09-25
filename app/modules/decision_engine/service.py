@@ -119,6 +119,104 @@ class ObjectiveDecisionEngine:
             "corpus_version": corpus.CORPUS_VERSION,
         }
 
+    def evaluate_post_investigation_action(self, case_reference):
+        """Determine the only legitimate downstream action after an investigation completes.
+
+        The gate is intentionally narrow: an investigation conclusion may be
+        ``VALID`` or ``INVALID`` but it must not silently become a legal
+        determination, and a ``REVIEW_REQUIRED`` outcome is never converted into
+        an allowed procedural action.
+        """
+        case = self._get_case(case_reference)
+        if case is None:
+            raise ValueError("Case not found.")
+
+        if self.investigation_service is None:
+            raise ValueError("Investigation service is not configured.")
+
+        repository = getattr(self.investigation_service, "repository", None)
+        if repository is None:
+            raise ValueError("Investigation repository is not configured.")
+
+        investigations = repository.list_for_case(case_reference)
+        if not investigations:
+            return {
+                "status": "BLOCKED",
+                "allowed": False,
+                "action": "NO_COMPLETED_INVESTIGATION",
+                "case_reference": case_reference,
+                "message": "A completed investigation is required before any downstream procedural action is evaluated.",
+            }
+
+        latest = investigations[-1]
+        latest_status = str(latest.get("status") or "").upper()
+        if latest_status != "COMPLETED":
+            return {
+                "status": "BLOCKED",
+                "allowed": False,
+                "action": "INVESTIGATION_NOT_COMPLETED",
+                "case_reference": case_reference,
+                "investigation_id": latest.get("investigation_id"),
+                "observed_status": latest_status or None,
+                "message": "The latest investigation is not yet completed.",
+            }
+
+        outcome = str(latest.get("outcome") or "").strip().upper()
+        if outcome == "REVIEW_REQUIRED":
+            return {
+                "status": "REVIEW_REQUIRED",
+                "allowed": False,
+                "action": "REVIEW_REQUIRED",
+                "case_reference": case_reference,
+                "investigation_id": latest.get("investigation_id"),
+                "outcome": outcome,
+                "message": "The investigation outcome requires human review; no procedural action is allowed until it is resolved.",
+            }
+
+        triage = self.evaluate_statutory_triage(case)
+        if triage.get("mandatory_referral"):
+            return {
+                "status": "ALLOWED",
+                "allowed": True,
+                "action": "IPID_STATUTORY_REFERRAL",
+                "case_reference": case_reference,
+                "investigation_id": latest.get("investigation_id"),
+                "outcome": outcome,
+                "rule_codes": triage.get("rule_codes", []),
+                "subsections": triage.get("subsections", []),
+                "statutory_basis": triage.get("statutory_basis"),
+                "legal_references": triage.get("legal_references", []),
+                "message": "The completed investigation record plus the docket's statutory triggers require an IPID referral.",
+            }
+
+        if outcome not in {"VALID", "INVALID"}:
+            return {
+                "status": "BLOCKED",
+                "allowed": False,
+                "action": "UNSUPPORTED_INVESTIGATION_OUTCOME",
+                "case_reference": case_reference,
+                "investigation_id": latest.get("investigation_id"),
+                "outcome": outcome,
+                "message": "The completed investigation outcome is not supported for a downstream procedural action.",
+            }
+
+        return {
+            "status": "BLOCKED",
+            "allowed": False,
+            "action": "NO_POST_INVESTIGATION_ACTION",
+            "case_reference": case_reference,
+            "investigation_id": latest.get("investigation_id"),
+            "outcome": outcome,
+            "rule_codes": [],
+            "message": "No mandatory post-investigation procedural action is required under the current case record.",
+        }
+
+    def determine_post_investigation_action(self, case_reference):
+        return self.evaluate_post_investigation_action(case_reference)
+
+    def evaluate_next_procedural_action(self, case_reference):
+        return self.evaluate_post_investigation_action(case_reference)
+
     # ---------------------------------------------------- 2. SLA compliance
     def evaluate_sla_compliance(self, case_reference, now=None):
         """Evaluate the registration and attendance windows for a docket,

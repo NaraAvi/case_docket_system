@@ -3,7 +3,7 @@
  */
 
 import { fetchJson, postForm } from '../core/api.js';
-import { bindFilePreview, bindMediaViewButtons, buildStatusBadge, flashToast, renderDocketCardList, renderEvidenceTable, renderMediaViewButton, renderStatementList, setEmptyState, showToast } from '../core/ui.js';
+import { bindFilePreview, bindMediaViewButtons, buildStatusBadge, flashToast, renderDocketCardList, renderEvidenceTable, renderMediaViewButton, renderStatementList, renderWorkflowRail, setEmptyState, showToast } from '../core/ui.js';
 
 export function getConstableCaseReference() {
   const match = window.location.pathname.match(/\/constable\/dockets\/([^/]+)/);
@@ -52,6 +52,109 @@ export async function hydrateConstableDashboard() {
   bindConstableSearch(container);
 }
 
+function formatProtectedSourceValue(value) {
+  if (value === undefined || value === null || value === '') {
+    return 'Not provided';
+  }
+  if (Array.isArray(value)) {
+    return value.filter((item) => item !== undefined && item !== null && item !== '').map((item) => String(item)).join(', ') || 'Not provided';
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+function renderProtectedSource(container, docket) {
+  if (!container) {
+    return;
+  }
+  const originalContent = docket?.citizen_submission?.original_content && typeof docket.citizen_submission.original_content === 'object'
+    ? docket.citizen_submission.original_content
+    : {};
+  const sourceEntries = Array.isArray(Object.entries(originalContent)) ? Object.entries(originalContent) : [];
+  const rows = sourceEntries.filter(([, value]) => value !== undefined && value !== null && value !== '');
+
+  if (!rows.length) {
+    container.innerHTML = '<div class="empty-state">No preserved citizen source details are available for this docket.</div>';
+    return;
+  }
+
+  const renderedRows = rows
+    .map(([key, value]) => `<dt>${key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())}</dt><dd>${formatProtectedSourceValue(value)}</dd>`)
+    .join('');
+
+  container.innerHTML = `
+    <article class="mini-case-card">
+      <div class="stack-row" style="justify-content:space-between;">
+        <strong>Protected citizen source (read-only)</strong>
+        <span class="badge badge-muted">immutable</span>
+      </div>
+      <dl class="meta-list compact">${renderedRows}</dl>
+    </article>
+  `;
+}
+
+function renderProtectedSourceProvenance(container, docket) {
+  if (!container) {
+    return;
+  }
+  const blocks = [];
+
+  const assertions = Array.isArray(docket?.citizen_assertions) ? docket.citizen_assertions : [];
+  if (assertions.length) {
+    blocks.push(`
+      <article class="mini-case-card">
+        <strong>Citizen assertions</strong>
+        ${assertions
+          .map((item) => `
+            <p>
+              <span class="badge badge-muted">${item.provenance || 'CITIZEN_ASSERTED'}</span>
+              <strong>${item.assertion_id || 'Assertion'}</strong>
+            </p>
+            <p>${item.assertion_text || 'No assertion text provided.'}</p>
+          `)
+          .join('')}
+      </article>
+    `);
+  }
+
+  const claims = Array.isArray(docket?.citizen_claims) ? docket.citizen_claims : [];
+  if (claims.length) {
+    blocks.push(`
+      <article class="mini-case-card">
+        <strong>Citizen claims</strong>
+        ${claims
+          .map((item) => `
+            <p>
+              <strong>${item.claim_id || 'Claim'}</strong>
+              <span class="badge badge-muted">${item.assessment_state || item.provenance || 'CITIZEN_ASSERTED'}</span>
+            </p>
+            <p>${item.subject || 'report'} ${item.predicate || 'asserted'} ${item.object_value || ''}</p>
+          `)
+          .join('')}
+      </article>
+    `);
+  }
+
+  const candidate = docket?.incident_candidate;
+  if (candidate) {
+    blocks.push(`
+      <article class="mini-case-card">
+        <strong>System-derived incident candidate</strong>
+        <p>${candidate.candidate_id || 'Candidate'} • ${candidate.gate_decision || 'UNSPECIFIED'}</p>
+      </article>
+    `);
+  }
+
+  if (!blocks.length) {
+    container.innerHTML = '<div class="empty-state">No protected source provenance has been preserved for this docket.</div>';
+    return;
+  }
+
+  container.innerHTML = blocks.join('');
+}
+
 function renderFlags(container, flags, { onEdit } = {}) {
   if (!container) {
     return;
@@ -83,6 +186,31 @@ function renderFlags(container, flags, { onEdit } = {}) {
       }
     });
   });
+}
+
+function renderProceduralAssessment(container, docket) {
+  if (!container) {
+    return;
+  }
+
+  const assessment = docket?.procedural_assessment;
+  if (!assessment || !Array.isArray(assessment.indicator_codes)) {
+    container.innerHTML = '<div class="empty-state">No system procedural assessment is available for this docket.</div>';
+    return;
+  }
+
+  const indicatorBadges = assessment.indicator_codes.map((code) => `<span class="badge badge-muted">${code}</span>`).join('');
+  container.innerHTML = `
+    <article class="mini-case-card">
+      <div class="stack-row" style="justify-content:space-between;">
+        <strong>SYSTEM PROCEDURAL ASSESSMENT</strong>
+        <span class="badge badge-muted">${assessment.attention_level || 'ROUTINE'}</span>
+      </div>
+      <p style="margin-top:10px;">Read-only system-generated assessment.</p>
+      <p>${assessment.summary || 'The system generated a procedural assessment using the protected case source. No legal conclusion has been made.'}</p>
+      <div class="stack-row" style="flex-wrap:wrap; margin-top:10px; gap:6px;">${indicatorBadges || '<span class="badge badge-muted">NO_INDICATORS</span>'}</div>
+    </article>
+  `;
 }
 
 function renderInterviewStatus(container, interview) {
@@ -251,6 +379,49 @@ function bindFlagModal(caseReference, { onSaved } = {}) {
   return { openForEdit: openModal };
 }
 
+function renderConstableWorkflow(docket, interview) {
+  const rail = document.getElementById('constableWorkflowRail');
+  if (!rail) {
+    return;
+  }
+  const status = (docket.status || '').toUpperCase();
+  const hasInterview = Boolean(interview);
+  const citizenDone = Boolean(interview && interview.citizen_recording && interview.citizen_recording.status === 'SUBMITTED');
+  const constableDone = Boolean(interview && interview.constable_recording && interview.constable_recording.status === 'SUBMITTED');
+  const isRegistered = status === 'REGISTERED';
+
+  const steps = [
+    { label: 'Review Docket', state: 'complete', detail: 'Case opened and reviewed' },
+    { label: 'Interview', state: 'upcoming', detail: 'Start interview' },
+    { label: 'Recordings', state: 'upcoming', detail: 'Awaiting recording submission' },
+    { label: 'Registration', state: 'upcoming', detail: 'Backend registration required' },
+  ];
+
+  if (!hasInterview) {
+    steps[1].state = 'current';
+  } else {
+    steps[1].state = 'complete';
+    steps[1].detail = 'Interview initialized';
+    if (!(citizenDone && constableDone)) {
+      steps[2].state = 'current';
+    }
+  }
+
+  if (citizenDone && constableDone) {
+    steps[2].state = 'complete';
+    steps[2].detail = 'Both recordings submitted';
+    steps[3].state = isRegistered ? 'complete' : 'current';
+    steps[3].detail = isRegistered ? 'Docket registered' : 'Awaiting backend registration';
+  } else if (isRegistered) {
+    steps[2].state = 'complete';
+    steps[2].detail = 'Both recordings submitted';
+    steps[3].state = 'complete';
+    steps[3].detail = 'Docket registered';
+  }
+
+  renderWorkflowRail(rail, { title: 'Constable workflow', steps, locked: Boolean(docket.is_frozen) });
+}
+
 export async function hydrateConstableReview() {
   const caseReference = getConstableCaseReference();
   if (!caseReference) {
@@ -259,6 +430,8 @@ export async function hydrateConstableReview() {
 
   const meta = document.getElementById('constableCaseMeta');
   const statementsList = document.getElementById('constableStatementsList');
+  const protectedSource = document.getElementById('constableProtectedSource');
+  const sourceProvenance = document.getElementById('constableSourceProvenance');
   const evidenceBody = document.getElementById('constableCaseEvidence');
   const flagList = document.getElementById('constableFlagList');
   const relatedBox = document.getElementById('constableRelatedCases');
@@ -284,6 +457,11 @@ export async function hydrateConstableReview() {
   let isFrozen = false;
   try {
     const docket = await fetchJson(`/api/v1/constable/dockets/${caseReference}`);
+    let interview = null;
+    if (docket.interview_id) {
+      interview = await fetchJson(`/api/v1/constable/interviews/${docket.interview_id}`);
+    }
+    renderConstableWorkflow(docket, interview);
     if (statusBadge) {
       statusBadge.className = buildStatusBadge(docket.status);
       statusBadge.textContent = docket.status || 'AWAITING_CONSTABLE_REGISTRATION';
@@ -318,7 +496,16 @@ export async function hydrateConstableReview() {
       `;
     }
     renderStatementList(statementsList, docket.statements);
-    renderEvidenceTable(evidenceBody, docket.evidence);
+    renderProtectedSource(protectedSource, docket);
+    renderProtectedSourceProvenance(sourceProvenance, docket);
+    renderProceduralAssessment(document.getElementById('constableProceduralAssessment'), docket);
+
+    const evidenceItems = Array.isArray(docket.citizen_evidence) && docket.citizen_evidence.length
+      ? docket.citizen_evidence
+      : Array.isArray(docket.evidence)
+        ? docket.evidence
+        : [];
+    renderEvidenceTable(evidenceBody, evidenceItems);
 
     if (docket.interview_id) {
       await hydrateInterview(caseReference, docket.interview_id);

@@ -75,13 +75,18 @@ def citizen_dashboard():
 @ui_bp.route("/citizen/dockets/new")
 @require_ui_role("citizen")
 def citizen_new_docket():
-    return render_template("citizen_docket_form.html", role="citizen", page_title="New Docket")
+    return render_template("citizen_docket_form.html", role="citizen", page_title="New Submission")
 
 
 @ui_bp.route("/citizen/dockets/<case_reference>")
 @require_ui_role("citizen")
 def citizen_docket_detail(case_reference):
-    return render_template("citizen_docket_detail.html", role="citizen", case_reference=case_reference, page_title="Citizen Docket Details")
+    return render_template(
+        "citizen_docket_detail.html",
+        role="citizen",
+        case_reference=case_reference,
+        page_title="View and manage my protected submission",
+    )
 
 
 @ui_bp.route("/constable")

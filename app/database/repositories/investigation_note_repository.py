@@ -11,7 +11,8 @@ class InvestigationNoteRepository(BaseSqlAlchemyRepository):
     id_column = "note_id"
 
     def _generate_note_id(self):
-        sequence = self.model.query.count() + 1
+        with self._app_context():
+            sequence = self.session.query(self.model).count() + 1
         return f"NOTE-{sequence:06d}"
 
     def create(self, payload):
@@ -21,5 +22,6 @@ class InvestigationNoteRepository(BaseSqlAlchemyRepository):
         return super().create(payload)
 
     def list_for_investigation(self, investigation_id):
-        instances = self.model.query.filter_by(investigation_id=investigation_id).all()
+        with self._app_context():
+            instances = self.session.query(self.model).filter_by(investigation_id=investigation_id).all()
         return [self._serialize(instance) for instance in instances]

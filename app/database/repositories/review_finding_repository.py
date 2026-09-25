@@ -19,7 +19,8 @@ class ReviewFindingRepository(BaseSqlAlchemyRepository):
         return datetime.now(UTC).isoformat()
 
     def _generate_finding_id(self):
-        sequence = self.model.query.count() + 1
+        with self._app_context():
+            sequence = self.session.query(self.model).count() + 1
         return f"RFG-{sequence:06d}"
 
     def create(self, payload):
@@ -37,7 +38,8 @@ class ReviewFindingRepository(BaseSqlAlchemyRepository):
         return super().create(payload)
 
     def list_for_escalation(self, escalation_id):
-        instances = self.model.query.filter_by(escalation_id=escalation_id).all()
+        with self._app_context():
+            instances = self.session.query(self.model).filter_by(escalation_id=escalation_id).all()
         return [self._serialize(instance) for instance in instances]
 
     def get_for_finding_id(self, finding_id):

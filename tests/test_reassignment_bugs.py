@@ -44,13 +44,18 @@ def _auth_headers(token):
     return {"Authorization": f"Bearer {token}"}
 
 
+def _create_draft_docket(app_client):
+    from tests.conftest import create_case_via_service
+
+    case = create_case_via_service(app_client, ROLE_TEST_IDS["citizen"], "Vandalism", "Broken window overnight", location="Main St", incident_date="2026-01-01")
+    return case["case_reference"]
+
+
 def _create_and_submit_docket(app_client, citizen_token):
-    create_response = app_client.post(
-        "/api/v1/citizen/dockets",
-        json={"title": "Vandalism", "description": "Broken window overnight", "location": "Main St", "incident_date": "2026-01-01"},
-        headers=_auth_headers(citizen_token),
-    )
-    case_reference = create_response.get_json()["case_reference"]
+    from tests.conftest import create_case_via_service
+
+    case = create_case_via_service(app_client, ROLE_TEST_IDS["citizen"], "Vandalism", "Broken window overnight", location="Main St", incident_date="2026-01-01")
+    case_reference = case["case_reference"]
     app_client.post(
         f"/api/v1/citizen/dockets/{case_reference}/statements",
         json={"statement_text": "Someone broke my window."},
@@ -75,6 +80,17 @@ def _register_docket(app_client, citizen_token, constable_token, case_reference)
     )
     register_response = app_client.post(f"/api/v1/constable/interviews/{interview_id}/register", headers=_auth_headers(constable_token))
     assert register_response.status_code == 200
+
+
+def _assign_detective(app_client, case_reference, detective_id=ROLE_TEST_IDS["detective"]):
+    station_commander_token = _login(app_client, "station_commander")
+    response = app_client.post(
+        f"/api/v1/station-commander/dockets/{case_reference}/reassign",
+        json={"officer_id": detective_id, "reason": "Assigning detective for investigation."},
+        headers=_auth_headers(station_commander_token),
+    )
+    assert response.status_code == 200
+    return response.get_json()
 
 
 class TestDocketListAccessibleToEveryOperationalRole:
@@ -118,6 +134,7 @@ class TestReassignmentTransfersInvestigationOwnership:
         constable_token = _login(app_client, "constable")
         case_reference = _create_and_submit_docket(app_client, citizen_token)
         _register_docket(app_client, citizen_token, constable_token, case_reference)
+        _assign_detective(app_client, case_reference)
 
         detective_a_token = _login(app_client, "detective")
         create_investigation = app_client.post(
@@ -152,15 +169,16 @@ class TestReassignmentTransfersInvestigationOwnership:
         commander's force_reassign_docket() and needs the identical
         investigation-transfer call -- this was missed on the first pass and
         would have silently reintroduced the "new detective locked out" bug
-        via IPID's reassignment endpoint instead. Confirmed by spying on
-        InvestigationService.reassign_active_investigation() rather than via
-        a second detective identity (none is seeded in this dev environment)."""
+        via IPID's reassignment endpoint instead. The seeded environment only
+        contains one detective, so this uses a simulated second detective ID in
+        the identity registry while still asserting the real reassignment path."""
         from unittest.mock import MagicMock
 
         citizen_token = _login(app_client, "citizen")
         constable_token = _login(app_client, "constable")
         case_reference = _create_and_submit_docket(app_client, citizen_token)
         _register_docket(app_client, citizen_token, constable_token, case_reference)
+        _assign_detective(app_client, case_reference)
 
         detective_token = _login(app_client, "detective")
         create_investigation = app_client.post(
@@ -172,22 +190,28 @@ class TestReassignmentTransfersInvestigationOwnership:
 
         with app_client.application.app_context():
             ipid_service = app_client.application.extensions["ipid_service"]
+            original_get_identity = ipid_service.identity_registry.get_identity
+
+            def fake_get_identity(officer_id):
+                if str(officer_id) == "DET-B-9999999999999":
+                    return {"test_id": "DET-B-9999999999999", "role": "detective", "active": True, "access_state": "ACTIVE"}
+                return original_get_identity(str(officer_id))
+
+            ipid_service.identity_registry.get_identity = MagicMock(side_effect=fake_get_identity)
             spy = MagicMock(wraps=ipid_service.investigation_service.reassign_active_investigation)
             ipid_service.investigation_service.reassign_active_investigation = spy
 
         ipid_token = _login(app_client, "ipid")
-        # No formal AssignmentService record exists yet (the detective
-        # self-started the investigation), so reassigning to that same
-        # detective via IPID is accepted as a fresh assignment.
+        target_officer = "DET-B-9999999999999"
         response = app_client.post(
             f"/api/v1/ipid/dockets/{case_reference}/reassign",
-            json={"officer_id": ROLE_TEST_IDS["detective"], "reason": "IPID confirming officer assignment."},
+            json={"officer_id": target_officer, "reason": "IPID confirming officer assignment."},
             headers=_auth_headers(ipid_token),
         )
         assert response.status_code == 200
         spy.assert_called_once()
         assert spy.call_args.args[0] == case_reference
-        assert spy.call_args.args[1] == ROLE_TEST_IDS["detective"]
+        assert spy.call_args.args[1] == target_officer
 
     def test_is_a_no_op_when_there_is_no_active_investigation(self, app_client):
         from app.modules.investigation_engine.services import InvestigationService
@@ -233,12 +257,7 @@ class TestConstableCanBeAssignedBeforeRegistration:
 
     def test_assigning_to_a_draft_docket_is_still_rejected(self, app_client):
         citizen_token = _login(app_client, "citizen")
-        create_response = app_client.post(
-            "/api/v1/citizen/dockets",
-            json={"title": "Vandalism", "description": "Broken window overnight", "location": "Main St", "incident_date": "2026-01-01"},
-            headers=_auth_headers(citizen_token),
-        )
-        case_reference = create_response.get_json()["case_reference"]
+        case_reference = _create_draft_docket(app_client)
 
         station_commander_token = _login(app_client, "station_commander")
         response = app_client.post(

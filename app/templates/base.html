@@ -25,7 +25,7 @@
           <nav class="nav-list">
             {% if role == 'citizen' %}
               {{ nav_link('/citizen', 'Dashboard') }}
-              {{ nav_link('/citizen/dockets/new', 'Submit New Docket') }}
+              {{ nav_link('/citizen/dockets/new', 'Submit New Submission') }}
             {% elif role == 'constable' %}
               {{ nav_link('/constable', 'Dashboard') }}
               {{ nav_link('/active-cases', 'Active Cases') }}

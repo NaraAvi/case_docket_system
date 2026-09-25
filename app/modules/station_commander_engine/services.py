@@ -29,8 +29,10 @@ class StationCommanderService:
         constable_service=None,
         investigation_service=None,
         media_manager=None,
+        app=None,
     ):
-        self.case_service = case_service or CaseService()
+        self.app = app
+        self.case_service = case_service or CaseService(app=app)
         self.audit_service = audit_service or AuditTrailService()
         self.identity_registry = identity_registry or TestIdentityRegistry()
         self.freeze_service = freeze_service
@@ -44,6 +46,7 @@ class StationCommanderService:
             audit_service=self.audit_service,
             identity_registry=self.identity_registry,
             freeze_service=self.freeze_service,
+            app=app,
         )
 
     def _attach_current_assignment(self, case):
@@ -207,7 +210,11 @@ class StationCommanderService:
         ]
 
     def get_sla_breaches(self):
-        if self.automation_service is None or self.automation_service.sla_service is None:
+        if self.automation_service is None:
+            return []
+        if hasattr(self.automation_service, "list_breaches"):
+            return self.automation_service.list_breaches()
+        if self.automation_service.sla_service is None:
             return []
         return self.automation_service.sla_service.list_breaches()
 

@@ -3,7 +3,7 @@
  */
 
 import { fetchJson } from '../core/api.js';
-import { buildStatusBadge, flashToast, populateSelect, renderDocketCardList, renderEvidenceTable, renderStatementList, renderTimelineList, setEmptyState, showToast } from '../core/ui.js';
+import { buildStatusBadge, flashToast, populateSelect, renderDocketCardList, renderEvidenceTable, renderStatementList, renderTimelineList, renderWorkflowRail, setEmptyState, showToast } from '../core/ui.js';
 
 function renderReadOnlyFlags(container, flags) {
   if (!container) {
@@ -358,6 +358,56 @@ function bindNoteEntryModal(investigationId, evidenceItems, { onSaved } = {}) {
   });
 }
 
+function renderDetectiveWorkflow(docket, investigation) {
+  const rail = document.getElementById('detectiveWorkflowRail');
+  if (!rail) {
+    return;
+  }
+  const status = (docket.status || '').toUpperCase();
+  const hasInvestigation = Boolean(investigation);
+  const findings = Array.isArray(investigation?.findings) ? investigation.findings : [];
+  const hasFindings = findings.length > 0;
+  const isCompleted = (investigation && investigation.status && investigation.status.toUpperCase() === 'COMPLETED') || status === 'COMPLETED';
+
+  const steps = [
+    { label: 'Case Review', state: 'complete', detail: 'Reference and case record reviewed' },
+    { label: 'Statements & Evidence', state: 'complete', detail: 'Statements and evidence reviewed' },
+    { label: 'Investigation', state: 'upcoming', detail: 'Open the investigation' },
+    { label: 'Findings', state: 'upcoming', detail: 'Investigation Finding' },
+    { label: 'Final Reasoning', state: 'upcoming', detail: 'Final Outcome' },
+    { label: 'Completion', state: 'upcoming', detail: 'Complete investigation' },
+  ];
+
+  if (!hasInvestigation) {
+    steps[2].state = 'current';
+    return renderWorkflowRail(rail, { title: 'Detective workflow', steps, locked: Boolean(docket.is_frozen) });
+  }
+
+  steps[2].state = 'complete';
+  steps[2].detail = 'Investigation opened';
+
+  if (hasFindings) {
+    steps[3].state = 'complete';
+    steps[3].detail = 'Investigation Finding recorded';
+    steps[4].state = isCompleted ? 'complete' : 'current';
+    steps[4].detail = isCompleted ? 'Final Outcome recorded' : 'Prepare the Final Outcome';
+  } else {
+    steps[3].state = 'current';
+    steps[3].detail = 'Add Investigation Finding';
+  }
+
+  if (isCompleted) {
+    steps[4].state = 'complete';
+    steps[4].detail = 'Final Outcome recorded';
+    steps[5].state = 'complete';
+    steps[5].detail = 'Investigation completed';
+  } else if (hasFindings) {
+    steps[5].state = 'upcoming';
+  }
+
+  renderWorkflowRail(rail, { title: 'Detective workflow', steps, locked: Boolean(docket.is_frozen) });
+}
+
 export async function hydrateDetectiveCase() {
   const caseReference = getDetectiveCaseReference();
   if (!caseReference) {
@@ -383,6 +433,7 @@ export async function hydrateDetectiveCase() {
   try {
     const docket = await fetchJson(`/api/v1/detective/dockets/${caseReference}`);
     const investigation = docket.investigation;
+    renderDetectiveWorkflow(docket, investigation);
 
     if (statusBadge) {
       statusBadge.className = buildStatusBadge(docket.status);

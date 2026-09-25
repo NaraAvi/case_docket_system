@@ -8,17 +8,14 @@ from datetime import datetime, timezone
 class AuditTrailService:
     """Boundary for operational tracing and accountability events."""
 
-    _shared_entries = []
-    _event_counter = 0
-
     def __init__(self, repository=None):
         self.repository = repository
-        self._entries = self.__class__._shared_entries
+        self._entries = []
+        self._event_counter = 0
 
-    @classmethod
-    def _next_event_id(cls):
-        cls._event_counter += 1
-        return f"AUDIT-{cls._event_counter:06d}"
+    def _next_event_id(self):
+        self._event_counter += 1
+        return f"AUDIT-{self._event_counter:06d}"
 
     def log(self, entry):
         payload = {

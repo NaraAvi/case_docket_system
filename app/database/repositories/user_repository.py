@@ -13,13 +13,15 @@ class UserRepository(BaseSqlAlchemyRepository):
     id_column = "test_id"
 
     def list_by_role(self, role):
-        instances = self.model.query.filter_by(role=role).order_by(self.model.id.asc()).all()
+        with self._app_context():
+            instances = self.session.query(self.model).filter_by(role=role).order_by(self.model.id.asc()).all()
         return [self._serialize(instance) for instance in instances]
 
     def seed_if_empty(self, identities):
         """Idempotently seed synthetic test identities. No-op if the table has rows."""
-        if self.model.query.count() > 0:
-            return False
+        with self._app_context():
+            if self.session.query(self.model).count() > 0:
+                return False
 
         for identity in identities:
             payload = {

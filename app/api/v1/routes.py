@@ -48,6 +48,14 @@ def get_citizen_docket_service():
     return current_app.extensions["citizen_docket_service"]
 
 
+def get_citizen_submission_service():
+    return current_app.extensions["citizen_submission_service"]
+
+
+def get_incident_candidate_service():
+    return current_app.extensions["incident_candidate_service"]
+
+
 def get_constable_registration_service():
     return current_app.extensions["constable_registration_service"]
 
@@ -152,6 +160,341 @@ def citizen_me():
     )
 
 
+@api_v1_bp.post("/citizen/submissions")
+@jwt_required()
+def create_citizen_submission():
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    payload = request.get_json(silent=True) or {}
+    citizen_id = get_jwt_identity()
+    try:
+        submission = get_citizen_submission_service().create_submission(citizen_id, payload)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    return jsonify(submission), 201
+
+
+@api_v1_bp.get("/citizen/submissions")
+@jwt_required()
+def list_citizen_submissions():
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    citizen_id = get_jwt_identity()
+    try:
+        submissions = get_citizen_submission_service().list_submissions(citizen_id)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(submissions)
+
+
+@api_v1_bp.get("/citizen/submissions/<submission_id>")
+@jwt_required()
+def get_citizen_submission(submission_id):
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    citizen_id = get_jwt_identity()
+    submission = get_citizen_submission_service().get_submission(citizen_id, submission_id)
+    if submission is None:
+        return jsonify({"error": "Submission not found."}), 404
+    return jsonify(submission)
+
+
+@api_v1_bp.get("/citizen/submissions/<submission_id>/history")
+@jwt_required()
+def list_citizen_submission_history(submission_id):
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    citizen_id = get_jwt_identity()
+    try:
+        history = get_citizen_submission_service().list_history(citizen_id, submission_id)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 404 if "not found" in str(exc).lower() else 400
+    return jsonify(history)
+
+
+@api_v1_bp.put("/citizen/submissions/<submission_id>")
+@jwt_required()
+def update_citizen_submission(submission_id):
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    citizen_id = get_jwt_identity()
+    payload = request.get_json(silent=True) or {}
+    try:
+        get_citizen_submission_service().update_submission(citizen_id, submission_id, payload)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"status": "ok"})
+
+
+@api_v1_bp.post("/citizen/submissions/<submission_id>/assertions")
+@jwt_required()
+def create_citizen_assertion(submission_id):
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    citizen_id = get_jwt_identity()
+    payload = request.get_json(silent=True) or {}
+    try:
+        assertion = get_citizen_submission_service().create_assertion(citizen_id, submission_id, payload)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 403 if "forbidden" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+    return jsonify(assertion), 201
+
+
+@api_v1_bp.get("/citizen/submissions/<submission_id>/assertions")
+@jwt_required()
+def list_citizen_assertions(submission_id):
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    citizen_id = get_jwt_identity()
+    try:
+        assertions = get_citizen_submission_service().list_assertions(citizen_id, submission_id)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 403 if "forbidden" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+    return jsonify(assertions)
+
+
+@api_v1_bp.get("/citizen/submissions/<submission_id>/assertions/<assertion_id>")
+@jwt_required()
+def get_citizen_assertion(submission_id, assertion_id):
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    citizen_id = get_jwt_identity()
+    try:
+        assertion = get_citizen_submission_service().get_assertion(citizen_id, submission_id, assertion_id)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 403 if "forbidden" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+    return jsonify(assertion)
+
+
+@api_v1_bp.put("/citizen/submissions/<submission_id>/assertions/<assertion_id>")
+@jwt_required()
+def update_citizen_assertion(submission_id, assertion_id):
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    return jsonify({"error": "Assertion content is immutable and append-only."}), 400
+
+
+@api_v1_bp.delete("/citizen/submissions/<submission_id>/assertions/<assertion_id>")
+@jwt_required()
+def delete_citizen_assertion(submission_id, assertion_id):
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    return jsonify({"error": "Assertion history is immutable and cannot be deleted."}), 400
+
+
+@api_v1_bp.post("/citizen/submissions/<submission_id>/assertions/<assertion_id>/claims")
+@jwt_required()
+def create_citizen_claim(submission_id, assertion_id):
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    citizen_id = get_jwt_identity()
+    payload = request.get_json(silent=True) or {}
+    try:
+        get_citizen_submission_service()._reject_client_controlled_provenance(payload, "claim")
+        derived_claims = get_citizen_submission_service().create_claim(citizen_id, submission_id, assertion_id, payload)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 403 if "forbidden" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+    return jsonify(derived_claims), 201
+
+
+@api_v1_bp.get("/citizen/submissions/<submission_id>/claims")
+@jwt_required()
+def list_citizen_claims(submission_id):
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    citizen_id = get_jwt_identity()
+    submission = get_citizen_submission_service().get_submission(citizen_id, submission_id)
+    if submission is None:
+        return jsonify({"error": "Submission not found."}), 404
+    if str(submission.get("citizen_id")) != str(citizen_id):
+        return jsonify({"error": "Forbidden: citizen cannot access another citizen's submission."}), 403
+    claims_list = get_citizen_submission_service().claim_repository.list_for_submission(submission_id)
+    return jsonify(claims_list)
+
+
+@api_v1_bp.post("/citizen/submissions/<submission_id>/evidence")
+@jwt_required()
+def create_citizen_evidence(submission_id):
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    citizen_id = get_jwt_identity()
+    uploaded_file = request.files.get("file")
+    if uploaded_file is not None:
+        try:
+            media = get_media_manager().save_upload(uploaded_file, subdir="evidence")
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        payload = {
+            "evidence_type": request.form.get("evidence_type", ""),
+            "description": request.form.get("description", ""),
+            "filename": media["filename"],
+            "storage_reference": media["storage_reference"],
+            "content_type": media["content_type"],
+            "size_bytes": media["size_bytes"],
+            "sha256_hash": media["sha256_hash"],
+        }
+    else:
+        payload = request.get_json(silent=True) or {}
+
+    try:
+        evidence = get_citizen_submission_service().create_evidence(citizen_id, submission_id, payload)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 403 if "forbidden" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+    return jsonify(evidence), 201
+
+
+@api_v1_bp.get("/citizen/submissions/<submission_id>/evidence")
+@jwt_required()
+def list_citizen_evidence(submission_id):
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    citizen_id = get_jwt_identity()
+    try:
+        evidence = get_citizen_submission_service().list_evidence(citizen_id, submission_id)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 403 if "forbidden" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+    return jsonify(evidence)
+
+
+@api_v1_bp.post("/citizen/submissions/<submission_id>/corrections")
+@jwt_required()
+def create_citizen_correction(submission_id):
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    citizen_id = get_jwt_identity()
+    payload = request.get_json(silent=True) or {}
+    try:
+        correction = get_citizen_submission_service().create_correction(citizen_id, submission_id, payload)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 403 if "forbidden" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+    return jsonify(correction), 201
+
+
+@api_v1_bp.post("/citizen/submissions/<submission_id>/withdrawal")
+@jwt_required()
+def create_citizen_withdrawal(submission_id):
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    citizen_id = get_jwt_identity()
+    payload = request.get_json(silent=True) or {}
+    try:
+        withdrawal = get_citizen_submission_service().create_withdrawal(citizen_id, submission_id, payload)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 403 if "forbidden" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+    return jsonify(withdrawal), 201
+
+
+@api_v1_bp.post("/citizen/submissions/<submission_id>/analyze")
+@jwt_required()
+def analyze_citizen_submission(submission_id):
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    citizen_id = get_jwt_identity()
+    payload = request.get_json(silent=True) or {}
+    try:
+        result = get_incident_candidate_service().analyze_submission(citizen_id, submission_id, payload)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 403 if "forbidden" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+    return jsonify(result), 201
+
+
+@api_v1_bp.get("/citizen/submissions/<submission_id>/incident-candidates")
+@jwt_required()
+def list_citizen_incident_candidates(submission_id):
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    citizen_id = get_jwt_identity()
+    try:
+        result = get_incident_candidate_service().list_candidates(citizen_id, submission_id)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 403 if "forbidden" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+    return jsonify(result)
+
+
+@api_v1_bp.get("/citizen/submissions/<submission_id>/relationships")
+@jwt_required()
+def list_citizen_relationships(submission_id):
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    citizen_id = get_jwt_identity()
+    try:
+        result = get_incident_candidate_service().list_relationships(citizen_id, submission_id)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 403 if "forbidden" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+    return jsonify(result)
+
+
+@api_v1_bp.post("/citizen/submissions/<submission_id>/incident-candidates/<candidate_id>/create-case")
+@jwt_required()
+def create_case_from_incident_candidate(submission_id, candidate_id):
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    citizen_id = get_jwt_identity()
+    try:
+        result = get_incident_candidate_service().create_case_from_candidate(citizen_id, submission_id, candidate_id)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 403 if "forbidden" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+
+    if result.get("status") == "ALLOWED":
+        return jsonify(result), 200
+    if result.get("status") == "REVIEW_REQUIRED":
+        return jsonify(result), 202
+    return jsonify(result), 409
+
+
 @api_v1_bp.post("/citizen/dockets")
 @jwt_required()
 def create_citizen_docket():
@@ -159,14 +502,9 @@ def create_citizen_docket():
     if claims.get("role") != "citizen":
         return jsonify({"error": "Only citizens can create dockets."}), 403
 
-    payload = request.get_json(silent=True) or {}
-    citizen_id = get_jwt_identity()
-    try:
-        docket = get_citizen_docket_service().create_docket(citizen_id, payload)
-    except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
-
-    return jsonify(docket), 201
+    return jsonify({
+        "error": "Citizen docket creation is retired. Use the protected submission workflow at /api/v1/citizen/submissions instead."
+    }), 410
 
 
 @api_v1_bp.get("/citizen/dockets")
@@ -1262,6 +1600,12 @@ def _find_evidence_by_storage_reference(storage_reference):
         for item in case.get("evidence", []):
             if item.get("storage_reference") == storage_reference:
                 return case.get("citizen_id"), item
+
+    evidence_repository = current_app.extensions.get("evidence_repository")
+    if evidence_repository is not None:
+        for item in evidence_repository.list_all():
+            if str(item.get("storage_reference") or "") == storage_reference:
+                return item.get("citizen_id"), item
     return None, None
 
 
@@ -1376,6 +1720,21 @@ def preview_statutory_triage():
         return jsonify({"error": "Request body must be a JSON object."}), 400
     extra = [("text", payload.get("text"))] if payload.get("text") else None
     return jsonify(get_decision_engine().evaluate_statutory_triage(payload, extra))
+
+
+@api_v1_bp.get("/decision/dockets/<case_reference>/post-investigation-action")
+@api_v1_bp.get("/decision/dockets/<case_reference>/next-action")
+@api_v1_bp.get("/decision/dockets/<case_reference>/procedural-action")
+@jwt_required()
+def evaluate_post_investigation_action(case_reference):
+    claims = get_jwt()
+    if claims.get("role") not in OPERATIONAL_ROLES:
+        return jsonify({"error": "Forbidden."}), 403
+
+    try:
+        return jsonify(get_decision_engine().evaluate_post_investigation_action(case_reference))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), _error_status(exc)
 
 
 @api_v1_bp.get("/decision/dockets/<case_reference>/sla")

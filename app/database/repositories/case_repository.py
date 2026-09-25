@@ -10,9 +10,11 @@ class CaseRepository(BaseSqlAlchemyRepository):
     model = CaseDocket
 
     def list_for_citizen(self, citizen_id):
-        instances = self.model.query.filter_by(citizen_id=citizen_id).order_by(self.model.id.asc()).all()
+        with self._app_context():
+            instances = self.session.query(self.model).filter_by(citizen_id=citizen_id).order_by(self.model.id.asc()).all()
         return [self._serialize(instance) for instance in instances]
 
     def get_for_citizen(self, citizen_id, case_reference):
-        instance = self.model.query.filter_by(citizen_id=citizen_id, case_reference=case_reference).first()
+        with self._app_context():
+            instance = self.session.query(self.model).filter_by(citizen_id=citizen_id, case_reference=case_reference).first()
         return self._serialize(instance)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime
 
 from app.auth.service import TestIdentityRegistry
@@ -30,18 +31,20 @@ class IPIDReviewService:
         identity_registry=None,
         disciplinary_service=None,
         decision_engine=None,
+        app=None,
     ):
-        self.case_service = case_service or CaseService()
+        self.app = app
+        self.case_service = case_service or CaseService(app=app)
         self.audit_service = audit_service or AuditTrailService()
-        self.escalation_service = escalation_service or EscalationService(audit_service=self.audit_service)
+        self.escalation_service = escalation_service or EscalationService(audit_service=self.audit_service, app=app)
         self.assignment_service = assignment_service
         self.freeze_service = freeze_service
         self.constable_service = constable_service
         self.investigation_service = investigation_service
-        self.review_note_repository = review_note_repository or ReviewNoteRepository()
-        self.review_finding_repository = review_finding_repository or ReviewFindingRepository()
+        self.review_note_repository = review_note_repository or ReviewNoteRepository(app=app)
+        self.review_finding_repository = review_finding_repository or ReviewFindingRepository(app=app)
         self.identity_registry = identity_registry or TestIdentityRegistry()
-        self.disciplinary_service = disciplinary_service or DisciplinaryCaseService(audit_service=self.audit_service)
+        self.disciplinary_service = disciplinary_service or DisciplinaryCaseService(audit_service=self.audit_service, app=app)
         self.decision_engine = decision_engine
 
     @staticmethod
@@ -327,6 +330,27 @@ class IPIDReviewService:
 
         case_reference = escalation.get("case_reference")
         is_statutory = self.escalation_service.is_statutory(escalation)
+        is_sla_breach = str(escalation.get("category") or "").upper() == "SLA_BREACH"
+
+        if is_sla_breach:
+            reviewed = self.escalation_service.uphold_escalation(escalation_id, actor_id, "ipid", reason=reason)
+            self.audit_service.log(
+                {
+                    "actor_id": actor_id,
+                    "actor_role": "ipid",
+                    "action": "sla_breach_escalation_upheld",
+                    "case_reference": case_reference,
+                    "details": {
+                        "escalation_id": escalation_id,
+                        "freeze_id": self.freeze_service.get_current_freeze(case_reference).get("freeze_id") if self.freeze_service and self.freeze_service.get_current_freeze(case_reference) else None,
+                        "reason": reason,
+                    },
+                }
+            )
+            reviewed["decision"] = "UPHELD"
+            reviewed["decision_by"] = actor_id
+            reviewed["decision_reason"] = reason
+            return reviewed
 
         # Resolve and validate the implicated officer *before* mutating
         # anything (resolving the escalation, freezing the docket) -- doing
@@ -550,6 +574,10 @@ class IPIDReviewService:
         custody, not be locked out of their own investigation."""
         if not isinstance(payload, dict):
             raise ValueError("Statement payload must be a JSON object.")
+        forbidden = {"statement_id", "case_reference", "citizen_id", "recorded_by", "recorded_by_role", "created_at", "updated_at", "provenance", "content_hash", "sha256_hash"}
+        if forbidden.intersection(payload):
+            raise ValueError("Statement provenance and identity are server-controlled and cannot be overridden.")
+
         statement_text = str(payload.get("statement_text") or "").strip()
         if not statement_text:
             raise ValueError("Statement text is required.")
@@ -562,6 +590,7 @@ class IPIDReviewService:
         if case is None:
             raise ValueError("Docket not found.")
 
+        created_at = self._utc_now()
         statement = {
             "statement_id": len(case.get("statements", [])) + 1,
             "case_reference": case_reference,
@@ -569,7 +598,15 @@ class IPIDReviewService:
             "statement_text": statement_text,
             "recorded_by": actor_id,
             "recorded_by_role": "ipid",
-            "created_at": self._utc_now(),
+            "created_at": created_at,
+            "content_hash": hashlib.sha256(statement_text.encode("utf-8")).hexdigest(),
+            "provenance": {
+                "actor_id": str(actor_id),
+                "actor_role": "ipid",
+                "source": "ipid_statement",
+                "created_at": created_at,
+                "statement_version": 1,
+            },
         }
         case.setdefault("statements", []).append(statement)
         case.setdefault("timeline", []).append(

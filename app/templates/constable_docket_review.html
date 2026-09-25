@@ -22,6 +22,19 @@
       <p id="constableFrozenReason">This docket has been frozen by IPID while under independent review. Case content is not viewable until the freeze is released.</p>
     </div>
 
+    <div class="workflow-rail-shell">
+      <div class="workflow-rail-header">
+        <h3>Workflow Progress</h3>
+        <span class="workflow-rail-subtitle">Current stage</span>
+      </div>
+      <div id="constableWorkflowRail" class="workflow-rail" aria-label="Constable workflow">
+        <div class="workflow-step current"><span class="workflow-step-number">1</span><div class="workflow-step-copy"><strong>Review Docket</strong><small>Case opened and reviewed</small></div></div>
+        <div class="workflow-step upcoming"><span class="workflow-step-number">2</span><div class="workflow-step-copy"><strong>Interview</strong><small>Start interview</small></div></div>
+        <div class="workflow-step upcoming"><span class="workflow-step-number">3</span><div class="workflow-step-copy"><strong>Recordings</strong><small>Awaiting recording submission</small></div></div>
+        <div class="workflow-step upcoming"><span class="workflow-step-number">4</span><div class="workflow-step-copy"><strong>Registration</strong><small>Backend registration required</small></div></div>
+      </div>
+    </div>
+
     <div id="constableDocketContent">
       <div class="detail-grid">
         <div class="detail-card">
@@ -35,12 +48,21 @@
           <div class="stack-list" style="margin-top:14px;" id="constableStatementsList">
             <p>Loading statements…</p>
           </div>
+          <div class="stack-list" style="margin-top:14px;" id="constableProtectedSource">
+            <p>Loading protected source details…</p>
+          </div>
+          <div class="stack-list" style="margin-top:14px;" id="constableSourceProvenance">
+            <p>Loading source provenance…</p>
+          </div>
         </div>
 
         <div class="detail-card">
           <h3>Potential Invalidity Flags {{ statutory_badge('PAJA §3', 'Every administrative status change requires a recorded justification.') }}</h3>
           <div class="stack-list" id="constableFlagList">
             <div class="empty-state">Loading flags…</div>
+          </div>
+          <div class="stack-list" style="margin-top:16px;" id="constableProceduralAssessment">
+            <div class="empty-state">Loading procedural assessment…</div>
           </div>
           <div class="stack-row" style="margin-top:16px;">
             <button class="primary-btn" type="button" id="continueToInterview">Continue to Interview</button>

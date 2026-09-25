@@ -34,6 +34,212 @@ class User(db.Model):
         }
 
 
+class Submission(db.Model):
+    __tablename__ = "submissions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    submission_id = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    citizen_id = db.Column(db.String(13), nullable=False, index=True)
+    title = db.Column(db.String(500), nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    incident_date = db.Column(db.String(50))
+    location = db.Column(db.String(500))
+    status = db.Column(db.String(50), default="RECEIVED", nullable=False, index=True)
+    original_content = db.Column(db.JSON, default=dict, nullable=False)
+    provenance = db.Column(db.JSON, default=dict, nullable=False)
+    receipt_timestamp = db.Column(db.String(50), nullable=False)
+    event_history = db.Column(db.JSON, default=list, nullable=False)
+    created_at = db.Column(db.DateTime, default=_utc_now, nullable=False)
+    updated_at = db.Column(db.DateTime, default=_utc_now, onupdate=_utc_now)
+
+
+class SubmissionEvent(db.Model):
+    __tablename__ = "submission_events"
+
+    id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    submission_id = db.Column(db.String(50), nullable=False, index=True)
+    event_type = db.Column(db.String(100), nullable=False)
+    actor_id = db.Column(db.String(13), nullable=False)
+    actor_role = db.Column(db.String(50), nullable=False)
+    timestamp = db.Column(db.String(50), nullable=False)
+    details = db.Column(db.JSON, default=dict, nullable=False)
+    created_at = db.Column(db.DateTime, default=_utc_now, nullable=False)
+
+
+class RuleEvaluation(db.Model):
+    __tablename__ = "rule_evaluations"
+
+    id = db.Column(db.Integer, primary_key=True)
+    evaluation_id = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    rule_code = db.Column(db.String(150), nullable=False, index=True)
+    rule_version = db.Column(db.String(50), nullable=True)
+    subject = db.Column(db.String(150), nullable=False, index=True)
+    result = db.Column(db.String(80), nullable=False, index=True)
+    reason = db.Column(db.Text, nullable=False)
+    inputs = db.Column(db.JSON, default=dict, nullable=False)
+    timestamp = db.Column(db.String(50), nullable=False)
+    source_context = db.Column(db.String(200), nullable=True)
+    related_submission_id = db.Column(db.String(50), nullable=True, index=True)
+    related_candidate_id = db.Column(db.String(50), nullable=True, index=True)
+    related_case_reference = db.Column(db.String(50), nullable=True, index=True)
+    legal_basis = db.Column(db.Text, nullable=True)
+    metadata_json = db.Column("metadata", db.JSON, default=dict, nullable=False)
+    created_at = db.Column(db.DateTime, default=_utc_now, nullable=False)
+
+
+class ControlEvaluation(db.Model):
+    __tablename__ = "control_evaluations"
+
+    id = db.Column(db.Integer, primary_key=True)
+    control_evaluation_id = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    subject_action = db.Column(db.String(200), nullable=False, index=True)
+    related_rule_evaluation_ids = db.Column(db.JSON, default=list, nullable=False)
+    result = db.Column(db.String(80), nullable=False, index=True)
+    reason = db.Column(db.Text, nullable=False)
+    timestamp = db.Column(db.String(50), nullable=False)
+    actor_id = db.Column(db.String(100), nullable=True, index=True)
+    actor_role = db.Column(db.String(50), nullable=True)
+    source_submission_id = db.Column(db.String(50), nullable=True, index=True)
+    source_candidate_id = db.Column(db.String(50), nullable=True, index=True)
+    source_case_reference = db.Column(db.String(50), nullable=True, index=True)
+    resulting_transition = db.Column(db.String(200), nullable=True)
+    metadata_json = db.Column("metadata", db.JSON, default=dict, nullable=False)
+    created_at = db.Column(db.DateTime, default=_utc_now, nullable=False)
+
+
+class SubmissionEvidence(db.Model):
+    __tablename__ = "submission_evidence"
+
+    id = db.Column(db.Integer, primary_key=True)
+    evidence_id = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    submission_id = db.Column(db.String(50), nullable=False, index=True)
+    citizen_id = db.Column(db.String(13), nullable=False, index=True)
+    source_actor_id = db.Column(db.String(13), nullable=False, index=True)
+    source_actor_role = db.Column(db.String(50), nullable=False, default="citizen")
+    evidence_type = db.Column(db.String(50), nullable=False, index=True)
+    description = db.Column(db.Text, nullable=False)
+    filename = db.Column(db.String(200), nullable=True)
+    content_type = db.Column(db.String(100), nullable=True)
+    storage_reference = db.Column(db.String(200), nullable=False, index=True)
+    sha256_hash = db.Column(db.String(200), nullable=False, index=True)
+    integrity_status = db.Column(db.String(50), nullable=False, default="VERIFIED", index=True)
+    source = db.Column(db.String(100), nullable=False, default="citizen_submission")
+    original_reference = db.Column(db.String(200), nullable=True)
+    created_at = db.Column(db.String(50), nullable=False)
+    version = db.Column(db.Integer, nullable=False, default=1)
+    handling_history = db.Column(db.JSON, default=list, nullable=False)
+    metadata_json = db.Column("metadata", db.JSON, default=dict, nullable=False)
+
+
+class SubmissionCorrection(db.Model):
+    __tablename__ = "submission_corrections"
+
+    id = db.Column(db.Integer, primary_key=True)
+    correction_id = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    submission_id = db.Column(db.String(50), nullable=False, index=True)
+    citizen_id = db.Column(db.String(13), nullable=False, index=True)
+    original_assertion_id = db.Column(db.String(80), nullable=False, index=True)
+    corrected_assertion_id = db.Column(db.String(80), nullable=False, index=True)
+    relationship_type = db.Column(db.String(50), nullable=False, default="correction_for", index=True)
+    reason = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.String(50), nullable=False)
+    metadata_json = db.Column("metadata", db.JSON, default=dict, nullable=False)
+
+
+class WithdrawalRequest(db.Model):
+    __tablename__ = "withdrawal_requests"
+
+    id = db.Column(db.Integer, primary_key=True)
+    withdrawal_id = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    submission_id = db.Column(db.String(50), nullable=False, index=True)
+    citizen_id = db.Column(db.String(13), nullable=False, index=True)
+    reason = db.Column(db.Text, nullable=False)
+    status = db.Column(db.String(50), nullable=False, default="REQUESTED", index=True)
+    control_evaluation_id = db.Column(db.String(80), nullable=True, index=True)
+    created_at = db.Column(db.String(50), nullable=False)
+    metadata_json = db.Column("metadata", db.JSON, default=dict, nullable=False)
+
+
+class Assertion(db.Model):
+    __tablename__ = "assertions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    assertion_id = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    submission_id = db.Column(db.String(50), nullable=False, index=True)
+    citizen_id = db.Column(db.String(13), nullable=False, index=True)
+    source_actor_id = db.Column(db.String(13), nullable=False, index=True)
+    source_actor_role = db.Column(db.String(50), nullable=False, default="citizen")
+    provenance = db.Column(db.String(50), nullable=False, default="CITIZEN_ASSERTED", index=True)
+    assertion_text = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.String(50), nullable=False)
+    source = db.Column(db.String(100), nullable=False, default="citizen_submission")
+    version = db.Column(db.Integer, nullable=False, default=1)
+    assertion_metadata = db.Column(db.JSON, default=dict, nullable=False)
+
+
+class Claim(db.Model):
+    __tablename__ = "claims"
+
+    id = db.Column(db.Integer, primary_key=True)
+    claim_id = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    assertion_id = db.Column(db.String(50), nullable=False, index=True)
+    submission_id = db.Column(db.String(50), nullable=False, index=True)
+    citizen_id = db.Column(db.String(13), nullable=False, index=True)
+    source_actor_id = db.Column(db.String(13), nullable=False, index=True)
+    source_actor_role = db.Column(db.String(50), nullable=False, default="citizen")
+    provenance = db.Column(db.String(50), nullable=False, default="CITIZEN_ASSERTED", index=True)
+    claim_type = db.Column(db.String(80), nullable=False, default="asserted_fact")
+    subject = db.Column(db.String(200), nullable=True)
+    predicate = db.Column(db.String(200), nullable=True)
+    object_value = db.Column(db.String(500), nullable=True)
+    created_at = db.Column(db.String(50), nullable=False)
+    source = db.Column(db.String(100), nullable=False, default="assertion_extraction")
+    relation_type = db.Column(db.String(50), nullable=True)
+    source_assertion_ids = db.Column(db.JSON, default=list, nullable=False)
+    assessment_state = db.Column(db.String(50), nullable=False, default="CITIZEN_ASSERTED")
+    claim_metadata = db.Column(db.JSON, default=dict, nullable=False)
+
+
+class IncidentCandidate(db.Model):
+    __tablename__ = "incident_candidates"
+
+    id = db.Column(db.Integer, primary_key=True)
+    candidate_id = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    status = db.Column(db.String(50), nullable=False, default="PROVISIONAL", index=True)
+    provenance = db.Column(db.String(50), nullable=False, default="SYSTEM_DERIVED", index=True)
+    derivation_rule = db.Column(db.String(200), nullable=False, default="shared_claim_context")
+    explanation = db.Column(db.Text, nullable=False)
+    source_submission_ids = db.Column(db.JSON, default=list, nullable=False)
+    source_assertion_ids = db.Column(db.JSON, default=list, nullable=False)
+    source_claim_ids = db.Column(db.JSON, default=list, nullable=False)
+    deterministic_basis = db.Column(db.JSON, default=dict, nullable=False)
+    created_at = db.Column(db.String(50), nullable=False)
+    created_by = db.Column(db.String(50), nullable=True)
+    source_actor_id = db.Column(db.String(13), nullable=True, index=True)
+    source_actor_role = db.Column(db.String(50), nullable=False, default="system")
+
+
+class Relationship(db.Model):
+    __tablename__ = "relationships"
+
+    id = db.Column(db.Integer, primary_key=True)
+    relationship_id = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    candidate_id = db.Column(db.String(50), nullable=True, index=True)
+    source_submission_id = db.Column(db.String(50), nullable=False, index=True)
+    related_submission_id = db.Column(db.String(50), nullable=False, index=True)
+    relationship_type = db.Column(db.String(80), nullable=False, index=True)
+    status = db.Column(db.String(50), nullable=False, default="PROVISIONAL", index=True)
+    provenance = db.Column(db.String(50), nullable=False, default="SYSTEM_DERIVED", index=True)
+    explanation = db.Column(db.Text, nullable=False)
+    source_basis = db.Column(db.JSON, default=dict, nullable=False)
+    source_claim_ids = db.Column(db.JSON, default=list, nullable=False)
+    source_assertion_ids = db.Column(db.JSON, default=list, nullable=False)
+    created_at = db.Column(db.String(50), nullable=False)
+    rule_name = db.Column(db.String(200), nullable=False)
+    version = db.Column(db.Integer, nullable=False, default=1)
+
+
 class CaseDocket(db.Model):
     __tablename__ = "case_dockets"
 
@@ -45,6 +251,10 @@ class CaseDocket(db.Model):
     status = db.Column(db.String(50), default="DRAFT", nullable=False, index=True)
     incident_date = db.Column(db.String(50))
     location = db.Column(db.String(500))
+    source_submission_id = db.Column(db.String(50), nullable=True, index=True)
+    source_candidate_id = db.Column(db.String(50), nullable=True, index=True)
+    case_origin = db.Column(db.String(50), nullable=True, default="manual")
+    gate_decision = db.Column(db.String(50), nullable=True, default=None)
     interview_id = db.Column(db.String(100))
     registered_at = db.Column(db.String(50))
     submitted_at = db.Column(db.String(50))
@@ -52,6 +262,7 @@ class CaseDocket(db.Model):
     statements = db.Column(db.JSON, default=list, nullable=False)
     evidence = db.Column(db.JSON, default=list, nullable=False)
     timeline = db.Column(db.JSON, default=list, nullable=False)
+    procedural_assessment = db.Column(db.JSON, default=dict, nullable=False)
     updated_at = db.Column(db.DateTime, default=_utc_now, onupdate=_utc_now)
 
 
@@ -159,6 +370,13 @@ class InvestigationFinding(db.Model):
     detective_id = db.Column(db.String(100))
     finding_type = db.Column(db.String(50))
     notes = db.Column(db.Text)
+    reasoning = db.Column(db.Text)
+    evidence_ids = db.Column(db.JSON, default=list, nullable=False)
+    claim_ids = db.Column(db.JSON, default=list, nullable=False)
+    supporting_material = db.Column(db.JSON, default=list, nullable=False)
+    contradicting_material = db.Column(db.JSON, default=list, nullable=False)
+    status = db.Column(db.String(30), default="SUBMITTED", nullable=False)
+    version = db.Column(db.Integer, default=1, nullable=False)
     created_at = db.Column(db.String(50))
     updated_at = db.Column(db.String(50))
     is_final_outcome = db.Column(db.Boolean, default=False)

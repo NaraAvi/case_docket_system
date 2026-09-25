@@ -22,12 +22,13 @@ class AssignmentService:
 
     VALID_OFFICER_ROLES = {"constable", "detective"}
 
-    def __init__(self, repository=None, case_service=None, identity_registry=None, audit_service=None, freeze_service=None):
-        self.repository = repository or AssignmentRepository()
-        self.case_service = case_service or CaseService()
+    def __init__(self, repository=None, case_service=None, identity_registry=None, audit_service=None, freeze_service=None, app=None):
+        self.app = app
+        self.repository = repository or AssignmentRepository(app=app)
+        self.case_service = case_service or CaseService(app=app)
         self.identity_registry = identity_registry or TestIdentityRegistry()
         self.audit_service = audit_service or AuditTrailService()
-        self.freeze_service = freeze_service or FreezeService(case_service=self.case_service, audit_service=self.audit_service)
+        self.freeze_service = freeze_service or FreezeService(case_service=self.case_service, audit_service=self.audit_service, app=app)
         # M4.4: wired after construction (the conflict service itself reads
         # assignment history, so it cannot be a constructor dependency).
         self.conflict_service = None

@@ -11,10 +11,11 @@ class RelatedCaseRepository(BaseSqlAlchemyRepository):
     id_column = "relationship_id"
 
     def list_for_case(self, case_reference):
-        instances = self.model.query.filter(
-            (self.model.source_case_reference == case_reference)
-            | (self.model.related_case_reference == case_reference)
-        ).all()
+        with self._app_context():
+            instances = self.session.query(self.model).filter(
+                (self.model.source_case_reference == case_reference)
+                | (self.model.related_case_reference == case_reference)
+            ).all()
         return [self._serialize(instance) for instance in instances]
 
     def get_duplicate_relationship(self, source_case_reference, related_case_reference):
@@ -22,14 +23,15 @@ class RelatedCaseRepository(BaseSqlAlchemyRepository):
         related = str(related_case_reference)
         if source == related:
             return None
-        instance = self.model.query.filter(
-            (
-                (self.model.source_case_reference == source)
-                & (self.model.related_case_reference == related)
-            )
-            | (
-                (self.model.source_case_reference == related)
-                & (self.model.related_case_reference == source)
-            )
-        ).first()
+        with self._app_context():
+            instance = self.session.query(self.model).filter(
+                (
+                    (self.model.source_case_reference == source)
+                    & (self.model.related_case_reference == related)
+                )
+                | (
+                    (self.model.source_case_reference == related)
+                    & (self.model.related_case_reference == source)
+                )
+            ).first()
         return self._serialize(instance)

@@ -19,7 +19,8 @@ class FreezeRepository(BaseSqlAlchemyRepository):
         return datetime.now(UTC).isoformat()
 
     def _generate_freeze_id(self):
-        sequence = self.model.query.count() + 1
+        with self._app_context():
+            sequence = self.session.query(self.model).count() + 1
         return f"FRZ-{sequence:06d}"
 
     def create(self, payload):
@@ -33,13 +34,15 @@ class FreezeRepository(BaseSqlAlchemyRepository):
         return super().create(payload)
 
     def get_history_for_case(self, case_reference):
-        instances = self.model.query.filter_by(case_reference=case_reference).all()
+        with self._app_context():
+            instances = self.session.query(self.model).filter_by(case_reference=case_reference).all()
         matches = [self._serialize(instance) for instance in instances]
         matches.sort(key=lambda item: str(item.get("frozen_at") or ""))
         return matches
 
     def get_current_for_case(self, case_reference):
-        instances = self.model.query.filter_by(case_reference=case_reference, status="ACTIVE").all()
+        with self._app_context():
+            instances = self.session.query(self.model).filter_by(case_reference=case_reference, status="ACTIVE").all()
         matches = [self._serialize(instance) for instance in instances]
         if not matches:
             return None
@@ -47,7 +50,8 @@ class FreezeRepository(BaseSqlAlchemyRepository):
         return matches[-1]
 
     def list_active(self):
-        instances = self.model.query.filter_by(status="ACTIVE").all()
+        with self._app_context():
+            instances = self.session.query(self.model).filter_by(status="ACTIVE").all()
         matches = [self._serialize(instance) for instance in instances]
         matches.sort(key=lambda item: str(item.get("frozen_at") or ""), reverse=True)
         return matches

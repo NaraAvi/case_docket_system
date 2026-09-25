@@ -6,8 +6,9 @@ from app.services.case_service import CaseService
 class DocketManagementService:
     """Handles docket lifecycle orchestration for citizen case creation."""
 
-    def __init__(self, case_service=None):
-        self.case_service = case_service or CaseService()
+    def __init__(self, case_service=None, app=None):
+        self.app = app
+        self.case_service = case_service or CaseService(app=app)
 
     def create_docket(self, citizen_id, payload):
         return self.case_service.create_case(citizen_id, payload)

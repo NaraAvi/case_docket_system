@@ -21,9 +21,10 @@ class FreezeService:
     SOURCE_IPID_STATUTORY = "IPID_STATUTORY_MANDATE"
     IPID_SOURCES = {SOURCE_IPID_REVIEW, SOURCE_IPID_STATUTORY}
 
-    def __init__(self, repository=None, case_service=None, audit_service=None):
-        self.repository = repository or FreezeRepository()
-        self.case_service = case_service or CaseService()
+    def __init__(self, repository=None, case_service=None, audit_service=None, app=None):
+        self.app = app
+        self.repository = repository or FreezeRepository(app=app)
+        self.case_service = case_service or CaseService(app=app)
         self.audit_service = audit_service or AuditTrailService()
 
     @staticmethod

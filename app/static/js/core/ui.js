@@ -77,6 +77,50 @@ export function buildStatusBadge(status) {
   return 'badge badge-muted';
 }
 
+export function renderWorkflowRail(container, { title = 'Workflow', steps = [], locked = false } = {}) {
+  if (!container) {
+    return;
+  }
+  if (!Array.isArray(steps) || !steps.length) {
+    container.innerHTML = `
+      <div class="workflow-rail-header">
+        <h3>${title}</h3>
+        <span class="workflow-rail-subtitle">Waiting for state</span>
+      </div>
+      <div class="workflow-rail" role="list" aria-label="${title}">
+        <div class="workflow-step upcoming"><span class="workflow-step-number">1</span><div class="workflow-step-copy"><strong>Workflow</strong><small>Waiting for data</small></div></div>
+      </div>
+    `;
+    return;
+  }
+  container.innerHTML = `
+    <div class="workflow-rail-header">
+      <h3>${title}</h3>
+      <span class="workflow-rail-subtitle">${locked ? 'Blocked by freeze' : 'Current stage'}</span>
+    </div>
+    <div class="workflow-rail" role="list" aria-label="${title}">
+      ${steps
+        .map((step, index) => {
+          const state = step.state || 'upcoming';
+          const classNames = ['workflow-step', state, locked ? 'blocked' : ''].filter(Boolean).join(' ');
+          const number = state === 'complete' ? '✓' : index + 1;
+          const detailText = step.detail ? `<small>${step.detail}</small>` : '';
+          const ariaCurrent = state === 'current' ? 'step' : 'false';
+          return `
+            <div class="${classNames}" role="listitem" aria-current="${ariaCurrent}">
+              <span class="workflow-step-number">${number}</span>
+              <div class="workflow-step-copy">
+                <strong>${step.label}</strong>
+                ${detailText}
+              </div>
+            </div>
+          `;
+        })
+        .join('')}
+    </div>
+  `;
+}
+
 export function setEmptyState(container, message) {
   if (!container) {
     return;

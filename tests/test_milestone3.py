@@ -38,28 +38,52 @@ def _auth_headers(token):
     return {"Authorization": f"Bearer {token}"}
 
 
+def _create_draft_docket(app_client, title="Vandalism", description="Broken window overnight", location="Main St", incident_date="2026-01-01"):
+    from tests.conftest import create_case_via_service
+
+    case = create_case_via_service(
+        app_client,
+        ROLE_TEST_IDS["citizen"],
+        title,
+        description,
+        location=location,
+        incident_date=incident_date,
+    )
+    return case["case_reference"]
+
+
 def _build_registered_case(app_client):
-    """Walk a docket through citizen submission -> constable registration.
+    """Walk a docket through the protected intake boundary and constable registration.
 
     Returns the case_reference of a REGISTERED docket, ready for a detective
     to open an investigation against.
     """
-    citizen_token = _login(app_client, "citizen")
-    create_response = app_client.post(
-        "/api/v1/citizen/dockets",
-        json={"title": "Vandalism", "description": "Broken window", "location": "Main St", "incident_date": "2026-01-01"},
-        headers=_auth_headers(citizen_token),
-    )
-    assert create_response.status_code == 201
-    case_reference = create_response.get_json()["case_reference"]
+    from tests.conftest import assign_detective_to_case
 
-    app_client.post(
-        f"/api/v1/citizen/dockets/{case_reference}/statements",
-        json={"statement_text": "Someone broke my window overnight."},
-        headers=_auth_headers(citizen_token),
+    citizen_token = _login(app_client, "citizen")
+    case_reference = _create_draft_docket(app_client)
+    case = app_client.application.extensions["case_service"].get_case(case_reference)
+    case.setdefault("statements", []).append(
+        {
+            "statement_id": 1,
+            "case_reference": case_reference,
+            "citizen_id": ROLE_TEST_IDS["citizen"],
+            "statement_text": "Someone broke my window overnight.",
+            "created_at": "2026-01-01T00:00:00+00:00",
+        }
     )
-    submit_response = app_client.post(f"/api/v1/citizen/dockets/{case_reference}/submit", headers=_auth_headers(citizen_token))
-    assert submit_response.status_code == 200
+    case["status"] = "AWAITING_CONSTABLE_REGISTRATION"
+    case["submitted_at"] = "2026-01-01T00:00:00+00:00"
+    case["submitted_statement_snapshot"] = [
+        {
+            "statement_id": 1,
+            "citizen_id": ROLE_TEST_IDS["citizen"],
+            "statement_text": "Someone broke my window overnight.",
+            "created_at": "2026-01-01T00:00:00+00:00",
+        }
+    ]
+    case["statement_lock_status"] = "LOCKED"
+    app_client.application.extensions["case_service"].update_case(case)
 
     constable_token = _login(app_client, "constable")
     app_client.get(f"/api/v1/constable/dockets/{case_reference}", headers=_auth_headers(constable_token))
@@ -79,6 +103,8 @@ def _build_registered_case(app_client):
     register_response = app_client.post(f"/api/v1/constable/interviews/{interview_id}/register", headers=_auth_headers(constable_token))
     assert register_response.status_code == 200
     assert register_response.get_json()["status"] == "REGISTERED"
+
+    assign_detective_to_case(app_client, case_reference, ROLE_TEST_IDS["detective"])
     return case_reference
 
 
@@ -259,14 +285,8 @@ class TestCitizenFlowIsFullyOperational:
         citizen_token = _login(app_client, "citizen")
         headers = _auth_headers(citizen_token)
 
-        create_response = app_client.post(
-            "/api/v1/citizen/dockets",
-            json={"title": "Vandalism", "description": "Broken window overnight", "location": "Main St", "incident_date": "2026-01-01"},
-            headers=headers,
-        )
-        assert create_response.status_code == 201
-        case_reference = create_response.get_json()["case_reference"]
-        assert create_response.get_json()["status"] == "DRAFT"
+        case_reference = _create_draft_docket(app_client)
+        assert app_client.application.extensions["case_service"].get_case(case_reference)["status"] == "DRAFT"
 
         # A fresh DRAFT docket cannot be submitted without a statement.
         premature_submit = app_client.post(f"/api/v1/citizen/dockets/{case_reference}/submit", headers=headers)
@@ -304,12 +324,7 @@ class TestCitizenFlowIsFullyOperational:
 
     def test_docket_detail_page_renders_statement_evidence_and_submit_controls(self, app_client):
         citizen_token = _login(app_client, "citizen")
-        create_response = app_client.post(
-            "/api/v1/citizen/dockets",
-            json={"title": "Vandalism", "description": "Broken window overnight", "location": "Main St", "incident_date": "2026-01-01"},
-            headers=_auth_headers(citizen_token),
-        )
-        case_reference = create_response.get_json()["case_reference"]
+        case_reference = _create_draft_docket(app_client)
 
         response = app_client.get(f"/citizen/dockets/{case_reference}")
         assert response.status_code == 200
@@ -342,12 +357,7 @@ class TestInterviewRecordingFlowIsFullyOperational:
 
     def test_constable_review_page_has_the_interview_panel_markup(self, app_client):
         citizen_token = _login(app_client, "citizen")
-        create_response = app_client.post(
-            "/api/v1/citizen/dockets",
-            json={"title": "Vandalism", "description": "Broken window overnight", "location": "Main St", "incident_date": "2026-01-01"},
-            headers=_auth_headers(citizen_token),
-        )
-        case_reference = create_response.get_json()["case_reference"]
+        case_reference = _create_draft_docket(app_client)
         app_client.post(
             f"/api/v1/citizen/dockets/{case_reference}/statements",
             json={"statement_text": "Someone broke my window."},
@@ -365,12 +375,7 @@ class TestInterviewRecordingFlowIsFullyOperational:
 
     def test_citizen_detail_page_has_the_interview_panel_markup(self, app_client):
         citizen_token = _login(app_client, "citizen")
-        create_response = app_client.post(
-            "/api/v1/citizen/dockets",
-            json={"title": "Vandalism", "description": "Broken window overnight", "location": "Main St", "incident_date": "2026-01-01"},
-            headers=_auth_headers(citizen_token),
-        )
-        case_reference = create_response.get_json()["case_reference"]
+        case_reference = _create_draft_docket(app_client)
 
         response = app_client.get(f"/citizen/dockets/{case_reference}")
         assert response.status_code == 200
@@ -385,12 +390,7 @@ class TestInterviewRecordingFlowIsFullyOperational:
         endpoint correctly rejects it afterward (which is why the Register
         button now redirects to the dashboard instead of back to this page)."""
         citizen_token = _login(app_client, "citizen")
-        create_response = app_client.post(
-            "/api/v1/citizen/dockets",
-            json={"title": "Vandalism", "description": "Broken window overnight", "location": "Main St", "incident_date": "2026-01-01"},
-            headers=_auth_headers(citizen_token),
-        )
-        case_reference = create_response.get_json()["case_reference"]
+        case_reference = _create_draft_docket(app_client)
         app_client.post(
             f"/api/v1/citizen/dockets/{case_reference}/statements",
             json={"statement_text": "Someone broke my window."},

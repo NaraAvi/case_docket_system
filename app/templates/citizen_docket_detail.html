@@ -5,32 +5,65 @@
   <section class="detail-shell">
     <div class="page-head-row">
       <div>
-        <p class="eyebrow">Case Reference</p>
-        <h1>{{ case_reference }}</h1>
+        <p class="eyebrow">Protected submission</p>
+        <h1>View and manage my protected submission</h1>
       </div>
       <div class="stack-row">
         <span class="badge badge-warning" id="citizenStatusBadge">Loading…</span>
         <span class="badge badge-warning hidden" id="citizenFreezeBadge">Frozen</span>
-        <button class="secondary-btn" type="button" id="escalateCaseBtn">Escalate Case</button>
       </div>
+    </div>
+
+    <div class="workflow-rail-shell">
+      <div class="workflow-rail-header">
+        <h3>Protected submission lifecycle</h3>
+        <span class="workflow-rail-subtitle">Current status</span>
+      </div>
+      <div id="citizenWorkflowRail" class="workflow-rail" aria-label="Protected submission workflow"></div>
+    </div>
+
+    <div class="detail-card" id="citizenProtectedReview" style="margin-top:18px;">
+      <div class="panel-head" style="margin-bottom:10px;">
+        <h3>Current status</h3>
+        <span class="badge badge-muted" id="citizenReviewStatus">Review pending</span>
+      </div>
+      <p class="field-hint">The original submission remains protected while the system reviews the report and records any follow-up steps.</p>
+      <dl class="meta-list" style="margin-top:12px;">
+        <dt>Submission status</dt><dd id="citizenSubmissionStatusText">RECEIVED</dd>
+        <dt>Current procedural stage</dt><dd id="citizenProceduralReviewValue">Procedural assessment</dd>
+        <dt>Procedural case</dt><dd id="citizenProceduralCaseValue">Not yet created</dd>
+      </dl>
+      <div class="stack-row hidden" id="citizenProceduralCaseAction" style="justify-content:flex-end; margin-top:12px;">
+        <button class="primary-btn" type="button" id="citizenProceedToProceduralCase">Proceed to procedural case</button>
+      </div>
+      <p id="citizenReviewSummary" style="margin-top:10px;">Waiting for the protected submission review to run.</p>
     </div>
 
     <div class="detail-grid">
       <div class="detail-card">
-        <h3>Case Information</h3>
+        <h3>Submission Information</h3>
         <dl class="meta-list" id="citizenCaseMeta">
-          <dt>Status</dt><dd>Loading…</dd>
+          <dt>Submission status</dt><dd>Loading…</dd>
           <dt>Location</dt><dd>Loading…</dd>
           <dt>Incident Date</dt><dd>Loading…</dd>
         </dl>
       </div>
 
       <div class="detail-card">
-        <h3>Timeline</h3>
+        <h3>Timeline / History</h3>
         <ul class="timeline-list" id="citizenCaseTimeline">
-          <li><span class="timeline-dot"></span><div><strong>Loading case timeline</strong><small>Please wait…</small></div></li>
+          <li><span class="timeline-dot"></span><div><strong>Loading submission timeline</strong><small>Please wait…</small></div></li>
         </ul>
       </div>
+    </div>
+
+    <div class="detail-card" style="margin-top:18px;">
+      <div class="panel-head" style="margin-bottom:10px;">
+        <h3>Submitted Information</h3>
+        <button class="secondary-btn small-btn" type="button" id="citizenSubmissionToggle">View submitted information</button>
+      </div>
+      <div class="statement-box" id="citizenSubmissionSummaryText">Loading submission summary…</div>
+      <div id="citizenStructuredSubmission" class="stack-list hidden" aria-expanded="false"></div>
     </div>
 
     <div class="detail-card hidden" id="citizenInterviewPanel" style="margin-top:18px;">
@@ -51,20 +84,22 @@
 
     <div class="cards-grid" style="margin-top:18px;">
       <div class="panel-card">
-        <h3>Your Statement</h3>
-        <textarea rows="5" placeholder="Describe what happened, in your own words..." id="citizenStatementText"></textarea>
+        <h3>Additional Information</h3>
+        <p class="field-hint">Add information to this protected submission without overwriting the original report. The system keeps the original record and appends the new citizen-authored context as a separate assertion.</p>
+        <textarea rows="5" placeholder="Add additional facts, context, or updates for this protected submission..." id="citizenStatementText"></textarea>
         <div class="stack-row" style="margin-top:10px; justify-content:flex-end;">
-          <button class="secondary-btn" type="button" id="saveCitizenStatement">Save Statement</button>
+          <button class="secondary-btn" type="button" id="saveCitizenStatement">Add Information</button>
         </div>
         <p class="inline-error hidden" id="citizenStatementError"></p>
-        <label class="input-label" style="margin-top:14px; display:block;">Statement History</label>
+        <label class="input-label" style="margin-top:14px; display:block;">Submission Assertions</label>
         <div class="stack-list" id="citizenStatementsList">
-          <p>Loading statements…</p>
+          <p>Loading protected submission history…</p>
         </div>
       </div>
 
       <div class="panel-card">
-        <h3>Evidence</h3>
+        <h3>Evidence or Supporting Material</h3>
+        <p class="field-hint">Evidence is optional additional material attached to the protected submission. It does not create a case or overwrite the original report.</p>
         {{ evidence_table_skeleton('citizenCaseEvidence') }}
         <div class="wizard-row" style="margin-top:14px;">
           <label>Type</label>
@@ -73,6 +108,7 @@
             <option value="VIDEO">Video</option>
             <option value="DOCUMENT">Document</option>
             <option value="AUDIO">Audio</option>
+            <option value="WITNESS_STATEMENT">Witness statement</option>
             <option value="OTHER">Other</option>
           </select>
         </div>
@@ -83,13 +119,40 @@
         </div>
         <div class="wizard-row">
           <label>Description</label>
-          <textarea rows="2" id="citizenEvidenceDescription" placeholder="What does this evidence show?"></textarea>
+          <textarea rows="2" id="citizenEvidenceDescription" placeholder="Describe what this material shows or adds."></textarea>
         </div>
         <div class="stack-row" style="justify-content:flex-end;">
-          <button class="secondary-btn" type="button" id="addCitizenEvidence">Add Evidence</button>
+          <button class="secondary-btn" type="button" id="addCitizenEvidence">Add Evidence or Supporting Material</button>
         </div>
-        <p class="field-hint">Every uploaded file is hashed with SHA-256 for chain-of-custody (CPA §212) when it's saved.</p>
+        <p class="field-hint">Every uploaded file is hashed with SHA-256 for chain-of-custody (CPA §212) when it's saved. The server remains authoritative for provenance, submitter, and storage metadata.</p>
         <p class="inline-error hidden" id="citizenEvidenceError"></p>
+      </div>
+
+      <div class="panel-card">
+        <h3>Correction Request</h3>
+        <p class="field-hint">This creates a correction event/request and preserves the original assertion. The original submission history is not silently overwritten.</p>
+        <label class="input-label">Assertion to correct</label>
+        <select class="field-select" id="citizenCorrectionAssertion">
+          <option value="">No assertions available</option>
+        </select>
+        <label class="input-label" style="margin-top:12px; display:block;">Corrected wording</label>
+        <textarea rows="3" id="citizenCorrectionText" placeholder="Provide the corrected text for the original assertion."></textarea>
+        <label class="input-label" style="margin-top:12px; display:block;">Reason</label>
+        <textarea rows="2" id="citizenCorrectionReason" placeholder="Why is this correction needed?"></textarea>
+        <div class="stack-row" style="margin-top:10px; justify-content:flex-end;">
+          <button class="secondary-btn" type="button" id="submitCitizenCorrection">Request Correction</button>
+        </div>
+        <p class="inline-error hidden" id="citizenCorrectionError"></p>
+      </div>
+
+      <div class="panel-card">
+        <h3>Withdrawal Request</h3>
+        <p class="field-hint">A withdrawal is an event and request, not deletion. The original submission, evidence, claims, and audit history remain preserved.</p>
+        <textarea rows="3" id="citizenWithdrawalReason" placeholder="Explain why you are requesting withdrawal."></textarea>
+        <div class="stack-row" style="margin-top:10px; justify-content:flex-end;">
+          <button class="secondary-btn" type="button" id="requestCitizenWithdrawal">Request Withdrawal</button>
+        </div>
+        <p class="inline-error hidden" id="citizenWithdrawalError"></p>
       </div>
 
       <div class="panel-card">
@@ -101,7 +164,7 @@
     </div>
 
     <div class="stack-row" style="margin-top:18px; justify-content:flex-end;">
-      <button class="primary-btn" type="button" id="submitCitizenDocketForReview" disabled>Submit Docket for Review</button>
+      <button class="primary-btn" type="button" id="submitCitizenDocketForReview" disabled>Submit Submission for Review</button>
     </div>
     <p class="field-hint" id="submitDocketHint" style="text-align:right;"></p>
   </section>

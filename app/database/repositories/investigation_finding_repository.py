@@ -11,7 +11,8 @@ class InvestigationFindingRepository(BaseSqlAlchemyRepository):
     id_column = "finding_id"
 
     def _generate_finding_id(self):
-        sequence = self.model.query.count() + 1
+        with self._app_context():
+            sequence = self.session.query(self.model).count() + 1
         return f"FND-{sequence:06d}"
 
     def create(self, payload):
@@ -21,12 +22,20 @@ class InvestigationFindingRepository(BaseSqlAlchemyRepository):
         return super().create(payload)
 
     def list_for_investigation(self, investigation_id):
-        instances = self.model.query.filter_by(investigation_id=investigation_id).all()
+        with self._app_context():
+            instances = self.session.query(self.model).filter_by(investigation_id=investigation_id).all()
         return [self._serialize(instance) for instance in instances]
 
     def list_for_case(self, case_reference):
-        instances = self.model.query.filter_by(case_reference=case_reference).all()
+        with self._app_context():
+            instances = self.session.query(self.model).filter_by(case_reference=case_reference).all()
         return [self._serialize(instance) for instance in instances]
 
     def get_for_finding_id(self, finding_id):
         return self.get_by_id(finding_id)
+
+    def update(self, identifier, payload):
+        raise ValueError("Finding history is immutable and cannot be silently overwritten.")
+
+    def delete(self, identifier):
+        raise ValueError("Finding history is immutable and cannot be deleted.")

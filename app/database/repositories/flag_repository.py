@@ -11,7 +11,8 @@ class FlagRepository(BaseSqlAlchemyRepository):
     id_column = "flag_id"
 
     def list_for_case(self, case_reference):
-        instances = self.model.query.filter_by(case_reference=case_reference).all()
+        with self._app_context():
+            instances = self.session.query(self.model).filter_by(case_reference=case_reference).all()
         return [self._serialize(instance) for instance in instances]
 
     def get_for_flag_id(self, flag_id):

@@ -39,18 +39,29 @@ def _auth_headers(token):
 
 
 def _create_and_submit_docket(app_client, citizen_token, title="Vandalism"):
-    create_response = app_client.post(
-        "/api/v1/citizen/dockets",
-        json={"title": title, "description": "Broken window overnight", "location": "Main St", "incident_date": "2026-01-01"},
-        headers=_auth_headers(citizen_token),
-    )
-    case_reference = create_response.get_json()["case_reference"]
-    app_client.post(
-        f"/api/v1/citizen/dockets/{case_reference}/statements",
-        json={"statement_text": "Someone broke my window."},
-        headers=_auth_headers(citizen_token),
-    )
-    app_client.post(f"/api/v1/citizen/dockets/{case_reference}/submit", headers=_auth_headers(citizen_token))
+    from tests.conftest import create_case_via_service
+
+    citizen_id = "2200223333111"
+    case = create_case_via_service(app_client, citizen_id, title, "Broken window overnight", location="Main St", incident_date="2026-01-01")
+    case_reference = case["case_reference"]
+    case_service = app_client.application.extensions["case_service"]
+    case.setdefault("statements", []).append({
+        "statement_id": 1,
+        "case_reference": case_reference,
+        "citizen_id": citizen_id,
+        "statement_text": "Someone broke my window.",
+        "created_at": "2026-01-01T00:00:00+00:00",
+    })
+    case["status"] = "AWAITING_CONSTABLE_REGISTRATION"
+    case["submitted_at"] = "2026-01-01T00:00:00+00:00"
+    case["submitted_statement_snapshot"] = [{
+        "statement_id": 1,
+        "citizen_id": citizen_id,
+        "statement_text": "Someone broke my window.",
+        "created_at": "2026-01-01T00:00:00+00:00",
+    }]
+    case["statement_lock_status"] = "LOCKED"
+    case_service.update_case(case)
     return case_reference
 
 
@@ -75,6 +86,9 @@ def _registered_case(app_client):
     constable_token = _login(app_client, "constable")
     case_reference = _create_and_submit_docket(app_client, citizen_token)
     _register_docket(app_client, citizen_token, constable_token, case_reference)
+    from tests.conftest import assign_detective_to_case
+
+    assign_detective_to_case(app_client, case_reference, ROLE_TEST_IDS["detective"])
     return case_reference
 
 
@@ -233,21 +247,23 @@ class TestDetectiveReadEndpointsAndCompletion:
             assert isinstance(response.get_json(), list)
 
     def test_flags_raised_by_constable_are_visible_to_the_detective(self, app_client):
-        case_reference = _registered_case(app_client)
         # A constable can no longer act on a REGISTERED docket, but flags
         # raised before registration must still surface to the detective.
         citizen_token = _login(app_client, "citizen")
-        case_reference_2 = _create_and_submit_docket(app_client, citizen_token, title="Second incident")
+        case_reference = _create_and_submit_docket(app_client, citizen_token, title="Second incident")
         constable_token = _login(app_client, "constable")
         app_client.post(
-            f"/api/v1/constable/dockets/{case_reference_2}/flags",
+            f"/api/v1/constable/dockets/{case_reference}/flags",
             json={"category": "INSUFFICIENT_INFORMATION", "notes": "Citizen account is vague.", "status": "OPEN"},
             headers=_auth_headers(constable_token),
         )
-        _register_docket(app_client, citizen_token, constable_token, case_reference_2)
+        _register_docket(app_client, citizen_token, constable_token, case_reference)
+        from tests.conftest import assign_detective_to_case
+
+        assign_detective_to_case(app_client, case_reference, ROLE_TEST_IDS["detective"])
         detective_token = _login(app_client, "detective")
         investigation_response = app_client.post(
-            f"/api/v1/detective/dockets/{case_reference_2}/investigation",
+            f"/api/v1/detective/dockets/{case_reference}/investigation",
             json={"notes": "Reviewing flagged concerns."},
             headers=_auth_headers(detective_token),
         )
@@ -257,7 +273,7 @@ class TestDetectiveReadEndpointsAndCompletion:
         flags = response.get_json()
         assert len(flags) == 1
         assert flags[0]["notes"] == "Citizen account is vague."
-        assert case_reference  # keep the first registered case referenced for clarity
+        assert case_reference
 
     def test_update_status_and_complete_investigation(self, app_client):
         _, detective_token, investigation_id = self._open_investigation(app_client)
@@ -439,15 +455,6 @@ class TestIpidReviewNotesFindingsAndDisciplinaryCases:
 
     def test_uphold_creates_a_disciplinary_case_visible_via_the_list_and_get_endpoints(self, app_client):
         case_reference, escalation_id, ipid_token = self._escalation_under_review(app_client)
-        # Uphold revokes the implicated officer's access, so one must actually
-        # be assigned first -- registration alone doesn't create an assignment.
-        station_commander_token = _login(app_client, "station_commander")
-        assign_response = app_client.post(
-            f"/api/v1/station-commander/dockets/{case_reference}/reassign",
-            json={"officer_id": ROLE_TEST_IDS["detective"], "reason": "Assigning for investigation."},
-            headers=_auth_headers(station_commander_token),
-        )
-        assert assign_response.status_code == 200
         uphold_response = app_client.post(
             f"/api/v1/ipid/escalations/{escalation_id}/uphold",
             json={"reason": "Corroborated bribery allegation."},
@@ -517,7 +524,18 @@ class TestIpidReviewNotesFindingsAndDisciplinaryCases:
         docket permanently frozen with no disciplinary case and no way to
         recover (dismiss requires UNDER_REVIEW, a second uphold requires
         not-already-resolved). The check now happens first."""
-        case_reference, escalation_id, ipid_token = self._escalation_under_review(app_client)
+        citizen_token = _login(app_client, "citizen")
+        constable_token = _login(app_client, "constable")
+        case_reference = _create_and_submit_docket(app_client, citizen_token)
+        _register_docket(app_client, citizen_token, constable_token, case_reference)
+        escalation_response = app_client.post(
+            f"/api/v1/citizen/dockets/{case_reference}/escalations",
+            json={"category": "OFFICER_CONDUCT", "description": "Officer ignored repeated follow-up requests."},
+            headers=_auth_headers(citizen_token),
+        )
+        escalation_id = escalation_response.get_json()["escalation_id"]
+        ipid_token = _login(app_client, "ipid")
+        app_client.post(f"/api/v1/ipid/escalations/{escalation_id}/review", headers=_auth_headers(ipid_token))
 
         uphold_response = app_client.post(
             f"/api/v1/ipid/escalations/{escalation_id}/uphold",

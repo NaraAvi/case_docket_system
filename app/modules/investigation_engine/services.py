@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime
 
 from app.database.repositories.flag_repository import FlagRepository
@@ -10,6 +11,7 @@ from app.database.repositories.investigation_note_repository import Investigatio
 from app.database.repositories.investigation_repository import InvestigationRepository
 from app.database.repositories.related_case_repository import RelatedCaseRepository
 from app.modules.audit_engine.services import AuditTrailService
+from app.modules.control_gate import InvestigationCompletionGate, InvestigationGate
 from app.services.case_service import CaseService
 
 
@@ -17,8 +19,10 @@ class InvestigationService:
     """Boundary for detective caseload, investigation lifecycle, and operational review."""
 
     VALID_STATUSES = {"OPEN", "IN_PROGRESS", "COMPLETED"}
-    VALID_FINDING_TYPES = {"VALID", "INVALID", "GUILTY", "NOT_GUILTY"}
-    VALID_OUTCOMES = VALID_FINDING_TYPES
+    VALID_FINDING_TYPES = {"VALID", "INVALID", "REVIEW_REQUIRED"}
+    VALID_INVESTIGATIVE_CONCLUSIONS = {"VALID", "INVALID", "REVIEW_REQUIRED"}
+    VALID_OUTCOMES = VALID_INVESTIGATIVE_CONCLUSIONS
+    REJECTED_ADJUDICATIVE_VALUES = {"GUILTY", "NOT_GUILTY"}
 
     def __init__(
         self,
@@ -31,16 +35,22 @@ class InvestigationService:
         flag_repository=None,
         related_case_repository=None,
         freeze_service=None,
+        assignment_service=None,
+        app=None,
     ):
-        self.case_service = case_service or CaseService()
+        self.app = app
+        self.case_service = case_service or CaseService(app=app)
         self.audit_service = audit_service or AuditTrailService()
-        self.repository = repository or InvestigationRepository()
+        self.repository = repository or InvestigationRepository(app=app)
         self.constable_service = constable_service
-        self.finding_repository = finding_repository or InvestigationFindingRepository()
-        self.note_repository = note_repository or InvestigationNoteRepository()
-        self.flag_repository = flag_repository or FlagRepository()
-        self.related_case_repository = related_case_repository or RelatedCaseRepository()
+        self.finding_repository = finding_repository or InvestigationFindingRepository(app=app)
+        self.note_repository = note_repository or InvestigationNoteRepository(app=app)
+        self.flag_repository = flag_repository or FlagRepository(app=app)
+        self.related_case_repository = related_case_repository or RelatedCaseRepository(app=app)
         self.freeze_service = freeze_service
+        self.assignment_service = assignment_service
+        if self.assignment_service is None and app is not None and hasattr(app, "extensions"):
+            self.assignment_service = app.extensions.get("assignment_service")
         # M4.4: wired after construction (see ConflictOfInterestService).
         self.conflict_service = None
 
@@ -95,6 +105,67 @@ class InvestigationService:
         if not interview_id:
             return None
         return self.constable_service.get_interview_by_id(interview_id)
+
+    @staticmethod
+    def _normalize_string_list(value):
+        if value is None:
+            return []
+        if isinstance(value, str):
+            items = [value]
+        elif isinstance(value, (list, tuple, set)):
+            items = list(value)
+        else:
+            items = [value]
+        normalized = []
+        for item in items:
+            text = str(item).strip()
+            if text:
+                normalized.append(text)
+        return normalized
+
+    def _normalize_basis_material(self, basis_items, case, case_evidence_ids, case_statement_ids, valid_claim_ids):
+        if basis_items is None:
+            return []
+        if isinstance(basis_items, dict):
+            basis_items = [basis_items]
+        if not isinstance(basis_items, list):
+            raise ValueError("Finding basis material must be a list of support or contradiction references.")
+
+        normalized = []
+        for item in basis_items:
+            if not isinstance(item, dict):
+                raise ValueError("Each finding basis item must be an object with kind, id, and relationship.")
+            kind = str(item.get("kind") or item.get("type") or "").strip().upper()
+            relationship = str(item.get("relationship") or item.get("relation") or "").strip().upper()
+            if not kind:
+                raise ValueError("Each finding basis item requires a kind such as evidence, statement, or claim.")
+            if relationship not in {"SUPPORTS", "CONTRADICTS", "CONTEXT"}:
+                raise ValueError("Basis relationships must be SUPPORTS, CONTRADICTS, or CONTEXT.")
+
+            item_id = str(item.get("id") or item.get("evidence_id") or item.get("statement_id") or item.get("claim_id") or item.get("reference_id") or "").strip()
+            if not item_id:
+                raise ValueError("Each finding basis item requires an id reference.")
+
+            if kind in {"EVIDENCE", "EVIDENCE_ID"}:
+                if item_id not in case_evidence_ids:
+                    raise ValueError("Evidence basis must be linked to evidence on this case.")
+                normalized.append({"kind": "evidence", "id": item_id, "relationship": relationship})
+                continue
+            if kind in {"CLAIM", "CLAIM_ID"}:
+                if item_id not in valid_claim_ids:
+                    raise ValueError("Claim basis is not valid for this case.")
+                normalized.append({"kind": "claim", "id": item_id, "relationship": relationship})
+                continue
+            if kind in {"STATEMENT", "STATEMENT_ID"}:
+                if item_id not in case_statement_ids:
+                    raise ValueError("Statement basis must match a statement in this case.")
+                normalized.append({"kind": "statement", "id": item_id, "relationship": relationship})
+                continue
+            if kind in {"INVESTIGATION", "INVESTIGATION_ID"}:
+                normalized.append({"kind": "investigation", "id": item_id, "relationship": relationship})
+                continue
+            raise ValueError("Unsupported basis kind for finding.")
+        return normalized
 
     def _sanitize_statement(self, statement):
         if not isinstance(statement, dict):
@@ -153,6 +224,21 @@ class InvestigationService:
     def _assert_authorized_detective(self, investigation, detective_id):
         if investigation.get("detective_id") != detective_id:
             raise ValueError("Detective is not authorized for this investigation.")
+
+    def _investigation_gate(self):
+        return InvestigationGate(
+            freeze_service=self.freeze_service,
+            conflict_service=self.conflict_service,
+            assignment_service=self.assignment_service,
+            case_service=self.case_service,
+        )
+
+    def _completion_gate(self):
+        return InvestigationCompletionGate(
+            freeze_service=self.freeze_service,
+            conflict_service=self.conflict_service,
+            case_service=self.case_service,
+        )
 
     def get_docket_for_detective(self, case_reference):
         case = self._get_case(case_reference)
@@ -214,10 +300,15 @@ class InvestigationService:
 
         if not isinstance(payload, dict):
             raise ValueError("Statement payload must be a JSON object.")
+        forbidden = {"statement_id", "case_reference", "citizen_id", "recorded_by", "recorded_by_role", "created_at", "updated_at", "provenance", "content_hash", "sha256_hash"}
+        if forbidden.intersection(payload):
+            raise ValueError("Statement provenance and identity are server-controlled and cannot be overridden.")
+
         statement_text = str(payload.get("statement_text") or "").strip()
         if not statement_text:
             raise ValueError("Statement text is required.")
 
+        created_at = self._utc_now()
         statement = {
             "statement_id": len(case.get("statements", [])) + 1,
             "case_reference": case_reference,
@@ -225,7 +316,15 @@ class InvestigationService:
             "statement_text": statement_text,
             "recorded_by": detective_id,
             "recorded_by_role": "detective",
-            "created_at": self._utc_now(),
+            "created_at": created_at,
+            "content_hash": hashlib.sha256(statement_text.encode("utf-8")).hexdigest(),
+            "provenance": {
+                "actor_id": str(detective_id),
+                "actor_role": "detective",
+                "source": "detective_statement",
+                "created_at": created_at,
+                "statement_version": 1,
+            },
         }
         case.setdefault("statements", []).append(statement)
         case.setdefault("timeline", []).append(
@@ -253,18 +352,28 @@ class InvestigationService:
         case = self._get_case(case_reference)
         if case is None:
             raise ValueError("Docket not found.")
-        if case.get("status") != "REGISTERED":
-            raise ValueError("Detective investigation can only start for a registered docket.")
-        if self.freeze_service and self.freeze_service.is_case_frozen(case_reference):
-            raise ValueError("Case is frozen and operational mutation is restricted.")
-        if self.conflict_service is not None:
-            self.conflict_service.assert_no_conflict(
-                case_reference, detective_id, operation="open_investigation", actor_id=detective_id, actor_role="detective"
-            )
+
+        if self.assignment_service is not None:
+            current_assignment = self.assignment_service.get_current_assignment_for_case(case_reference)
+            if current_assignment is None or str(current_assignment.get("status") or "").upper() != "ACTIVE":
+                raise ValueError("Detective investigation requires an active assignment to this docket.")
+            if str(current_assignment.get("officer_role") or "").lower() != "detective":
+                raise ValueError("The active assignment for this docket is not held by a detective.")
+            if str(current_assignment.get("officer_id") or "") != str(detective_id):
+                raise ValueError("Detective is not the assigned officer for this docket.")
 
         existing = self._get_investigation_by_case(case_reference)
-        if existing is not None:
-            raise ValueError("An active investigation already exists for this docket.")
+        gate = self._investigation_gate()
+        gate_result = gate.check(
+            case=case,
+            case_reference=case_reference,
+            detective_id=detective_id,
+            actor_id=detective_id,
+            actor_role="detective",
+            action="start",
+            investigation=existing,
+        )
+        gate_result.raise_for_block()
 
         payload = payload or {}
         if not isinstance(payload, dict):
@@ -334,6 +443,8 @@ class InvestigationService:
             raise ValueError("Status update payload must be a JSON object.")
 
         next_status = str(payload.get("status") or "").strip().upper()
+        if next_status == "COMPLETED":
+            raise ValueError("Investigation completion is controlled by the dedicated completion endpoint and cannot be forced via generic status mutation.")
         if next_status not in self.VALID_STATUSES:
             raise ValueError("Status is invalid.")
 
@@ -345,7 +456,7 @@ class InvestigationService:
 
         allowed_transitions = {
             "OPEN": {"IN_PROGRESS"},
-            "IN_PROGRESS": {"COMPLETED"},
+            "IN_PROGRESS": set(),
         }
         if next_status not in allowed_transitions.get(current_status, set()):
             raise ValueError("Invalid status transition.")
@@ -600,20 +711,103 @@ class InvestigationService:
 
     def create_finding(self, investigation_id, detective_id, payload=None):
         investigation = self.get_investigation(investigation_id)
-        self._assert_authorized_detective(investigation, detective_id)
-        if investigation.get("status") == "COMPLETED":
-            raise ValueError("Completed investigations cannot receive new findings.")
         if not isinstance(payload, dict):
             raise ValueError("Finding payload must be a JSON object.")
 
-        finding_type = str(payload.get("finding_type") or "").strip().upper()
-        if finding_type not in self.VALID_FINDING_TYPES:
-            raise ValueError("Finding type is invalid.")
+        payload = dict(payload)
+        forbidden = {
+            "finding_id",
+            "investigation_id",
+            "case_reference",
+            "case_id",
+            "detective_id",
+            "author_id",
+            "officer_id",
+            "investigator_id",
+            "created_at",
+            "updated_at",
+            "status",
+            "version",
+            "actor_id",
+        }
+        for key in forbidden:
+            payload.pop(key, None)
 
-        notes = str(payload.get("notes") or "").strip()
+        case = self._get_case(investigation.get("case_reference"))
+        finding_gate = self._finding_gate()
+        gate_result = finding_gate.check(
+            case=case,
+            investigation=investigation,
+            case_reference=investigation.get("case_reference"),
+            detective_id=detective_id,
+            actor_id=detective_id,
+            actor_role="detective",
+            payload=payload,
+        )
+        gate_result.raise_for_block()
+
+        if investigation.get("status") == "COMPLETED":
+            raise ValueError("Completed investigations cannot receive new findings.")
+
+        finding_type = str(payload.get("finding_type") or "").strip().upper()
+        if finding_type in self.REJECTED_ADJUDICATIVE_VALUES:
+            raise ValueError("Criminal guilt or innocence is not a valid finding type. Use VALID, INVALID, or REVIEW_REQUIRED.")
+        if finding_type not in self.VALID_FINDING_TYPES:
+            raise ValueError("Finding type is invalid. Use VALID, INVALID, or REVIEW_REQUIRED.")
+
+        notes = str(payload.get("notes") or payload.get("finding") or payload.get("finding_text") or "").strip()
         if not notes:
             raise ValueError("Finding notes are required.")
 
+        case_evidence = case.get("evidence", []) if case else []
+        case_evidence_ids = {str(item.get("evidence_id")) for item in case_evidence if isinstance(item, dict) and item.get("evidence_id")}
+        case_statements = case.get("statements", []) if case else []
+        case_statement_ids = {str(item.get("statement_id")) for item in case_statements if isinstance(item, dict) and item.get("statement_id")}
+        available_claim_ids = set()
+        if self.app is not None and hasattr(self.app, "extensions"):
+            claim_repo = self.app.extensions.get("claim_repository")
+            if claim_repo is not None:
+                for claim in claim_repo.list_all():
+                    if claim is None:
+                        continue
+                    if case and str(claim.get("submission_id") or "") == str(case.get("source_submission_id") or ""):
+                        available_claim_ids.add(str(claim.get("claim_id") or ""))
+                    elif case and case.get("source_submission_id") is None and str(claim.get("citizen_id") or "") == str(case.get("citizen_id") or ""):
+                        available_claim_ids.add(str(claim.get("claim_id") or ""))
+        available_claim_ids = {claim_id for claim_id in available_claim_ids if claim_id}
+
+        structured_evidence_ids = self._normalize_string_list(payload.get("evidence_ids"))
+        claim_ids = self._normalize_string_list(payload.get("claim_ids"))
+        supporting_material = self._normalize_basis_material(
+            payload.get("supporting_material"),
+            case,
+            case_evidence_ids,
+            case_statement_ids,
+            available_claim_ids,
+        )
+        contradicting_material = self._normalize_basis_material(
+            payload.get("contradicting_material"),
+            case,
+            case_evidence_ids,
+            case_statement_ids,
+            available_claim_ids,
+        )
+
+        explicit_basis = bool(structured_evidence_ids or claim_ids or supporting_material or contradicting_material)
+        case_has_statement_basis = bool(case_statement_ids)
+        case_has_evidence_basis = bool(case_evidence_ids)
+
+        if case_has_evidence_basis and not explicit_basis:
+            raise ValueError("Evidence linkage is required before a finding can be recorded for this docket.")
+        if case_has_evidence_basis and structured_evidence_ids and not set(structured_evidence_ids).issubset(case_evidence_ids):
+            raise ValueError("Evidence linkage must reference evidence on the same case.")
+        if not case_has_evidence_basis and not explicit_basis and not case_has_statement_basis:
+            raise ValueError("Finding requires explicit evidence, claim, or traceable case basis.")
+        unknown_claims = [claim_id for claim_id in claim_ids if claim_id not in available_claim_ids]
+        if unknown_claims:
+            raise ValueError("Claim basis is not valid for this case.")
+
+        reasoning = str(payload.get("reasoning") or payload.get("reasoning_text") or notes or "").strip()
         finding = {
             "finding_id": self._generate_finding_id(len(self.finding_repository.list()) + 1),
             "investigation_id": investigation.get("investigation_id"),
@@ -621,20 +815,47 @@ class InvestigationService:
             "detective_id": detective_id,
             "finding_type": finding_type,
             "notes": notes,
+            "reasoning": reasoning,
+            "evidence_ids": structured_evidence_ids,
+            "claim_ids": claim_ids,
+            "supporting_material": supporting_material,
+            "contradicting_material": contradicting_material,
+            "status": "SUBMITTED",
+            "version": 1,
             "created_at": self._utc_now(),
             "updated_at": self._utc_now(),
+            "is_final_outcome": False,
         }
-        self.finding_repository.create(finding)
+        created = self.finding_repository.create(finding)
         self.audit_service.log(
             {
                 "actor_id": detective_id,
                 "actor_role": "detective",
                 "action": "detective_finding_created",
                 "case_reference": investigation.get("case_reference"),
-                "details": {"investigation_id": investigation_id, "finding_type": finding_type},
+                "details": {"investigation_id": investigation_id, "finding_type": finding_type, "evidence_ids": structured_evidence_ids, "claim_ids": claim_ids},
             }
         )
-        return dict(finding)
+        return dict(created)
+
+    def _finding_gate(self):
+        from app.modules.control_gate import FindingGate
+        return FindingGate(
+            freeze_service=self.freeze_service,
+            conflict_service=self.conflict_service,
+            assignment_service=self.assignment_service,
+            case_service=self.case_service,
+        )
+
+    def amend_finding(self, investigation_id, detective_id, finding_id, payload=None):
+        investigation = self.get_investigation(investigation_id)
+        self._assert_authorized_detective(investigation, detective_id)
+        if not finding_id:
+            raise ValueError("A finding identifier is required.")
+        existing = self.finding_repository.get_for_finding_id(finding_id)
+        if not existing:
+            raise ValueError("Finding not found.")
+        raise ValueError("Finding amendments are blocked to preserve the original finding history and version lineage.")
 
     def list_findings_for_investigation(self, investigation_id, detective_id):
         investigation = self.get_investigation(investigation_id)
@@ -692,14 +913,60 @@ class InvestigationService:
         investigation = self.get_investigation(investigation_id)
         self._assert_authorized_detective(investigation, detective_id)
 
-        if investigation.get("status") == "COMPLETED":
+        previous_status = str(investigation.get("status") or "").upper()
+        if previous_status == "COMPLETED":
             raise ValueError("Investigation is already completed.")
         if not isinstance(payload, dict):
             raise ValueError("Completion payload must be a JSON object.")
 
+        payload = dict(payload)
+        for key in {"status", "completed", "completed_at", "investigation_id", "case_reference", "case_id", "detective_id", "actor_id", "officer_id", "investigator_id", "created_at", "updated_at", "previous_state", "new_state"}:
+            payload.pop(key, None)
+
+        case = self._get_case(investigation.get("case_reference"))
+        if case is None:
+            raise ValueError("Docket not found.")
+
+        existing_findings = [dict(item) for item in self.finding_repository.list_for_investigation(investigation_id)]
+        payload_with_findings = dict(payload)
+        payload_with_findings["findings"] = existing_findings
+        completion_gate = self._completion_gate()
+        completion_result = completion_gate.check(
+            case=case,
+            investigation=investigation,
+            case_reference=investigation.get("case_reference"),
+            detective_id=detective_id,
+            actor_id=detective_id,
+            actor_role="detective",
+            payload=payload_with_findings,
+        )
+        if not completion_result.allowed:
+            self.audit_service.log(
+                {
+                    "actor_id": detective_id,
+                    "actor_role": "detective",
+                    "action": "investigation_completion_blocked",
+                    "case_reference": investigation.get("case_reference"),
+                    "object_type": "investigation",
+                    "object_id": investigation_id,
+                    "previous_state": previous_status,
+                    "new_state": previous_status,
+                    "reason": completion_result.message,
+                    "rule_code": completion_result.code,
+                    "details": {
+                        "investigation_id": investigation_id,
+                        "requested_outcome": str(payload.get("outcome") or "").strip().upper(),
+                        "findings_count": len(existing_findings),
+                    },
+                }
+            )
+            raise ValueError(completion_result.message)
+
         outcome = str(payload.get("outcome") or "").strip().upper()
+        if outcome in self.REJECTED_ADJUDICATIVE_VALUES:
+            raise ValueError("Criminal guilt or innocence is not a valid investigative conclusion. Use VALID, INVALID, or REVIEW_REQUIRED.")
         if outcome not in self.VALID_OUTCOMES:
-            raise ValueError("Outcome is invalid.")
+            raise ValueError("Outcome is invalid. Use VALID, INVALID, or REVIEW_REQUIRED.")
 
         final_notes = str(payload.get("final_notes") or payload.get("notes") or "").strip()
         if not final_notes:
@@ -712,11 +979,16 @@ class InvestigationService:
             "detective_id": detective_id,
             "finding_type": outcome,
             "notes": final_notes,
+            "evidence_ids": [
+                str(item)
+                for finding in existing_findings
+                for item in (finding.get("evidence_ids") or [])
+            ],
             "created_at": self._utc_now(),
             "updated_at": self._utc_now(),
             "is_final_outcome": True,
         }
-        self.finding_repository.create(final_finding)
+        created_final_finding = self.finding_repository.create(final_finding)
 
         investigation["status"] = "COMPLETED"
         investigation["outcome"] = outcome
@@ -724,15 +996,36 @@ class InvestigationService:
         investigation["completed_at"] = self._utc_now()
         investigation["updated_at"] = investigation["completed_at"]
         self.repository.update(investigation["id"], investigation)
-        self.audit_service.log(
-            {
-                "actor_id": detective_id,
-                "actor_role": "detective",
-                "action": "detective_investigation_completed",
-                "case_reference": investigation.get("case_reference"),
-                "details": {"investigation_id": investigation_id, "outcome": outcome},
-            }
-        )
+        try:
+            self.audit_service.log(
+                {
+                    "actor_id": detective_id,
+                    "actor_role": "detective",
+                    "action": "detective_investigation_completed",
+                    "case_reference": investigation.get("case_reference"),
+                    "object_type": "investigation",
+                    "object_id": investigation_id,
+                    "previous_state": previous_status,
+                    "new_state": "COMPLETED",
+                    "reason": final_notes,
+                    "rule_code": completion_result.code,
+                    "details": {
+                        "investigation_id": investigation_id,
+                        "outcome": outcome,
+                        "finding_id": created_final_finding.get("finding_id"),
+                    },
+                }
+            )
+        except Exception:
+            saved = self.repository.get_by_investigation_id(investigation_id)
+            if saved is not None and str(saved.get("status") or "").upper() == "COMPLETED":
+                saved["status"] = previous_status
+                saved["outcome"] = None
+                saved["final_notes"] = None
+                saved["completed_at"] = None
+                saved["updated_at"] = self._utc_now()
+                self.repository.update(saved["id"], saved)
+            raise
         return dict(investigation)
 
     def add_findings(self, payload):

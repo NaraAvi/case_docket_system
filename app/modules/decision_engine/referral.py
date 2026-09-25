@@ -299,3 +299,6 @@ class StatutoryReferralService:
             actor_id,
             "constable",
         )
+
+    def evaluate_post_investigation_action(self, case_reference):
+        return self.decision_engine.evaluate_post_investigation_action(case_reference)

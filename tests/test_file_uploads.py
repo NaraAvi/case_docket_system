@@ -37,13 +37,10 @@ def _auth_headers(token):
 
 
 def _create_docket(app_client, citizen_token):
-    response = app_client.post(
-        "/api/v1/citizen/dockets",
-        json={"title": "Vandalism", "description": "Broken window overnight", "location": "Main St", "incident_date": "2026-01-01"},
-        headers=_auth_headers(citizen_token),
-    )
-    assert response.status_code == 201
-    return response.get_json()["case_reference"]
+    from tests.conftest import create_case_via_service
+
+    case = create_case_via_service(app_client, ROLE_TEST_IDS["citizen"], "Vandalism", "Broken window overnight", location="Main St", incident_date="2026-01-01")
+    return case["case_reference"]
 
 
 class TestEvidenceFileUpload:

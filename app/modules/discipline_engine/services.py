@@ -14,8 +14,9 @@ class DisciplinaryCaseService:
     VALID_STATUSES = {"OPEN", "CLOSED"}
     VALID_SANCTIONS = {"WARNING", "FINAL_WARNING", "SUSPENSION", "DISMISSAL", "NO_SANCTION"}
 
-    def __init__(self, repository=None, audit_service=None):
-        self.repository = repository or DisciplinaryCaseRepository()
+    def __init__(self, repository=None, audit_service=None, app=None):
+        self.app = app
+        self.repository = repository or DisciplinaryCaseRepository(app=app)
         self.audit_service = audit_service or AuditTrailService()
 
     @staticmethod
@@ -41,6 +42,12 @@ class DisciplinaryCaseService:
             raise ValueError("Implicated officer identity is required.")
         if not created_by:
             raise ValueError("Actor identity is required.")
+
+        existing = self.repository.get_for_escalation(escalation_id)
+        if existing is not None:
+            if str(existing.get("source_case_reference") or "") != str(source_case_reference):
+                raise ValueError("Disciplinary case already exists for this escalation with a different case reference.")
+            return dict(existing)
 
         record = {
             "source_case_reference": str(source_case_reference),

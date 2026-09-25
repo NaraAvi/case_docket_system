@@ -19,7 +19,8 @@ class DisciplinaryCaseRepository(BaseSqlAlchemyRepository):
         return datetime.now(UTC).isoformat()
 
     def _generate_case_id(self):
-        sequence = self.model.query.count() + 1
+        with self._app_context():
+            sequence = self.session.query(self.model).count() + 1
         return f"DIC-{sequence:06d}"
 
     def create(self, payload):
@@ -37,9 +38,18 @@ class DisciplinaryCaseRepository(BaseSqlAlchemyRepository):
         return super().create(payload)
 
     def list_for_case(self, case_reference):
-        instances = self.model.query.filter_by(source_case_reference=case_reference).all()
+        with self._app_context():
+            instances = self.session.query(self.model).filter_by(source_case_reference=case_reference).all()
         return [self._serialize(instance) for instance in instances]
 
+    def get_for_escalation(self, escalation_id):
+        if escalation_id is None:
+            return None
+        with self._app_context():
+            instance = self.session.query(self.model).filter_by(escalation_id=str(escalation_id)).first()
+        return self._serialize(instance)
+
     def list_for_officer(self, officer_id):
-        instances = self.model.query.filter_by(implicated_officer_id=str(officer_id)).all()
+        with self._app_context():
+            instances = self.session.query(self.model).filter_by(implicated_officer_id=str(officer_id)).all()
         return [self._serialize(instance) for instance in instances]

@@ -34,13 +34,11 @@ def login(client, role):
 
 
 def submit_docket(client, statement="Someone broke my window."):
+    from tests.conftest import create_case_via_service
+
     citizen = login(client, "citizen")
-    created = client.post(
-        "/api/v1/citizen/dockets",
-        json={"title": "Vandalism", "description": "Broken window overnight", "location": "Main St", "incident_date": "2026-01-01"},
-        headers=citizen,
-    )
-    case_reference = created.get_json()["case_reference"]
+    case = create_case_via_service(client, ROLE_TEST_IDS["citizen"], "Vandalism", "Broken window overnight", location="Main St", incident_date="2026-01-01")
+    case_reference = case["case_reference"]
     client.post(f"/api/v1/citizen/dockets/{case_reference}/statements", json={"statement_text": statement}, headers=citizen)
     submitted = client.post(f"/api/v1/citizen/dockets/{case_reference}/submit", headers=citizen)
     return case_reference, submitted

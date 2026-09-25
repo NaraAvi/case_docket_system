@@ -17,6 +17,7 @@ class EscalationService:
         "OFFICER_CONDUCT",
         "SUSPECTED_MALPRACTICE",
         "OTHER",
+        "SLA_BREACH",
     }
     # Only the decision engine may raise this category (M4.3); it is
     # deliberately absent from VALID_CATEGORIES so a citizen cannot select it.
@@ -27,8 +28,9 @@ class EscalationService:
     SYSTEM_ACTOR_ROLE = "system_automation"
     VALID_STATUSES = {"OPEN", "UNDER_REVIEW", "RESOLVED"}
 
-    def __init__(self, repository=None, audit_service=None):
-        self.repository = repository or EscalationRepository()
+    def __init__(self, repository=None, audit_service=None, app=None):
+        self.app = app
+        self.repository = repository or EscalationRepository(app=app)
         self.audit_service = audit_service or AuditTrailService()
 
     @staticmethod

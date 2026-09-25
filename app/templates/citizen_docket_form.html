@@ -4,32 +4,340 @@
   <section class="file-step-shell">
     <div class="step-header">
       <button class="icon-btn" type="button" id="backToCitizenDashboard">←</button>
-      <h2>New Docket</h2>
-      <span class="step-indicator">STEP 2 / 2</span>
+      <h2>New Protected Submission</h2>
+      <span class="step-indicator">PDAS review workflow</span>
     </div>
 
-    <div class="wizard-card">
-      <div class="wizard-row">
-        <label>Crime Type</label>
-        <input id="crimeType" type="text" placeholder="e.g. Theft / Property Damage" />
+    <div class="wizard-card" id="citizenSubmissionForm">
+      <div class="section-block">
+        <h3>1. About You</h3>
+        <div class="wizard-row">
+          <label for="reporterRelationship">Your relationship to the matter</label>
+          <select id="reporterRelationship">
+            <option value="">Select</option>
+            <option value="victim">Victim</option>
+            <option value="witness">Witness</option>
+            <option value="on_behalf">On behalf of another person</option>
+            <option value="information_provider">Information provider</option>
+            <option value="other">Other</option>
+            <option value="unknown">Unknown</option>
+          </select>
+        </div>
+        <div class="wizard-row hidden" id="reporterRelationshipOtherWrap">
+          <label for="reporterRelationshipOther">Describe the relationship</label>
+          <input id="reporterRelationshipOther" type="text" placeholder="e.g. family member, neighbour, community observer" />
+        </div>
+        <div class="wizard-row">
+          <label for="canContact">Do you consent to contact about this report?</label>
+          <select id="canContact">
+            <option value="">Select</option>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+            <option value="Not sure">Not sure</option>
+          </select>
+        </div>
+        <div class="wizard-row hidden" id="contactFields">
+          <label for="contactMethod">Preferred contact method</label>
+          <select id="contactMethod">
+            <option value="No preference">No preference</option>
+            <option value="Phone">Phone</option>
+            <option value="Email">Email</option>
+            <option value="SMS">SMS</option>
+          </select>
+          <div class="stack-row">
+            <input id="contactPhone" type="tel" placeholder="Phone number" />
+            <input id="contactEmail" type="email" placeholder="Email address" />
+            <input id="contactSms" type="text" placeholder="SMS / messaging" />
+          </div>
+        </div>
       </div>
-      <div class="wizard-row">
-        <label>Location</label>
-        <input id="incidentLocation" type="text" placeholder="e.g. 123 Main St, Springfield Sector 4" />
+
+      <div class="section-block">
+        <h3>2. Incident Details</h3>
+        <div class="wizard-row">
+          <label for="crimeType">Submission title</label>
+          <input id="crimeType" type="text" placeholder="e.g. Unsafe gate / broken streetlight" />
+        </div>
+        <div class="wizard-row">
+          <label for="incidentType">Incident type</label>
+          <select id="incidentType">
+            <option value="">Select</option>
+            <option value="public_safety_hazard">Public safety hazard</option>
+            <option value="officer_conduct">Officer conduct</option>
+            <option value="property_damage">Property damage</option>
+            <option value="harassment">Harassment</option>
+            <option value="theft">Theft</option>
+            <option value="assault">Assault</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="wizard-row hidden" id="incidentTypeOtherWrap">
+          <label for="incidentTypeOther">Describe the incident type</label>
+          <input id="incidentTypeOther" type="text" placeholder="e.g. unsafe detention environment" />
+        </div>
+        <div class="wizard-row">
+          <label for="dateCertainty">When did this happen?</label>
+          <select id="dateCertainty">
+            <option value="">Select</option>
+            <option value="exact">Exact date and time</option>
+            <option value="approximate">Approximate date</option>
+            <option value="unknown">Unknown</option>
+          </select>
+        </div>
+        <div class="wizard-row hidden" id="exactDateWrap">
+          <label for="incidentDate">Exact date</label>
+          <input id="incidentDate" type="date" />
+        </div>
+        <div class="wizard-row hidden" id="approximateDateWrap">
+          <label for="approximateDate">Approximate date or period</label>
+          <input id="approximateDate" type="text" placeholder="e.g. early January 2026" />
+        </div>
+        <div class="wizard-row hidden" id="unknownDateWrap">
+          <label for="dateUnknownReason">Why the date is not known</label>
+          <textarea id="dateUnknownReason" rows="2" placeholder="Describe what makes the date uncertain."></textarea>
+        </div>
+        <div class="wizard-row">
+          <label for="locationKnown">Do you know the location?</label>
+          <select id="locationKnown">
+            <option value="">Select</option>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+            <option value="Not sure">Not sure</option>
+          </select>
+        </div>
+        <div class="wizard-row hidden" id="locationKnownFields">
+          <label for="incidentLocation">Location details</label>
+          <input id="incidentLocation" type="text" placeholder="e.g. 123 Main St, Springfield Sector 4" />
+        </div>
+        <div class="wizard-row hidden" id="policeFacilityWrap">
+          <label for="policeFacility">Police station or facility</label>
+          <input id="policeFacility" type="text" placeholder="e.g. Central police station, detention facility or unit" />
+        </div>
+        <div class="wizard-row">
+          <label for="description">Summary of what happened</label>
+          <textarea id="description" rows="5" placeholder="Describe the facts clearly so the backend review process can classify the incident and decide whether any procedural case may be created."></textarea>
+        </div>
+        <div class="wizard-row">
+          <label for="beforeIncident">What happened before the event?</label>
+          <textarea id="beforeIncident" rows="3" placeholder="Describe the sequence leading up to the event."></textarea>
+        </div>
+        <div class="wizard-row">
+          <label for="afterIncident">What happened after the event?</label>
+          <textarea id="afterIncident" rows="3" placeholder="Describe the immediate aftermath, if known."></textarea>
+        </div>
       </div>
-      <div class="wizard-row">
-        <label>Incident Date</label>
-        <input id="incidentDate" type="date" />
+
+      <div class="section-block">
+        <h3>3. People Involved</h3>
+        <div class="wizard-row">
+          <label for="otherPeopleInvolved">Were other people involved?</label>
+          <select id="otherPeopleInvolved">
+            <option value="">Select</option>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+            <option value="Not sure">Not sure</option>
+          </select>
+        </div>
+        <div class="wizard-row hidden" id="personCountWrap">
+          <label for="peopleCount">Approximate number of people involved</label>
+          <select id="peopleCount">
+            <option value="">Select</option>
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3-5">3–5</option>
+            <option value="6-10">6–10</option>
+            <option value="more_than_10">More than 10</option>
+            <option value="unknown">Unknown / Not sure</option>
+          </select>
+        </div>
       </div>
-      <div class="wizard-row">
-        <label>Description</label>
-        <textarea id="description" rows="5" placeholder="Provide the key facts of the incident..."></textarea>
+
+      <div class="section-block">
+        <h3>4. Harm, Injury and Impact</h3>
+        <div class="wizard-row">
+          <label for="wasAnyoneHarmed">Was anyone harmed or at risk?</label>
+          <select id="wasAnyoneHarmed">
+            <option value="">Select</option>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+            <option value="Not sure">Not sure</option>
+          </select>
+        </div>
+        <div class="wizard-row hidden" id="harmFields">
+          <label>Harm or risk type</label>
+          <div class="checkbox-grid">
+            <label><input type="checkbox" name="harmType" value="physical" /> Physical</label>
+            <label><input type="checkbox" name="harmType" value="psychological" /> Psychological</label>
+            <label><input type="checkbox" name="harmType" value="financial" /> Financial</label>
+            <label><input type="checkbox" name="harmType" value="reputational" /> Reputational</label>
+            <label><input type="checkbox" name="harmType" value="property" /> Property</label>
+            <label><input type="checkbox" name="harmType" value="safety" /> Safety risk</label>
+          </div>
+        </div>
+        <div class="wizard-row hidden" id="harmFieldsText">
+          <label for="harmImpact">Describe the harm or risk</label>
+          <textarea id="harmImpact" rows="3" placeholder="Describe injury, distress, loss, danger or other impact."></textarea>
+        </div>
+        <div class="wizard-row">
+          <label for="wasAnyoneInjured">Was anyone injured?</label>
+          <select id="wasAnyoneInjured">
+            <option value="">Select</option>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+            <option value="Not sure">Not sure</option>
+          </select>
+        </div>
+        <div class="wizard-row hidden" id="injuryFields">
+          <label>Type of injury</label>
+          <div class="checkbox-grid">
+            <label><input type="checkbox" name="injuryType" value="minor" /> Minor</label>
+            <label><input type="checkbox" name="injuryType" value="serious" /> Serious</label>
+            <label><input type="checkbox" name="injuryType" value="emergency" /> Emergency / urgent</label>
+            <label><input type="checkbox" name="injuryType" value="none" /> None observed</label>
+          </div>
+          <div class="wizard-row">
+            <label for="injuryPersonType">Who was injured?</label>
+            <select id="injuryPersonType">
+              <option value="">Select</option>
+              <option value="affected_person">Affected person</option>
+              <option value="witness">Witness</option>
+              <option value="police_official">Police / official</option>
+              <option value="reporting_person">Reporting person</option>
+              <option value="other">Other</option>
+              <option value="unknown">Unknown / Not sure</option>
+            </select>
+          </div>
+          <div class="wizard-row hidden" id="injuryPersonOtherWrap">
+            <label for="injuryPersonOther">Who was injured? — please describe</label>
+            <input id="injuryPersonOther" type="text" placeholder="Please describe who was injured" />
+          </div>
+          <div class="wizard-row">
+            <label for="medicalAttention">Medical attention required?</label>
+            <select id="medicalAttention">
+              <option value="">Select</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+              <option value="Not sure">Not sure</option>
+            </select>
+          </div>
+          <div class="wizard-row hidden" id="medicalAttentionFields">
+            <label for="medicalAttentionDetails">Medical treatment / attention details</label>
+            <textarea id="medicalAttentionDetails" rows="2" placeholder="e.g. clinic, hospital, ambulance, treatment received"></textarea>
+          </div>
+          <div class="wizard-row">
+            <label for="injuries">Injury details</label>
+            <textarea id="injuries" rows="3" placeholder="Describe the injury or medical treatment."></textarea>
+          </div>
+        </div>
+        <div class="wizard-row">
+          <label for="propertyImpactQuestion">Was there property or financial impact?</label>
+          <select id="propertyImpactQuestion">
+            <option value="">Select</option>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+            <option value="Not sure">Not sure</option>
+          </select>
+        </div>
+        <div class="wizard-row hidden" id="propertyFields">
+          <label>Property type</label>
+          <div class="checkbox-grid">
+            <label><input type="checkbox" name="propertyType" value="vehicle" /> Vehicle</label>
+            <label><input type="checkbox" name="propertyType" value="personal_belonging" /> Personal belonging</label>
+            <label><input type="checkbox" name="propertyType" value="business" /> Business property</label>
+            <label><input type="checkbox" name="propertyType" value="public_space" /> Public space / infrastructure</label>
+          </div>
+          <div class="wizard-row">
+            <label for="propertyPerson">Who owned or was affected by the property?</label>
+            <input id="propertyPerson" type="text" placeholder="e.g. complainant, family, business" />
+          </div>
+          <div class="wizard-row">
+            <label for="propertyValue">Estimated value</label>
+            <input id="propertyValue" type="text" placeholder="e.g. R 8,000 or approximate value" />
+          </div>
+          <div class="wizard-row">
+            <label for="propertyImpact">Property or financial impact</label>
+            <textarea id="propertyImpact" rows="3" placeholder="Describe property damage, loss or financial consequence."></textarea>
+          </div>
+        </div>
       </div>
-      <p class="field-hint">You'll add your statement and any evidence on the next screen, before submitting the docket for review.</p>
+
+      <div class="section-block">
+        <h3>5. Evidence and Prior Reports</h3>
+        <div class="wizard-row">
+          <label for="evidenceAvailable">Do you have evidence?</label>
+          <select id="evidenceAvailable">
+            <option value="">Select</option>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+            <option value="Unknown">Unknown</option>
+          </select>
+        </div>
+        <div class="wizard-row hidden" id="evidenceFields">
+          <label>Evidence type</label>
+          <div class="checkbox-grid">
+            <label><input type="checkbox" name="evidenceType" value="photo" /> Photo</label>
+            <label><input type="checkbox" name="evidenceType" value="video" /> Video</label>
+            <label><input type="checkbox" name="evidenceType" value="audio" /> Audio</label>
+            <label><input type="checkbox" name="evidenceType" value="document" /> Document</label>
+            <label><input type="checkbox" name="evidenceType" value="witness_statement" /> Witness statement</label>
+            <label><input type="checkbox" name="evidenceType" value="other" /> Other</label>
+          </div>
+          <div class="wizard-row">
+            <label for="evidenceSummary">Evidence description</label>
+            <textarea id="evidenceSummary" rows="3" placeholder="List photos, recordings, documents or physical items available."></textarea>
+          </div>
+        </div>
+        <div class="wizard-row">
+          <label for="previousReportQuestion">Is this related to a previous report?</label>
+          <select id="previousReportQuestion">
+            <option value="">Select</option>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+            <option value="Unknown">Unknown</option>
+          </select>
+        </div>
+        <div class="wizard-row hidden" id="previousReportFields">
+          <label for="previousReportType">Previous report type</label>
+          <input id="previousReportType" type="text" placeholder="e.g. prior complaint, verbal report, case reference" />
+          <label for="previousReportReference">Reference or case number</label>
+          <input id="previousReportReference" type="text" placeholder="If applicable, provide the reference" />
+          <label for="previousReportDate">Approximate date of previous report</label>
+          <input id="previousReportDate" type="text" placeholder="e.g. 02 May 2026" />
+          <label for="previousReportBelief">Context</label>
+          <textarea id="previousReportBelief" rows="3" placeholder="Explain how this report is related to the earlier report."></textarea>
+        </div>
+        <div class="wizard-row">
+          <label for="currentSafetyQuestion">Is there an immediate safety concern?</label>
+          <select id="currentSafetyQuestion">
+            <option value="">Select</option>
+            <option value="Yes">Yes</option>
+            <option value="No">No</option>
+            <option value="Unknown">Unknown</option>
+          </select>
+        </div>
+        <div class="wizard-row hidden" id="currentSafetyFields">
+          <label>Risk type</label>
+          <div class="checkbox-grid">
+            <label><input type="checkbox" name="currentRiskType" value="immediate_threat" /> Immediate threat</label>
+            <label><input type="checkbox" name="currentRiskType" value="ongoing_contact" /> Ongoing contact</label>
+            <label><input type="checkbox" name="currentRiskType" value="retaliation" /> Retaliation risk</label>
+            <label><input type="checkbox" name="currentRiskType" value="medical" /> Medical urgency</label>
+          </div>
+          <label for="currentSafetySummary">Explain the risk or safety need</label>
+          <textarea id="currentSafetySummary" rows="3" placeholder="Describe immediate safety concerns, support requested or urgent action needed."></textarea>
+        </div>
+      </div>
+
+      <div class="section-block">
+        <h3>6. Review</h3>
+        <div id="citizenSubmissionReview" class="stack-list"></div>
+      </div>
+
+      <p class="field-hint">This creates a protected citizen submission. The citizen supplies information and assertions; the backend controls relationship classification and procedural case eligibility.</p>
       <p class="inline-error hidden" id="citizenFormError"></p>
 
       <div class="submit-row">
-        <button class="primary-btn large-btn" type="button" id="submitCitizenDocket">Create Docket</button>
+        <button class="primary-btn large-btn" type="button" id="submitCitizenDocket">Create Submission</button>
       </div>
     </div>
   </section>
