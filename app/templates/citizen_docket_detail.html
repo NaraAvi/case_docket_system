@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <section class="detail-shell">
+    <div class="page-head-row">
+      <div>
+        <p class="eyebrow">Case Reference</p>
+        <h1>{{ case_reference }}</h1>
+      </div>
+      <button class="secondary-btn" type="button" id="escalateCaseBtn">Escalate Case</button>
+    </div>
+
+    <div class="detail-grid">
+      <div class="detail-card">
+        <h3>Case Information</h3>
+        <dl class="meta-list" id="citizenCaseMeta">
+          <dt>Status</dt><dd>Loading…</dd>
+          <dt>Location</dt><dd>Loading…</dd>
+          <dt>Incident Date</dt><dd>Loading…</dd>
+        </dl>
+      </div>
+
+      <div class="detail-card">
+        <h3>Timeline</h3>
+        <ul class="timeline-list" id="citizenCaseTimeline">
+          <li><span class="timeline-dot"></span><div><strong>Loading case timeline</strong><small>Please wait…</small></div></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="detail-card" style="margin-top:18px;">
+      <h3>Your Statement</h3>
+      <textarea id="citizenStatementText" rows="5" placeholder="Describe what happened, in your own words..."></textarea>
+      <div class="stack-row" style="justify-content:flex-end; margin-top:10px;">
+        <button class="secondary-btn" type="button" id="saveCitizenStatement">Save Statement</button>
+      </div>
+      <p class="inline-error hidden" id="citizenStatementError"></p>
+    </div>
+
+    <div class="detail-card" style="margin-top:18px;">
+      <h3>Evidence</h3>
+      <div id="citizenCaseEvidence" class="stack-list">
+        <div class="empty-state">Loading evidence…</div>
+      </div>
+      <div class="wizard-row" style="margin-top:14px;">
+        <label for="citizenEvidenceType">Type</label>
+        <select id="citizenEvidenceType">
+          <option value="PHOTO">Photo</option>
+          <option value="VIDEO">Video</option>
+          <option value="DOCUMENT">Document</option>
+          <option value="AUDIO">Audio</option>
+          <option value="OTHER">Other</option>
+        </select>
+      </div>
+      <div class="file-input-row">
+        <label class="input-label" for="citizenEvidenceFile">File</label>
+        <input type="file" id="citizenEvidenceFile" />
+        <p class="file-name-preview hidden" id="citizenEvidenceFilePreview"></p>
+        <button class="secondary-btn small-btn hidden" type="button" id="clearCitizenEvidenceFile">Clear selected file</button>
+      </div>
+      <div class="wizard-row">
+        <label for="citizenEvidenceDescription">Description</label>
+        <textarea id="citizenEvidenceDescription" rows="2" placeholder="What does this evidence show?"></textarea>
+      </div>
+      <div class="stack-row" style="justify-content:flex-end;">
+        <button class="secondary-btn" type="button" id="addCitizenEvidence">Add Evidence</button>
+      </div>
+      <p class="inline-error hidden" id="citizenEvidenceError"></p>
+    </div>
+
+    <div class="detail-card" style="margin-top:18px;">
+      <h3>My Escalations</h3>
+      <div id="citizenEscalationsList" class="stack-list">
+        <div class="empty-state">Loading escalations…</div>
+      </div>
+    </div>
+
+    <div class="stack-row" style="margin-top:18px; justify-content:flex-end;">
+      <button class="primary-btn" type="button" id="submitCitizenDocketForReview" disabled>Submit Docket for Review</button>
+    </div>
+    <p class="field-hint" id="submitDocketHint" style="text-align:right;">Save a statement before submitting.</p>
+  </section>
+
+  <div class="reauth-modal hidden" id="escalateModal" aria-hidden="true">
+    <div class="reauth-card">
+      <div class="reauth-header">
+        <span class="lock-icon">⚠️</span>
+        <span>Escalate to IPID</span>
+      </div>
+      <p class="reauth-subtitle">Use this if the docket process itself was mishandled — refused registration, unlawful delay, officer conduct, or suspected malpractice.</p>
+      <label class="input-label" for="escalateCategory">Category</label>
+      <select id="escalateCategory">
+        <option value="REFUSAL_TO_REGISTER">Refusal to Register</option>
+        <option value="UNLAWFUL_DELAY">Unlawful Delay</option>
+        <option value="OFFICER_CONDUCT">Officer Conduct</option>
+        <option value="SUSPECTED_MALPRACTICE">Suspected Malpractice</option>
+        <option value="OTHER">Other</option>
+      </select>
+      <label class="input-label" style="margin-top:12px; display:block;" for="escalateDescription">Description</label>
+      <textarea id="escalateDescription" rows="4" placeholder="Describe what happened (minimum 10 characters)..."></textarea>
+      <p class="inline-error hidden" id="escalateModalError"></p>
+      <div class="modal-actions">
+        <button class="secondary-btn" type="button" id="closeEscalateModal">Cancel</button>
+        <button class="primary-btn" type="button" id="submitEscalateModal">Submit Escalation</button>
+      </div>
+    </div>
+  </div>
+{% endblock %}

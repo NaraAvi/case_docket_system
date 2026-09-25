@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <section class="detail-shell">
+    <div class="page-head-row">
+      <div>
+        <p class="eyebrow">Active Investigation</p>
+        <h1>{{ case_reference }}</h1>
+      </div>
+      <span class="badge badge-verified">Registered</span>
+    </div>
+
+    <div class="detail-grid">
+      <div class="detail-card">
+        <h3>Case Metadata</h3>
+        <dl class="meta-list" id="detectiveCaseMeta">
+          <dt>Incident Location</dt><dd>Loading…</dd>
+          <dt>Incident Date</dt><dd>Loading…</dd>
+          <dt>Assigned Officer</dt><dd>Loading…</dd>
+          <dt>Status</dt><dd>Loading…</dd>
+        </dl>
+      </div>
+
+      <div class="detail-card">
+        <h3>Initial Deposition</h3>
+        <div class="statement-box">
+          <p>Loading docket description and witness information…</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="cards-grid" style="margin-top:18px;">
+      <div class="panel-card">
+        <h3>Investigation Notes</h3>
+        <textarea rows="7" placeholder="Document note chronology and witness follow-ups..."></textarea>
+      </div>
+
+      <div class="panel-card">
+        <h3>Statements</h3>
+        <div class="statement-box">
+          <strong>Citizen Statement</strong>
+          <p>Loading the latest citizen statement…</p>
+        </div>
+      </div>
+
+      <div class="panel-card">
+        <h3>Evidence</h3>
+        <ul class="timeline-list" id="detectiveCaseEvidence">
+          <li><span class="timeline-dot"></span><div><strong>Loading evidence</strong><small>Please wait…</small></div></li>
+        </ul>
+      </div>
+
+      <div class="panel-card">
+        <h3>Audit Timeline</h3>
+        <ul class="timeline-list" id="detectiveCaseTimeline">
+          <li><span class="timeline-dot"></span><div><strong>Loading audit timeline</strong><small>Please wait…</small></div></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="stack-row" style="margin-top:18px; justify-content:flex-end;">
+      <button class="secondary-btn" type="button">Add Finding</button>
+      <button class="primary-btn" type="button" id="startInvestigation">Start Investigation</button>
+    </div>
+  </section>
+{% endblock %}

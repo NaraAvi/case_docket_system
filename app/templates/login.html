@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <div class="login-screen">
+    <div class="login-panel">
+      <div class="login-head">
+        <span class="brand-mini">PDAS</span>
+        <span>Secure Access</span>
+      </div>
+      <h1>Sign in to PDAS</h1>
+      <p>Use the synthetic test ID issued to the selected role.</p>
+
+      <form id="loginForm" class="login-form">
+        <label for="testId">Test Identity Number</label>
+        <input id="testId" name="test_id" type="text" inputmode="numeric" placeholder="2200223333111" maxlength="13" />
+        <button class="primary-btn full-width" type="submit">Access Portal</button>
+      </form>
+
+      <div class="seed-list">
+        <strong>Example identities</strong>
+        <div class="seed-row">
+          <span>Citizen</span><code>2200223333111</code>
+        </div>
+        <div class="seed-row">
+          <span>Constable</span><code>2200223333114</code>
+        </div>
+        <div class="seed-row">
+          <span>Detective</span><code>2200223333115</code>
+        </div>
+        <div class="seed-row">
+          <span>Station Commander</span><code>2200223333116</code>
+        </div>
+        <div class="seed-row">
+          <span>IPID</span><code>2200223333117</code>
+        </div>
+      </div>
+
+      <div id="loginError" class="form-error hidden" role="alert"></div>
+    </div>
+  </div>
+{% endblock %}

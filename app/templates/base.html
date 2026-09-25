@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ page_title or 'PDAS' }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/pdas.css') }}" />
+  </head>
+  <body data-role="{{ role or '' }}" data-page="{{ page_title or '' }}">
+    {% block content %}
+      {% if role %}
+        <div class="pdas-shell">
+          <aside class="pdas-sidebar">
+            <div class="brand-block">
+              <div class="brand-mark">PDAS</div>
+              <div class="brand-copy">
+                <strong>PDAS Admin</strong>
+                <span>Accountability Portal</span>
+              </div>
+            </div>
+
+            <nav class="nav-list">
+              {% if role == 'citizen' %}
+                <a class="nav-item active" href="/citizen">Dashboard</a>
+                <a class="nav-item" href="/citizen/dockets/new">Submit New Docket</a>
+                <a class="nav-item" href="/citizen">My Dockets</a>
+              {% elif role == 'constable' %}
+                <a class="nav-item active" href="/constable">Dashboard</a>
+                <a class="nav-item" href="/active-cases">Active Cases</a>
+                <a class="nav-item" href="/evidence-vault">Evidence Vault</a>
+              {% elif role == 'detective' %}
+                <a class="nav-item active" href="/detective">Dashboard</a>
+                <a class="nav-item" href="/active-cases">Active Cases</a>
+                <a class="nav-item" href="/evidence-vault">Evidence Vault</a>
+              {% elif role == 'station_commander' %}
+                <a class="nav-item active" href="/station-commander">Dashboard</a>
+                <a class="nav-item" href="/active-cases">Active Cases</a>
+                <a class="nav-item" href="/evidence-vault">Evidence Vault</a>
+              {% elif role == 'ipid' %}
+                <a class="nav-item active" href="/ipid">Dashboard</a>
+                <a class="nav-item" href="/active-cases">Active Cases</a>
+                <a class="nav-item" href="/evidence-vault">Evidence Vault</a>
+              {% endif %}
+            </nav>
+
+            <div class="nav-footer">
+              <button class="nav-logout" id="logoutButton" type="button">Logout</button>
+            </div>
+          </aside>
+
+          <div class="pdas-main">
+            <header class="pdas-topbar">
+              <div class="topbar-left">
+                <div class="page-crumb">PDAS</div>
+                <div class="title-line">{{ page_title }}</div>
+              </div>
+              <div class="topbar-right">
+                <div class="status-pill">Secure System</div>
+                <div class="user-badge" id="userBadge">Authenticated User</div>
+              </div>
+            </header>
+
+            <main class="content-wrap">
+              {{ self.body() }}
+            </main>
+
+            <footer class="pdas-footer">
+              <div class="footer-brand">PDAS SECURE ACCOUNTABILITY SYSTEM</div>
+              <div class="footer-links">
+                <a href="#">Privacy Policy</a>
+                <a href="#">Audit Protocols</a>
+                <a href="#">Help Desk</a>
+              </div>
+            </footer>
+          </div>
+        </div>
+      {% else %}
+        <main class="plain-layout">
+          {{ self.body() }}
+        </main>
+      {% endif %}
+    {% endblock %}
+
+    <div class="reauth-modal hidden" id="reauthModal" aria-hidden="true">
+      <div class="reauth-card">
+        <div class="reauth-header">
+          <span class="lock-icon">🔒</span>
+          <span>High-Accountability Authorization</span>
+        </div>
+        <p class="reauth-subtitle">This action is governed by the backend authorization model and will be recorded in the audit trail.</p>
+
+        <div class="field-row">
+          <label>Target Record</label>
+          <div class="inline-read">CAS-2023-BB1</div>
+        </div>
+        <div class="field-row split-row">
+          <label>Authorized Action</label>
+          <div class="inline-read muted">Authorize Escalation Decision</div>
+        </div>
+
+        <label class="input-label">Reason for Action</label>
+        <textarea rows="3" placeholder="Provide the mandatory decision justification..."></textarea>
+
+        <div class="security-box">
+          <span>Authorization is controlled by the PDAS backend. This UI reflects the existing access model and audit controls.</span>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="secondary-btn" data-close-reauth>Cancel</button>
+          <button type="button" class="primary-btn">Confirm Decision</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/pdas.js') }}"></script>
+  </body>
+</html>
