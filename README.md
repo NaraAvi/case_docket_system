@@ -67,8 +67,9 @@ This branch now includes fixes for the three open repository issues:
 - **Evidence removal:** citizens can clear a pending file selection and delete
   their own persisted evidence through
   `DELETE /api/v1/citizen/dockets/<case_reference>/evidence/<evidence_id>`.
-  Multipart uploads are stored with a SHA-256 hash and are removed only after
-  the docket record is updated.
+  Multipart uploads are stored with a SHA-256 hash; storage references are
+  server-controlled and files are removed only after the docket record is
+  updated.
 - **Duplicate escalations:** a docket can have at most one unresolved
   escalation (`OPEN` or `UNDER_REVIEW`). A duplicate request returns `409`
   with the existing escalation id; resolved history remains available and a
@@ -78,7 +79,8 @@ This branch now includes fixes for the three open repository issues:
   `REFUSAL_TO_REGISTER` complaint while the docket is awaiting constable
   registration. The docket is placed in a narrow IPID custody freeze, its
   registration status is not changed, and no officer is invented when no
-  assignment exists.
+  assignment exists. The decision, freeze, access, discipline, and audit
+  writes share one transaction.
 
 ## Run locally
 
@@ -90,3 +92,6 @@ pytest -q
 
 The default development database is SQLite. Set `DATABASE_URL` and
 `UPLOAD_ROOT` in `.env` to override the database and upload storage locations.
+For an existing database, run `flask db upgrade`; the migration refuses to
+apply until active duplicate escalations have been reconciled rather than
+silently deleting case history.

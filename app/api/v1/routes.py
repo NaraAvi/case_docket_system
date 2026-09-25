@@ -237,10 +237,22 @@ def add_docket_evidence(case_reference):
         return jsonify({"error": "Forbidden."}), 403
 
     citizen_id = get_jwt_identity()
+    service = get_citizen_docket_service()
     uploaded_file = request.files.get("file")
     media = None
     if uploaded_file is not None:
+        # Check ownership/status and metadata before consuming an untrusted
+        # upload.  The route, not the client, supplies storage metadata.
         try:
+            service.validate_evidence_submission(
+                citizen_id,
+                case_reference,
+                {
+                    "evidence_type": request.form.get("evidence_type", ""),
+                    "description": request.form.get("description", ""),
+                    "filename": uploaded_file.filename,
+                },
+            )
             media = get_media_manager().save_upload(uploaded_file, subdir="evidence")
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
@@ -253,11 +265,18 @@ def add_docket_evidence(case_reference):
         payload = request.get_json(silent=True) or {}
 
     try:
-        evidence = get_citizen_docket_service().add_evidence(citizen_id, case_reference, payload)
-    except ValueError as exc:
+        evidence = service.add_evidence(
+            citizen_id,
+            case_reference,
+            payload,
+            trusted_media=uploaded_file is not None,
+        )
+    except Exception as exc:
         if media and media.get("storage_reference"):
-            get_media_manager().delete(media["storage_reference"])
-        return jsonify({"error": str(exc)}), 400 if "not found" not in str(exc).lower() else 404
+            get_media_manager().delete(media["storage_reference"], subdir="evidence")
+        if isinstance(exc, ValueError):
+            return jsonify({"error": str(exc)}), 400 if "not found" not in str(exc).lower() else 404
+        raise
     return jsonify(evidence), 201
 
 
@@ -278,10 +297,10 @@ def remove_docket_evidence(case_reference, evidence_id):
     # Metadata-only records have no physical file.  For real uploads, remove
     # the stored object only after the docket update has succeeded.
     storage_reference = evidence.get("storage_reference")
-    if storage_reference:
+    if evidence.get("storage_managed") is True and storage_reference:
         remaining = get_citizen_docket_service().list_evidence(citizen_id, case_reference)
         if not any(item.get("storage_reference") == storage_reference for item in remaining):
-            get_media_manager().delete(storage_reference)
+            get_media_manager().delete(storage_reference, subdir="evidence")
     return jsonify(evidence)
 
 

@@ -58,11 +58,19 @@ class BaseSqlAlchemyRepository(BaseRepository):
     def _lookup_column(self):
         return getattr(self.model, self.id_column)
 
+    def _session_instance(self):
+        # Repositories normally hold Flask-SQLAlchemy's scoped_session proxy,
+        # while tests/integrations may inject a real Session instance.
+        return self.session() if callable(self.session) else self.session
+
     def _commit(self):
+        session = self._session_instance()
+        if getattr(session, "info", {}).get("defer_commit"):
+            return
         try:
-            self.session.commit()
+            session.commit()
         except Exception:
-            self.session.rollback()
+            session.rollback()
             raise
 
     def get_by_id(self, identifier):

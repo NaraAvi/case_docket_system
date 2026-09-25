@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from app.database.repositories.base_repository import BaseSqlAlchemyRepository
 from app.models import Escalation
@@ -19,8 +20,9 @@ class EscalationRepository(BaseSqlAlchemyRepository):
         return datetime.now(UTC).isoformat()
 
     def _generate_escalation_id(self):
-        sequence = self.model.query.count() + 1
-        return f"ESC-{sequence:06d}"
+        # UUIDs avoid count()+1 collisions when two dockets are escalated
+        # concurrently; callers should treat this as an opaque identifier.
+        return f"ESC-{uuid4().hex[:24].upper()}"
 
     def create(self, payload):
         payload = dict(payload)

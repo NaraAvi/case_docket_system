@@ -113,8 +113,12 @@ class MediaManager:
             return None
         return candidate
 
-    def delete(self, storage_reference):
+    def delete(self, storage_reference, subdir=None):
         """Delete a stored object if it exists; return whether one was removed."""
+        if subdir is not None:
+            prefix = f"{subdir}/"
+            if not str(storage_reference or "").replace("\\", "/").startswith(prefix):
+                return False
         path = self.resolve_path(storage_reference)
         if path is None:
             return False

@@ -485,16 +485,35 @@ document.addEventListener('DOMContentLoaded', () => {
       const ownStatements = statements.filter((statement) => !statement.recorded_by_role
         && (!currentUser?.test_id || String(statement.citizen_id) === String(currentUser.test_id)));
       const isDraft = String(docket.status || 'DRAFT').toUpperCase() === 'DRAFT';
-      bindCitizenStatement(caseReference, ownStatements[ownStatements.length - 1], isDraft);
-      bindCitizenSubmit(caseReference, isDraft, ownStatements.length > 0);
+      const isFrozen = Boolean(docket.is_frozen);
+      bindCitizenStatement(caseReference, ownStatements[ownStatements.length - 1], isDraft && !isFrozen);
+      bindCitizenSubmit(caseReference, isDraft && !isFrozen, ownStatements.length > 0);
       if (evidenceContainer) {
-        renderCitizenEvidence(evidenceContainer, docket.evidence);
-        bindCitizenEvidence(caseReference);
+        try {
+          renderCitizenEvidence(evidenceContainer, docket.evidence);
+          bindCitizenEvidence(caseReference);
+        } catch (error) {
+          setEmptyState(evidenceContainer, error.message || 'Unable to load evidence.');
+        }
       }
       if (escalationContainer) {
-        const escalations = await fetchJson(`/api/v1/citizen/dockets/${encodeURIComponent(caseReference)}/escalations`);
-        renderCitizenEscalations(escalationContainer, escalations);
-        bindCitizenEscalation(caseReference);
+        try {
+          const escalations = await fetchJson(`/api/v1/citizen/dockets/${encodeURIComponent(caseReference)}/escalations`);
+          renderCitizenEscalations(escalationContainer, escalations);
+          bindCitizenEscalation(caseReference);
+        } catch (error) {
+          setEmptyState(escalationContainer, error.message || 'Unable to load escalations.');
+        }
+      }
+      if (isFrozen) {
+        ['addCitizenEvidence', 'citizenEvidenceFile', 'clearCitizenEvidenceFile', 'escalateCaseBtn', 'saveCitizenStatement', 'submitCitizenDocketForReview']
+          .forEach((id) => {
+            const element = document.getElementById(id);
+            if (element) element.disabled = true;
+          });
+        document.querySelectorAll('[data-remove-evidence]').forEach((element) => {
+          element.disabled = true;
+        });
       }
     } catch (error) {
       if (meta) {

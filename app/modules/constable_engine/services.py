@@ -98,6 +98,11 @@ class ConstableRegistrationService:
                 "status": case.get("status"),
                 "incident_date": case.get("incident_date"),
                 "location": case.get("location"),
+                "freeze_status": (
+                    "FROZEN"
+                    if self.freeze_service and self.freeze_service.is_case_frozen(case.get("case_reference"))
+                    else "NOT_FROZEN"
+                ),
             }
             for case in self.case_service.get_all_cases()
             if case.get("status") == "AWAITING_CONSTABLE_REGISTRATION"
@@ -127,7 +132,6 @@ class ConstableRegistrationService:
         case = self._get_docket_by_reference(case_reference)
         if case is None:
             raise ValueError("Docket not found.")
-        self._assert_not_frozen(case_reference)
         if case.get("status") != "AWAITING_CONSTABLE_REGISTRATION":
             raise ValueError("Docket is not awaiting constable registration.")
         if case.get("citizen_id") == constable_id:
@@ -197,6 +201,7 @@ class ConstableRegistrationService:
         flag = self.flag_repository.get_for_flag_id(flag_id)
         if flag is None:
             raise ValueError("Flag not found.")
+        self._assert_not_frozen(flag.get("case_reference"))
 
         if not isinstance(payload, dict):
             raise ValueError("Flag update payload must be a JSON object.")
@@ -266,6 +271,7 @@ class ConstableRegistrationService:
         source_case = self._get_docket_by_reference(source_case_reference)
         if source_case is None:
             raise ValueError("Source case not found.")
+        self._assert_not_frozen(source_case_reference)
 
         related_case_reference = str(payload.get("related_case_reference") or "").strip()
         if not related_case_reference:

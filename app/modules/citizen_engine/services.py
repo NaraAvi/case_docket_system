@@ -11,6 +11,7 @@ from app.auth.service import TestIdentityRegistry
 from app.modules.audit_engine.services import AuditTrailService
 from app.modules.case_engine.services import DocketManagementService
 from app.modules.escalation_engine.services import EscalationService
+from app.services.case_service import new_evidence_id
 from app.validation.validators import CitizenDocketValidator
 
 
@@ -63,11 +64,12 @@ class CitizenAuthenticationService:
 class CitizenDocketService:
     """Boundary for citizen-facing submission and status flows."""
 
-    def __init__(self, docket_manager=None, audit_service=None, escalation_service=None):
+    def __init__(self, docket_manager=None, audit_service=None, escalation_service=None, freeze_service=None):
         self._submissions = []
         self.docket_manager = docket_manager or DocketManagementService()
         self.audit_service = audit_service or AuditTrailService()
         self.escalation_service = escalation_service or EscalationService(audit_service=self.audit_service)
+        self.freeze_service = freeze_service
 
     @staticmethod
     def _utc_timestamp():
@@ -89,21 +91,9 @@ class CitizenDocketService:
         if case_data.get("status") not in {"DRAFT", "AWAITING_CONSTABLE_REGISTRATION", "REGISTERED"}:
             raise ValueError("This docket is no longer editable by the citizen.")
 
-    @staticmethod
-    def _next_evidence_id(evidence_records):
-        """Return a stable numeric id for a newly added evidence record.
-
-        Evidence is stored in the docket JSON document, so ``len(...) + 1``
-        can reuse an id after a removal.  Derive the next value from the
-        existing records instead so audit references remain unambiguous.
-        """
-        numeric_ids = []
-        for record in evidence_records or []:
-            try:
-                numeric_ids.append(int(record.get("evidence_id")))
-            except (AttributeError, TypeError, ValueError):
-                continue
-        return max(numeric_ids, default=0) + 1
+    def _assert_not_frozen(self, case_reference):
+        if self.freeze_service and self.freeze_service.is_case_frozen(case_reference):
+            raise ValueError("Case is frozen and operational mutation is restricted.")
 
     def _append_timeline_event(self, case_data, event_type, details=None):
         timeline = case_data.setdefault("timeline", [])
@@ -134,11 +124,20 @@ class CitizenDocketService:
         )
         return docket
 
+    def _decorate_freeze_status(self, case):
+        if case is None or self.freeze_service is None:
+            return case
+        decorated = dict(case)
+        frozen = self.freeze_service.is_case_frozen(case.get("case_reference"))
+        decorated["is_frozen"] = frozen
+        decorated["freeze_status"] = "FROZEN" if frozen else "NOT_FROZEN"
+        return decorated
+
     def list_dockets(self, citizen_id):
-        return self.docket_manager.list_dockets_for_citizen(citizen_id)
+        return [self._decorate_freeze_status(item) for item in self.docket_manager.list_dockets_for_citizen(citizen_id)]
 
     def get_docket(self, citizen_id, case_reference):
-        return self.docket_manager.get_docket_for_citizen(citizen_id, case_reference)
+        return self._decorate_freeze_status(self.docket_manager.get_docket_for_citizen(citizen_id, case_reference))
 
     def list_statements(self, citizen_id, case_reference):
         case = self._get_case(citizen_id, case_reference)
@@ -146,6 +145,7 @@ class CitizenDocketService:
 
     def add_statement(self, citizen_id, case_reference, payload):
         case = self._get_case(citizen_id, case_reference)
+        self._assert_not_frozen(case_reference)
         self._assert_draft(case)
 
         statement_text = payload.get("statement_text") if isinstance(payload, dict) else None
@@ -175,6 +175,7 @@ class CitizenDocketService:
 
     def update_statement(self, citizen_id, case_reference, statement_id, payload):
         case = self._get_case(citizen_id, case_reference)
+        self._assert_not_frozen(case_reference)
         self._assert_draft(case)
 
         statements = case.get("statements", [])
@@ -216,31 +217,50 @@ class CitizenDocketService:
         case = self._get_case(citizen_id, case_reference)
         return [dict(item) for item in case.get("evidence", [])]
 
-    def add_evidence(self, citizen_id, case_reference, payload):
-        case = self._get_case(citizen_id, case_reference)
-        self._assert_evidence_editable(case)
-
-        if not isinstance(payload, dict):
-            raise ValueError("Evidence payload must be a JSON object.")
-
-        evidence_type = (payload.get("evidence_type") or "").strip()
-        description = (payload.get("description") or "").strip()
-        filename = (payload.get("filename") or "").strip()
-
+    @staticmethod
+    def _validate_evidence_fields(evidence_type, description, filename):
+        evidence_type = str(evidence_type or "").strip()
+        description = str(description or "").strip()
+        filename = str(filename or "").strip()
         if not evidence_type or not description or not filename:
             raise ValueError("Evidence type, description, and filename are required.")
+        return evidence_type, description, filename
+
+    def validate_evidence_submission(self, citizen_id, case_reference, payload):
+        """Validate ownership/editability before an upload is streamed."""
+        case = self._get_case(citizen_id, case_reference)
+        self._assert_not_frozen(case_reference)
+        self._assert_evidence_editable(case)
+        if not isinstance(payload, dict):
+            raise ValueError("Evidence payload must be a JSON object.")
+        self._validate_evidence_fields(
+            payload.get("evidence_type"),
+            payload.get("description"),
+            payload.get("filename"),
+        )
+        return case
+
+    def add_evidence(self, citizen_id, case_reference, payload, trusted_media=False):
+        case = self.validate_evidence_submission(citizen_id, case_reference, payload)
+        evidence_type, description, filename = self._validate_evidence_fields(
+            payload.get("evidence_type"),
+            payload.get("description"),
+            payload.get("filename"),
+        )
+        media = payload if trusted_media else {}
 
         evidence = {
-            "evidence_id": self._next_evidence_id(case.get("evidence", [])),
+            "evidence_id": new_evidence_id(),
             "case_reference": case_reference,
             "submitted_by": citizen_id,
             "evidence_type": evidence_type,
             "description": description,
             "filename": filename,
-            "storage_reference": payload.get("storage_reference"),
-            "content_type": payload.get("content_type"),
-            "size_bytes": payload.get("size_bytes"),
-            "sha256_hash": payload.get("sha256_hash"),
+            "storage_managed": bool(trusted_media),
+            "storage_reference": media.get("storage_reference"),
+            "content_type": media.get("content_type"),
+            "size_bytes": media.get("size_bytes"),
+            "sha256_hash": media.get("sha256_hash"),
             "created_at": self._utc_timestamp(),
         }
         case.setdefault("evidence", []).append(evidence)
@@ -265,6 +285,7 @@ class CitizenDocketService:
         timeline and audit event preserve the fact that the item existed.
         """
         case = self._get_case(citizen_id, case_reference)
+        self._assert_not_frozen(case_reference)
         self._assert_evidence_editable(case)
 
         evidence_records = case.get("evidence", [])
@@ -310,6 +331,7 @@ class CitizenDocketService:
 
     def create_escalation(self, citizen_id, case_reference, payload):
         case = self._get_case(citizen_id, case_reference)
+        self._assert_not_frozen(case_reference)
         if not isinstance(payload, dict):
             raise ValueError("Escalation payload must be a JSON object.")
         if any(key in payload for key in {"created_by", "created_by_role", "status", "reviewer_id", "reviewer_role"}):
@@ -347,6 +369,9 @@ class CitizenDocketService:
                     "category": item.get("category"),
                     "description": item.get("description"),
                     "status": item.get("status"),
+                    "decision": item.get("decision"),
+                    "decision_reason": item.get("decision_reason"),
+                    "decision_at": item.get("decision_at"),
                     "created_at": item.get("created_at"),
                     "updated_at": item.get("updated_at"),
                 }
@@ -355,6 +380,7 @@ class CitizenDocketService:
 
     def submit_docket(self, citizen_id, case_reference):
         case = self._get_case(citizen_id, case_reference)
+        self._assert_not_frozen(case_reference)
         self._assert_draft(case)
 
         if not case.get("statements"):

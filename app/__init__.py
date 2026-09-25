@@ -1,4 +1,8 @@
+import sys
+
 from flask import Flask
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from app import models  # noqa: F401  (registers all models with SQLAlchemy metadata)
 from app.api.health import health_bp
@@ -34,6 +38,34 @@ from app.modules.station_commander_engine.services import StationCommanderServic
 from app.services.case_service import CaseService
 
 
+def _ensure_unresolved_escalation_index():
+    """Ensure the active-ticket guard exists on an existing database too."""
+    dialect = db.engine.dialect.name
+    if dialect not in {"sqlite", "postgresql"}:
+        raise RuntimeError(
+            f"Unsupported database dialect {dialect!r}; the active escalation guard requires SQLite or PostgreSQL."
+        )
+    statement = text(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_escalation_unresolved_case "
+        "ON escalations(case_reference) "
+        "WHERE status IN ('OPEN', 'UNDER_REVIEW')"
+    )
+    try:
+        db.session.execute(statement)
+        db.session.commit()
+    except IntegrityError as exc:
+        db.session.rollback()
+        raise RuntimeError(
+            "Cannot enforce one unresolved escalation per docket; reconcile active duplicates before starting the app."
+        ) from exc
+
+
+def _is_migration_command():
+    args = {str(arg).lower() for arg in sys.argv[1:]}
+    migration_commands = {"upgrade", "downgrade", "stamp", "current", "history", "heads", "branches", "show", "check"}
+    return "db" in args and bool(args.intersection(migration_commands))
+
+
 def create_app(testing: bool = False, database_uri: str | None = None):
     app = Flask(__name__)
     config = get_config()
@@ -53,9 +85,11 @@ def create_app(testing: bool = False, database_uri: str | None = None):
 
     user_repository = UserRepository()
     audit_repository = AuditEventRepository()
-    with app.app_context():
-        db.create_all()
-        user_repository.seed_if_empty(all_seed_identities())
+    if not _is_migration_command():
+        with app.app_context():
+            db.create_all()
+            user_repository.seed_if_empty(all_seed_identities())
+            _ensure_unresolved_escalation_index()
 
     identity_registry = TestIdentityRegistry(user_repository=user_repository)
     citizen_auth_service = CitizenAuthenticationService(identity_provider=identity_registry)
@@ -64,11 +98,13 @@ def create_app(testing: bool = False, database_uri: str | None = None):
     regulatory_rule_service = RegulatoryRuleService(legal_reference_service=legal_reference_service)
     case_repository = CaseRepository()
     case_service = CaseService(repository=case_repository)
+    freeze_service = FreezeService(case_service=case_service, audit_service=audit_service)
     docket_manager = DocketManagementService(case_service=case_service)
     citizen_docket_service = CitizenDocketService(
         docket_manager=docket_manager,
         audit_service=audit_service,
         escalation_service=EscalationService(audit_service=audit_service),
+        freeze_service=freeze_service,
     )
     media_manager = MediaManager(storage_root=app.config.get("UPLOAD_ROOT", "uploads"))
     evidence_service = EvidenceManagementService()
@@ -82,8 +118,8 @@ def create_app(testing: bool = False, database_uri: str | None = None):
         audit_service=audit_service,
         media_manager=media_manager,
         evidence_service=evidence_service,
+        freeze_service=freeze_service,
     )
-    freeze_service = FreezeService(case_service=case_service, audit_service=audit_service)
     investigation_service = InvestigationService(
         case_service=case_service,
         audit_service=audit_service,
@@ -96,7 +132,6 @@ def create_app(testing: bool = False, database_uri: str | None = None):
         identity_registry=identity_registry,
         freeze_service=freeze_service,
     )
-    constable_registration_service.freeze_service = freeze_service
     automation_service = AutomationService(
         case_service=case_service,
         assignment_service=assignment_service,

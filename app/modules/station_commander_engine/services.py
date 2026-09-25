@@ -11,7 +11,7 @@ from app.infrastructure.storage.media_manager import MediaManager
 from app.modules.assignment_engine.services import AssignmentService
 from app.modules.audit_engine.services import AuditTrailService
 from app.modules.evidence_engine.services import EvidenceManagementService
-from app.services.case_service import CaseService
+from app.services.case_service import CaseService, new_evidence_id
 
 
 class StationCommanderService:
@@ -190,14 +190,8 @@ class StationCommanderService:
 
         storage_reference = payload.get("storage_reference") or filename
         media = self.media_manager.register_file(filename, {"storage_reference": storage_reference, "case_reference": case_reference})
-        existing_ids = []
-        for existing in case_record.get("evidence", []):
-            try:
-                existing_ids.append(int(existing.get("evidence_id")))
-            except (AttributeError, TypeError, ValueError):
-                continue
         evidence = {
-            "evidence_id": max(existing_ids, default=0) + 1,
+            "evidence_id": new_evidence_id(),
             "case_reference": case_reference,
             "submitted_by": actor_id,
             "submitted_by_role": "station_commander",

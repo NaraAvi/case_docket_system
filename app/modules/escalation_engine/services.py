@@ -146,9 +146,24 @@ class EscalationService:
             escalations = self.repository.list_by_status(status_value)
         else:
             list_unresolved = getattr(self.repository, "list_unresolved", None)
-            escalations = list_unresolved() if list_unresolved is not None else self.repository.list_open()
+            if list_unresolved is not None:
+                escalations = list_unresolved()
+            else:
+                # Compatibility for older repository implementations: include
+                # both active states rather than silently hiding UNDER_REVIEW.
+                escalations = self.repository.list_open() + self.repository.list_by_status("UNDER_REVIEW")
         escalations.sort(key=lambda item: str(item.get("created_at") or ""))
-        return [dict(item) for item in escalations]
+        if status is not None:
+            return [dict(item) for item in escalations]
+        deduplicated = []
+        seen_cases = set()
+        for item in escalations:
+            case_reference = item.get("case_reference")
+            if case_reference in seen_cases:
+                continue
+            seen_cases.add(case_reference)
+            deduplicated.append(dict(item))
+        return deduplicated
 
     def find_unresolved_for_case(self, case_reference, created_by=None):
         """Return the first unresolved escalation for a docket.

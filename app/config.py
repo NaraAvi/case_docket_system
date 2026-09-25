@@ -18,6 +18,7 @@ class Config:
     )
     SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", "sqlite:///case_docket_dev.db")
     UPLOAD_ROOT = os.getenv("UPLOAD_ROOT", "uploads")
+    MAX_CONTENT_LENGTH = 50 * 1024 * 1024
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     JSON_SORT_KEYS = False
 

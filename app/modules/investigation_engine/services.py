@@ -59,6 +59,10 @@ class InvestigationService:
                 return case
         return None
 
+    def _assert_not_frozen(self, case_reference):
+        if self.freeze_service and self.freeze_service.is_case_frozen(case_reference):
+            raise ValueError("Case is frozen and operational mutation is restricted.")
+
     def _get_investigation_by_case(self, case_reference):
         investigations = self.repository.list_for_case(case_reference)
         for investigation in investigations:
@@ -219,6 +223,7 @@ class InvestigationService:
         investigation = self.repository.get_by_investigation_id(investigation_id)
         if investigation is None:
             raise ValueError("Investigation not found.")
+        self._assert_not_frozen(investigation.get("case_reference"))
         if investigation.get("detective_id") != detective_id:
             raise ValueError("Detective is not authorized for this investigation.")
 
@@ -416,6 +421,7 @@ class InvestigationService:
     def create_finding(self, investigation_id, detective_id, payload=None):
         investigation = self.get_investigation(investigation_id)
         self._assert_authorized_detective(investigation, detective_id)
+        self._assert_not_frozen(investigation.get("case_reference"))
         if investigation.get("status") == "COMPLETED":
             raise ValueError("Completed investigations cannot receive new findings.")
         if not isinstance(payload, dict):
@@ -459,6 +465,7 @@ class InvestigationService:
     def complete_investigation(self, investigation_id, detective_id, payload=None):
         investigation = self.get_investigation(investigation_id)
         self._assert_authorized_detective(investigation, detective_id)
+        self._assert_not_frozen(investigation.get("case_reference"))
 
         if investigation.get("status") == "COMPLETED":
             raise ValueError("Investigation is already completed.")

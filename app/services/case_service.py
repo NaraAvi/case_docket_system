@@ -3,8 +3,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from app.database.repositories.case_repository import CaseRepository
+
+
+def new_evidence_id():
+    """Return a globally unique, URL-safe evidence identifier."""
+    return f"EVD-{uuid4().hex}"
 
 
 class CaseService:
