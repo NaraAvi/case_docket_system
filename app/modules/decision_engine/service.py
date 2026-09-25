@@ -83,8 +83,9 @@ class ObjectiveDecisionEngine:
         matters = triage.detect_statutory_matters(sources)
 
         categories = []
+        active_table = corpus.active_s28_table()
         for matter in matters:
-            category = corpus.S28_CATEGORIES[matter["rule_code"]]
+            category = active_table[matter["rule_code"]]
             categories.append(
                 {
                     "rule_code": matter["rule_code"],
@@ -198,8 +199,9 @@ class ObjectiveDecisionEngine:
 
         s28_codes = []
         stored = str((escalation or {}).get("rule_code") or "")
+        active_table = corpus.active_s28_table()
         for code in [item.strip() for item in stored.split(",") if item.strip()]:
-            if code in corpus.S28_CATEGORIES and code not in s28_codes:
+            if code in active_table and code not in s28_codes:
                 s28_codes.append(code)
         if not s28_codes and escalation and escalation.get("description"):
             retriaged = self.evaluate_statutory_triage({}, [("escalation", escalation["description"])])
@@ -235,7 +237,7 @@ class ObjectiveDecisionEngine:
         if category == "UNLAWFUL_DELAY" and context.get("sla_delay_infraction"):
             infraction = context["sla_delay_infraction"]  # objectively measured delay replaces the generic label
         if infraction is None and context["s28_rule_codes"]:
-            infraction = corpus.S28_CATEGORIES[context["s28_rule_codes"][0]]["infraction_type"]
+            infraction = corpus.active_s28_table()[context["s28_rule_codes"][0]]["infraction_type"]
         infraction = infraction or "GENERAL_MISCONDUCT"
 
         tier_result = self.calculate_misconduct_tier(officer_id, infraction, context)

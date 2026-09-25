@@ -118,6 +118,31 @@ class Flag(db.Model):
     resolution_information = db.Column(db.Text)
 
 
+class ComplianceFlag(db.Model):
+    __tablename__ = "compliance_flags"
+
+    id = db.Column(db.Integer, primary_key=True)
+    flag_id = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    rule_code = db.Column(db.String(10), nullable=False, index=True)
+    case_reference = db.Column(db.String(50), nullable=True, index=True)
+    subject_officer_id = db.Column(db.String(100), nullable=True, index=True)
+    actor_role = db.Column(db.String(50), nullable=False)
+    status = db.Column(db.String(20), nullable=False, default="OPEN", index=True)
+    raised_at = db.Column(db.String(50), nullable=False)
+    due_at = db.Column(db.String(50), nullable=True)
+    evidence = db.Column(db.JSON, nullable=False, default=dict)
+    legal_reference_id = db.Column(db.String(100), nullable=False)
+    provision = db.Column(db.String(200), nullable=False)
+    corpus_version = db.Column(db.Integer, nullable=False)
+    verification = db.Column(db.String(20), nullable=False)
+    routes_to = db.Column(db.String(50), nullable=False)
+    officer_response = db.Column(db.Text, nullable=True)
+    responded_at = db.Column(db.String(50), nullable=True)
+    resolved_by = db.Column(db.String(100), nullable=True)
+    resolved_at = db.Column(db.String(50), nullable=True)
+    resolution_note = db.Column(db.Text, nullable=True)
+
+
 class RelatedCase(db.Model):
     __tablename__ = "related_cases"
 

@@ -94,8 +94,14 @@ function bindDisciplinaryClose(record, disciplinaryCaseId) {
     return;
   }
   const sanction = document.getElementById('disciplinaryFinalSanction');
-  if (sanction && record.mandatory_sanction && !sanction.value) {
-    sanction.value = record.mandatory_sanction;
+  if (sanction) {
+    sanction.onchange = () => {
+      sanction.dataset.userSelected = 'true';
+    };
+    // A select already has a value, so track an officer's change explicitly.
+    if (record.mandatory_sanction && sanction.dataset.userSelected !== 'true') {
+      sanction.value = record.mandatory_sanction;
+    }
   }
   form.onsubmit = async (event) => {
     event.preventDefault();

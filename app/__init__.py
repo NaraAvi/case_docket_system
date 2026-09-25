@@ -12,6 +12,7 @@ from app.config import get_config
 from app.database.repositories.audit_event_repository import AuditEventRepository
 from app.database.repositories.case_repository import CaseRepository
 from app.database.repositories.conflict_declaration_repository import ConflictDeclarationRepository
+from app.database.repositories.compliance_flag_repository import ComplianceFlagRepository
 from app.database.repositories.disciplinary_case_repository import DisciplinaryCaseRepository
 from app.database.repositories.review_finding_repository import ReviewFindingRepository
 from app.database.repositories.review_note_repository import ReviewNoteRepository
@@ -22,6 +23,7 @@ from app.modules.audit_engine.services import AuditTrailService
 from app.modules.case_engine.services import DocketManagementService
 from app.modules.citizen_engine.services import CitizenAuthenticationService, CitizenDocketService
 from app.modules.compliance_engine.services import ComplianceService
+from app.modules.compliance_engine.registry import DEFAULT_RULE_REGISTRY
 from app.modules.constable_engine.services import ConstableRegistrationService
 from app.modules.decision_engine import ConflictOfInterestService, ObjectiveDecisionEngine, StatutoryReferralService
 from app.modules.assignment_engine.services import AssignmentService
@@ -65,6 +67,7 @@ def create_app(testing: bool = False, database_uri: str | None = None, upload_st
     identity_registry = TestIdentityRegistry(user_repository=user_repository)
     citizen_auth_service = CitizenAuthenticationService(identity_provider=identity_registry)
     audit_service = AuditTrailService(repository=audit_repository)
+    compliance_flag_repository = ComplianceFlagRepository(audit_service=audit_service)
     legal_reference_service = LegalReferenceService()
     regulatory_rule_service = RegulatoryRuleService(legal_reference_service=legal_reference_service)
     case_repository = CaseRepository()
@@ -192,6 +195,8 @@ def create_app(testing: bool = False, database_uri: str | None = None, upload_st
     app.extensions["legal_reference_service"] = legal_reference_service
     app.extensions["regulatory_rule_service"] = regulatory_rule_service
     app.extensions["compliance_service"] = compliance_service
+    app.extensions["compliance_rule_registry"] = DEFAULT_RULE_REGISTRY
+    app.extensions["compliance_flag_repository"] = compliance_flag_repository
     app.extensions["integrity_service"] = integrity_service
     app.extensions["case_service"] = case_service
     app.extensions["assignment_service"] = assignment_service

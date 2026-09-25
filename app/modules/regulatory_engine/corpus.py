@@ -20,7 +20,7 @@ editable at runtime.
 
 from __future__ import annotations
 
-CORPUS_VERSION = 1
+CORPUS_VERSION = 2
 ENGINE_VERSION = "1.0.0"
 
 # ---------------------------------------------------------------------------
@@ -64,7 +64,7 @@ NEGATION_WINDOW_WORDS = 4
 #                      (e.g. "died in police custody") so no actor is needed.
 # `infraction_type`  : key into MISCONDUCT_SCHEDULE (the tier-3 conduct the
 #                      category maps to when an implicated officer is upheld).
-S28_CATEGORIES = {
+IPID_28_V2011 = {
     "IPID.S28.DEATH_IN_CUSTODY": {
         "subsection": "28(1)(a)",
         "title": "Death in police custody",
@@ -175,6 +175,58 @@ S28_CATEGORIES = {
         "auto_detect": False,
     },
 }
+
+# The Amendment Act corpus is intentionally kept separate until its
+# commencement date is configured. Existing callers continue to use V2011.
+IPID_28_V2024 = {key: dict(value) for key, value in IPID_28_V2011.items() if key != "IPID.S28.FIREARM_DISCHARGE"}
+IPID_28_V2024["IPID.S28.DEATH_BY_POLICE_ACTION"] = {
+    **IPID_28_V2024["IPID.S28.DEATH_BY_POLICE_ACTION"],
+    "title": "Death as a result of police or municipal police action, on or off duty",
+}
+IPID_28_V2024["IPID.S28.RAPE_BY_POLICE"] = {
+    **IPID_28_V2024["IPID.S28.RAPE_BY_POLICE"],
+    "title": "Rape by a SAPS or municipal police officer, on or off duty",
+}
+IPID_28_V2024["IPID.S28.TORTURE_OR_ASSAULT"] = {
+    **IPID_28_V2024["IPID.S28.TORTURE_OR_ASSAULT"],
+    "title": "Torture under Act 13 of 2013 or assault with intent to cause grievous bodily harm",
+}
+IPID_28_V2024["IPID.S28.CORRUPTION"] = {
+    **IPID_28_V2024["IPID.S28.CORRUPTION"],
+    "title": "Corruption within SAPS or municipal police under PRECCA",
+    "legal_reference_id": "RSA-PRECCA-2004",
+}
+IPID_28_V2024["IPID.S28.ATTEMPTED_MURDER_FIREARM"] = {
+    "subsection": "28(1)(gA)",
+    "title": "Attempted murder by firearm or other weapon",
+    "legal_reference_id": "RSA-IPID-2011",
+    "patterns": [r"\battempt(?:ed|ing)?\s+murder\b[^.!?\n]{0,80}\b(?:firearm|gun|pistol|rifle|shotgun|revolver|weapon)\b"],
+    "requires_police_actor": True,
+    "infraction_type": "DEFEATING_ENDS_OF_JUSTICE",
+    "auto_detect": True,
+}
+
+IPID_S16_COMMENCEMENT_DATE = None
+
+
+def active_s28_table(at=None):
+    """Return the s28 table in force at ``at`` without changing global state."""
+    if IPID_S16_COMMENCEMENT_DATE is None:
+        return IPID_28_V2011
+    from datetime import UTC, datetime
+
+    moment = at or datetime.now(UTC)
+    commencement = IPID_S16_COMMENCEMENT_DATE
+    if isinstance(commencement, str):
+        commencement = datetime.fromisoformat(commencement.replace("Z", "+00:00"))
+    if commencement.tzinfo is None:
+        commencement = commencement.replace(tzinfo=UTC)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return IPID_28_V2024 if moment >= commencement else IPID_28_V2011
+
+
+S28_CATEGORIES = IPID_28_V2011
 
 # Human-readable statutory basis strings stamped on every automatic referral.
 IPID_ACT_CITATION = "IPID Act 1 of 2011"

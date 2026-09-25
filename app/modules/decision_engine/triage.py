@@ -12,7 +12,6 @@ directly after one that names the actor when it refers back with a pronoun
 from __future__ import annotations
 
 import re
-from functools import lru_cache
 
 from app.modules.regulatory_engine import corpus
 
@@ -20,18 +19,18 @@ _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+|\n+")
 _WORD = re.compile(r"[a-z']+")
 
 
-@lru_cache(maxsize=1)
 def _compiled():
+    table = corpus.active_s28_table()
     actor = re.compile(corpus.POLICE_ACTOR_PATTERN, re.IGNORECASE)
     pronoun = re.compile(corpus.PRONOUN_PATTERN, re.IGNORECASE)
     categories = {}
-    for code, category in corpus.S28_CATEGORIES.items():
+    for code, category in table.items():
         categories[code] = (
             category,
             [re.compile(pattern, re.IGNORECASE) for pattern in category.get("patterns", [])],
             [re.compile(pattern, re.IGNORECASE) for pattern in category.get("context_patterns", [])],
         )
-    return actor, pronoun, categories
+    return actor, pronoun, categories, table
 
 
 def normalise(text):
@@ -91,7 +90,7 @@ def detect_statutory_matters(sources):
     Each result is ``{"rule_code", "matches": [{"source", "matched_text",
     "sentence"}]}`` in corpus order, one entry per category.
     """
-    actor, pronoun, categories = _compiled()
+    actor, pronoun, categories, table = _compiled()
     found = {}
     for label, text in sources:
         sentences = split_sentences(text)
@@ -112,4 +111,4 @@ def detect_statutory_matters(sources):
                 found.setdefault(code, []).append(
                     {"source": label, "matched_text": match.group(0), "sentence": sentence}
                 )
-    return [{"rule_code": code, "matches": found[code]} for code in corpus.S28_CATEGORIES if code in found]
+    return [{"rule_code": code, "matches": found[code]} for code in table if code in found]

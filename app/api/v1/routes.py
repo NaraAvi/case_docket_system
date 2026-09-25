@@ -84,6 +84,14 @@ def get_legal_reference_service():
     return current_app.extensions["legal_reference_service"]
 
 
+def get_compliance_rule_registry():
+    return current_app.extensions["compliance_rule_registry"]
+
+
+def get_compliance_flag_repository():
+    return current_app.extensions["compliance_flag_repository"]
+
+
 def _error_status(exc):
     return 404 if "not found" in str(exc).lower() else 400
 
@@ -91,6 +99,23 @@ def _error_status(exc):
 @api_v1_bp.get("/status")
 def api_status():
     return jsonify({"status": "ok", "version": "v1"})
+
+
+@api_v1_bp.get("/compliance/rules")
+@jwt_required()
+def list_compliance_rules():
+    return jsonify([rule.to_dict() for rule in get_compliance_rule_registry().all()])
+
+
+@api_v1_bp.get("/compliance/flags")
+@jwt_required()
+def list_compliance_flags():
+    if get_jwt().get("role") not in {"station_commander", "ipid"}:
+        return jsonify({"error": "Forbidden."}), 403
+    status = request.args.get("status")
+    rule_code = request.args.get("rule_code")
+    case_reference = request.args.get("case_reference")
+    return jsonify(get_compliance_flag_repository().list_filtered(status, rule_code, case_reference))
 
 
 @api_v1_bp.post("/auth/login")

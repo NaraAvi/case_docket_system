@@ -57,12 +57,13 @@ def classify_misconduct(infraction_type, evidence_context=None):
             reclassified_from, infraction = infraction, banded
             tier = base_tier = corpus.MISCONDUCT_SCHEDULE[infraction]["tier"]
 
-    s28_codes = [code for code in (context.get("s28_rule_codes") or []) if code in corpus.S28_CATEGORIES]
+    s28_table = corpus.active_s28_table()
+    s28_codes = [code for code in (context.get("s28_rule_codes") or []) if code in s28_table]
     if s28_codes:
         aggravators.append("statutory_referral")
         if tier < corpus.MAX_TIER:
             reclassified_from = reclassified_from or infraction
-            infraction = corpus.S28_CATEGORIES[s28_codes[0]]["infraction_type"]
+            infraction = s28_table[s28_codes[0]]["infraction_type"]
             tier = corpus.MISCONDUCT_SCHEDULE[infraction]["tier"]
 
     if context.get("evidence_tampering"):

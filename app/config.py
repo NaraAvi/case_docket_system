@@ -8,6 +8,7 @@ load_dotenv(BASE_DIR / ".env")
 
 
 class Config:
+    IPID_S16_COMMENCEMENT_DATE = os.getenv("IPID_S16_COMMENCEMENT_DATE") or None
     SECRET_KEY = os.getenv(
         "SECRET_KEY",
         "case-docket-dev-secret-key-32-chars-123456",

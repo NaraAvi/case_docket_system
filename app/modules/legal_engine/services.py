@@ -198,6 +198,41 @@ class LegalReferenceService:
             "source_provenance": "South African Government / Anti-corruption legislation",
             "verification_status": "CODIFIED_FROM_STATUTE_TEXT",
         },
+        "RSA-IPID-REGS-2012": {
+            "legislation_id": "RSA-IPID-REGS-2012", "act_name": "IPID Regulations", "act_number": "Regulations", "year": 2012,
+            "section": "Regulations", "subsection": None, "title": "IPID investigative and reporting regulations",
+            "description": "Regulations supporting IPID Act oversight duties.", "source_reference": "IPID Regulations, 2012",
+            "effective_from": "2012-04-01", "effective_to": None, "version": "2012", "status": "ACTIVE",
+            "source_type": "official_regulation", "source_provenance": "South African Government",
+        },
+        "RSA-SAPS-SO-321": {
+            "legislation_id": "RSA-SAPS-SO-321", "act_name": "SAPS Standing Order 321", "act_number": "SO 321", "year": 2007,
+            "section": "Standing Order 321", "subsection": None, "title": "Police operational accountability",
+            "description": "SAPS operational accountability and reporting requirements.", "source_reference": "SAPS Standing Order 321",
+            "effective_from": "2007-01-01", "effective_to": None, "version": "321", "status": "ACTIVE",
+            "source_type": "internal_instruction", "source_provenance": "South African Police Service",
+        },
+        "RSA-PRECCA-2004": {
+            "legislation_id": "RSA-PRECCA-2004", "act_name": "Prevention and Combating of Corrupt Activities Act", "act_number": "12", "year": 2004,
+            "section": "Sections 4 to 34", "subsection": None, "title": "Prevention and reporting of corruption",
+            "description": "Anti-corruption offences and reporting duties.", "source_reference": "Prevention and Combating of Corrupt Activities Act 12 of 2004",
+            "effective_from": "2004-04-27", "effective_to": None, "version": "2004", "status": "ACTIVE",
+            "source_type": "official_legislation", "source_provenance": "South African Government",
+        },
+        "RSA-DVA-1998": {
+            "legislation_id": "RSA-DVA-1998", "act_name": "Domestic Violence Act", "act_number": "116", "year": 1998,
+            "section": "Protection and response duties", "subsection": None, "title": "Domestic violence response",
+            "description": "Duties concerning domestic violence complaints and protection.", "source_reference": "Domestic Violence Act 116 of 1998",
+            "effective_from": "1999-12-15", "effective_to": None, "version": "1998", "status": "ACTIVE",
+            "source_type": "official_legislation", "source_provenance": "South African Government",
+        },
+        "RSA-SOA-2007": {
+            "legislation_id": "RSA-SOA-2007", "act_name": "Sexual Offences Act", "act_number": "32", "year": 2007,
+            "section": "Sexual offences and victim protection", "subsection": None, "title": "Sexual offences response",
+            "description": "Substantive and procedural duties concerning sexual offences.", "source_reference": "Criminal Law (Sexual Offences and Related Matters) Amendment Act 32 of 2007",
+            "effective_from": "2008-12-16", "effective_to": None, "version": "2007", "status": "ACTIVE",
+            "source_type": "official_legislation", "source_provenance": "South African Government",
+        },
     }
 
     def list_references(self):
