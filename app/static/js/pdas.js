@@ -75,7 +75,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (token) {
       headers.Authorization = `Bearer ${token}`;
     }
-    if (options.body && typeof options.body !== 'string') {
+    const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+    if (options.body && typeof options.body !== 'string' && !isFormData) {
       headers['Content-Type'] = headers['Content-Type'] || 'application/json';
     }
 
@@ -83,7 +84,7 @@ document.addEventListener('DOMContentLoaded', () => {
       credentials: 'same-origin',
       ...options,
       headers,
-      body: options.body && typeof options.body !== 'string' ? JSON.stringify(options.body) : options.body,
+      body: isFormData ? options.body : (options.body && typeof options.body !== 'string' ? JSON.stringify(options.body) : options.body),
     });
 
     const payload = await response.json().catch(() => ({}));
@@ -154,6 +155,302 @@ document.addEventListener('DOMContentLoaded', () => {
     return match ? match[1] : null;
   };
 
+  const escapeHtml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+
+  const renderCitizenEvidence = (container, items) => {
+    if (!container) {
+      return;
+    }
+    const records = Array.isArray(items) ? items : [];
+    if (!records.length) {
+      setEmptyState(container, 'No evidence has been attached to this docket yet.');
+      return;
+    }
+
+    const currentUser = getUser();
+    const currentUserId = currentUser?.test_id;
+    container.innerHTML = records
+      .map((item) => {
+        const evidenceId = item.evidence_id ?? '';
+        const canRemove = currentUserId && item.submitted_by && String(item.submitted_by) === String(currentUserId);
+        const action = canRemove
+          ? `<button class="secondary-btn small-btn" type="button" data-remove-evidence="${escapeHtml(evidenceId)}">Remove</button>`
+          : '';
+        return `
+          <article class="docket-card" data-evidence-row="${escapeHtml(evidenceId)}">
+            <div class="meta-wrap">
+              <strong>${escapeHtml(item.filename || 'Evidence record')}</strong>
+              <span>${escapeHtml(item.description || 'No description provided.')}</span>
+            </div>
+            <div class="stack-row">
+              <span class="badge badge-muted">${escapeHtml(item.evidence_type || 'Evidence')}</span>
+              ${action}
+            </div>
+          </article>
+        `;
+      })
+      .join('');
+  };
+
+  const refreshCitizenEvidence = async (caseReference, container) => {
+    const items = await fetchJson(`/api/v1/citizen/dockets/${encodeURIComponent(caseReference)}/evidence`);
+    renderCitizenEvidence(container, items);
+    return items;
+  };
+
+  const bindCitizenEvidence = (caseReference) => {
+    const addButton = document.getElementById('addCitizenEvidence');
+    const clearButton = document.getElementById('clearCitizenEvidenceFile');
+    const fileInput = document.getElementById('citizenEvidenceFile');
+    const preview = document.getElementById('citizenEvidenceFilePreview');
+    const evidenceType = document.getElementById('citizenEvidenceType');
+    const description = document.getElementById('citizenEvidenceDescription');
+    const errorEl = document.getElementById('citizenEvidenceError');
+    const container = document.getElementById('citizenCaseEvidence');
+    if (!addButton || !container) {
+      return;
+    }
+
+    const updatePreview = () => {
+      const file = fileInput?.files?.[0];
+      if (!file) {
+        if (preview) {
+          preview.textContent = '';
+          preview.classList.add('hidden');
+        }
+        clearButton?.classList.add('hidden');
+        return;
+      }
+      if (preview) {
+        preview.textContent = `${file.name} (${Math.ceil(file.size / 1024)} KB)`;
+        preview.classList.remove('hidden');
+      }
+      clearButton?.classList.remove('hidden');
+    };
+
+    fileInput?.addEventListener('change', updatePreview);
+    clearButton?.addEventListener('click', () => {
+      if (fileInput) {
+        fileInput.value = '';
+      }
+      updatePreview();
+    });
+
+    addButton.addEventListener('click', async () => {
+      const file = fileInput?.files?.[0];
+      const descriptionText = description?.value.trim() || '';
+      errorEl?.classList.add('hidden');
+      if (!file || !descriptionText) {
+        if (errorEl) {
+          errorEl.textContent = 'A file and description are required.';
+          errorEl.classList.remove('hidden');
+        }
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('evidence_type', evidenceType?.value || 'OTHER');
+      formData.append('description', descriptionText);
+      addButton.disabled = true;
+      try {
+        await fetchJson(`/api/v1/citizen/dockets/${encodeURIComponent(caseReference)}/evidence`, {
+          method: 'POST',
+          body: formData,
+        });
+        if (fileInput) fileInput.value = '';
+        if (description) description.value = '';
+        updatePreview();
+        await refreshCitizenEvidence(caseReference, container);
+      } catch (error) {
+        if (errorEl) {
+          errorEl.textContent = error.message || 'Unable to upload evidence.';
+          errorEl.classList.remove('hidden');
+        }
+      } finally {
+        addButton.disabled = false;
+      }
+    });
+
+    container.addEventListener('click', async (event) => {
+      const button = event.target.closest('[data-remove-evidence]');
+      if (!button) {
+        return;
+      }
+      const evidenceId = button.dataset.removeEvidence;
+      if (!evidenceId) {
+        return;
+      }
+      button.disabled = true;
+      try {
+        await fetchJson(`/api/v1/citizen/dockets/${encodeURIComponent(caseReference)}/evidence/${encodeURIComponent(evidenceId)}`, {
+          method: 'DELETE',
+        });
+        await refreshCitizenEvidence(caseReference, container);
+      } catch (error) {
+        button.disabled = false;
+        if (errorEl) {
+          errorEl.textContent = error.message || 'Unable to remove evidence.';
+          errorEl.classList.remove('hidden');
+        }
+      }
+    });
+  };
+
+  const renderCitizenEscalations = (container, escalations) => {
+    if (!container) {
+      return;
+    }
+    const records = Array.isArray(escalations) ? escalations : [];
+    if (!records.length) {
+      setEmptyState(container, 'You have not escalated this docket.');
+      return;
+    }
+    container.innerHTML = records
+      .map((item) => {
+        const status = String(item.status || 'OPEN').toUpperCase();
+        const decision = item.decision ? ` • ${escapeHtml(item.decision)}` : '';
+        return `
+          <article class="docket-card">
+            <div class="meta-wrap">
+              <strong>${escapeHtml(item.category || 'Escalation')}</strong>
+              <span>${escapeHtml(item.description || 'No description provided.')}</span>
+            </div>
+            <div class="stack-row">
+              <span class="${buildStatusBadge(status)}">${escapeHtml(status)}</span>
+              <span>${escapeHtml(item.escalation_id || '')}${decision}</span>
+            </div>
+          </article>
+        `;
+      })
+      .join('');
+  };
+
+  const bindCitizenEscalation = (caseReference) => {
+    const openButton = document.getElementById('escalateCaseBtn');
+    const modal = document.getElementById('escalateModal');
+    const closeButton = document.getElementById('closeEscalateModal');
+    const submitButton = document.getElementById('submitEscalateModal');
+    const category = document.getElementById('escalateCategory');
+    const description = document.getElementById('escalateDescription');
+    const errorEl = document.getElementById('escalateModalError');
+    const list = document.getElementById('citizenEscalationsList');
+    if (!openButton || !modal) {
+      return;
+    }
+
+    openButton.addEventListener('click', () => {
+      if (description) description.value = '';
+      errorEl?.classList.add('hidden');
+      modal.classList.remove('hidden');
+    });
+    closeButton?.addEventListener('click', () => modal.classList.add('hidden'));
+    submitButton?.addEventListener('click', async () => {
+      const text = description?.value.trim() || '';
+      errorEl?.classList.add('hidden');
+      if (text.length < 10) {
+        if (errorEl) {
+          errorEl.textContent = 'Description must be at least 10 characters.';
+          errorEl.classList.remove('hidden');
+        }
+        return;
+      }
+      submitButton.disabled = true;
+      try {
+        await fetchJson(`/api/v1/citizen/dockets/${encodeURIComponent(caseReference)}/escalations`, {
+          method: 'POST',
+          body: { category: category?.value || 'OTHER', description: text },
+        });
+        modal.classList.add('hidden');
+        const items = await fetchJson(`/api/v1/citizen/dockets/${encodeURIComponent(caseReference)}/escalations`);
+        renderCitizenEscalations(list, items);
+      } catch (error) {
+        if (errorEl) {
+          errorEl.textContent = error.message || 'Unable to submit escalation.';
+          errorEl.classList.remove('hidden');
+        }
+      } finally {
+        submitButton.disabled = false;
+      }
+    });
+  };
+
+  const bindCitizenStatement = (caseReference, existingStatement, isDraft) => {
+    const textarea = document.getElementById('citizenStatementText');
+    const saveButton = document.getElementById('saveCitizenStatement');
+    const errorEl = document.getElementById('citizenStatementError');
+    if (!textarea || !saveButton) {
+      return;
+    }
+    textarea.value = existingStatement?.statement_text || '';
+    textarea.disabled = !isDraft;
+    saveButton.disabled = !isDraft;
+    let hasStatement = Boolean(existingStatement);
+
+    saveButton.addEventListener('click', async () => {
+      const text = textarea.value.trim();
+      errorEl?.classList.add('hidden');
+      if (!text) {
+        if (errorEl) {
+          errorEl.textContent = 'Statement text is required.';
+          errorEl.classList.remove('hidden');
+        }
+        return;
+      }
+      saveButton.disabled = true;
+      try {
+        await fetchJson(`/api/v1/citizen/dockets/${encodeURIComponent(caseReference)}/statements`, {
+          method: hasStatement ? 'PUT' : 'POST',
+          body: { statement_text: text },
+        });
+        hasStatement = true;
+        saveButton.textContent = 'Saved';
+        const submitButton = document.getElementById('submitCitizenDocketForReview');
+        if (submitButton && isDraft) submitButton.disabled = false;
+        const hint = document.getElementById('submitDocketHint');
+        if (hint) hint.textContent = '';
+        setTimeout(() => { saveButton.textContent = 'Save Statement'; }, 1200);
+      } catch (error) {
+        if (errorEl) {
+          errorEl.textContent = error.message || 'Unable to save statement.';
+          errorEl.classList.remove('hidden');
+        }
+      } finally {
+        saveButton.disabled = !isDraft;
+      }
+    });
+  };
+
+  const bindCitizenSubmit = (caseReference, isDraft, hasStatement) => {
+    const submitButton = document.getElementById('submitCitizenDocketForReview');
+    const hint = document.getElementById('submitDocketHint');
+    if (!submitButton) return;
+    submitButton.disabled = !isDraft || !hasStatement;
+    if (!isDraft) {
+      submitButton.textContent = 'Docket already submitted';
+      if (hint) hint.textContent = 'This docket is no longer in draft.';
+      return;
+    }
+    if (!hasStatement && hint) {
+      hint.textContent = 'Save a statement before submitting.';
+    }
+    submitButton.addEventListener('click', async () => {
+      submitButton.disabled = true;
+      try {
+        await fetchJson(`/api/v1/citizen/dockets/${encodeURIComponent(caseReference)}/submit`, { method: 'POST' });
+        window.location.reload();
+      } catch (error) {
+        submitButton.disabled = false;
+        if (hint) hint.textContent = error.message || 'Unable to submit docket.';
+      }
+    });
+  };
+
   const hydrateCitizenDetail = async () => {
     const caseReference = getCitizenCaseReference();
     if (!caseReference) {
@@ -161,32 +458,56 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const meta = document.getElementById('citizenCaseMeta');
     const timeline = document.getElementById('citizenCaseTimeline');
-    if (!meta && !timeline) {
+    const evidenceContainer = document.getElementById('citizenCaseEvidence');
+    const escalationContainer = document.getElementById('citizenEscalationsList');
+    if (!meta && !timeline && !evidenceContainer && !escalationContainer) {
       return;
     }
 
     try {
-      const docket = await fetchJson(`/api/v1/citizen/dockets/${caseReference}`);
+      const docket = await fetchJson(`/api/v1/citizen/dockets/${encodeURIComponent(caseReference)}`);
       if (meta) {
         meta.innerHTML = `
-          <dt>Status</dt><dd>${docket.status || 'DRAFT'}</dd>
-          <dt>Location</dt><dd>${docket.location || 'Not provided'}</dd>
-          <dt>Incident Date</dt><dd>${docket.incident_date || 'Not provided'}</dd>
-          <dt>Case Title</dt><dd>${docket.title || 'Unspecified'}</dd>
+          <dt>Status</dt><dd>${escapeHtml(docket.status || 'DRAFT')}</dd>
+          <dt>Location</dt><dd>${escapeHtml(docket.location || 'Not provided')}</dd>
+          <dt>Incident Date</dt><dd>${escapeHtml(docket.incident_date || 'Not provided')}</dd>
+          <dt>Case Title</dt><dd>${escapeHtml(docket.title || 'Unspecified')}</dd>
         `;
       }
       if (timeline) {
         const items = Array.isArray(docket.timeline) && docket.timeline.length ? docket.timeline : [{ event_type: 'docket_recorded', timestamp: 'Pending', details: {} }];
         timeline.innerHTML = items
-          .map((event) => `<li><span class="timeline-dot"></span><div><strong>${event.event_type || 'Case Event'}</strong><small>${event.timestamp || 'No timestamp'}${event.details && event.details.status ? ` • ${event.details.status}` : ''}</small></div></li>`)
+          .map((event) => `<li><span class="timeline-dot"></span><div><strong>${escapeHtml(event.event_type || 'Case Event')}</strong><small>${escapeHtml(event.timestamp || 'No timestamp')}${event.details && event.details.status ? ` • ${escapeHtml(event.details.status)}` : ''}</small></div></li>`)
           .join('');
+      }
+      const currentUser = getUser();
+      const statements = Array.isArray(docket.statements) ? docket.statements : [];
+      const ownStatements = statements.filter((statement) => !statement.recorded_by_role
+        && (!currentUser?.test_id || String(statement.citizen_id) === String(currentUser.test_id)));
+      const isDraft = String(docket.status || 'DRAFT').toUpperCase() === 'DRAFT';
+      bindCitizenStatement(caseReference, ownStatements[ownStatements.length - 1], isDraft);
+      bindCitizenSubmit(caseReference, isDraft, ownStatements.length > 0);
+      if (evidenceContainer) {
+        renderCitizenEvidence(evidenceContainer, docket.evidence);
+        bindCitizenEvidence(caseReference);
+      }
+      if (escalationContainer) {
+        const escalations = await fetchJson(`/api/v1/citizen/dockets/${encodeURIComponent(caseReference)}/escalations`);
+        renderCitizenEscalations(escalationContainer, escalations);
+        bindCitizenEscalation(caseReference);
       }
     } catch (error) {
       if (meta) {
-        meta.innerHTML = `<dt>Status</dt><dd>Unavailable</dd><dt>Details</dt><dd>${error.message}</dd>`;
+        meta.innerHTML = `<dt>Status</dt><dd>Unavailable</dd><dt>Details</dt><dd>${escapeHtml(error.message)}</dd>`;
       }
       if (timeline) {
         setEmptyState(timeline, error.message || 'Unable to load timeline.');
+      }
+      if (evidenceContainer) {
+        setEmptyState(evidenceContainer, error.message || 'Unable to load evidence.');
+      }
+      if (escalationContainer) {
+        setEmptyState(escalationContainer, error.message || 'Unable to load escalations.');
       }
     }
   };

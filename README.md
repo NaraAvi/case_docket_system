@@ -59,3 +59,34 @@ Also verified through a real HTTP test-client cycle (not just direct service
 calls): login, the full citizen docket → statement → evidence → submit flow,
 constable interview/recording/registration, and station commander
 reassignment — re-fetching after each step to confirm it actually persisted.
+
+## Open issue fixes
+
+This branch now includes fixes for the three open repository issues:
+
+- **Evidence removal:** citizens can clear a pending file selection and delete
+  their own persisted evidence through
+  `DELETE /api/v1/citizen/dockets/<case_reference>/evidence/<evidence_id>`.
+  Multipart uploads are stored with a SHA-256 hash and are removed only after
+  the docket record is updated.
+- **Duplicate escalations:** a docket can have at most one unresolved
+  escalation (`OPEN` or `UNDER_REVIEW`). A duplicate request returns `409`
+  with the existing escalation id; resolved history remains available and a
+  new escalation can be opened later. A partial unique database index backs
+  the application-level invariant.
+- **Refusal-to-register upholds:** IPID can uphold a substantiated
+  `REFUSAL_TO_REGISTER` complaint while the docket is awaiting constable
+  registration. The docket is placed in a narrow IPID custody freeze, its
+  registration status is not changed, and no officer is invented when no
+  assignment exists.
+
+## Run locally
+
+```powershell
+$env:FLASK_APP = "app:create_app"
+python -m flask run
+pytest -q
+```
+
+The default development database is SQLite. Set `DATABASE_URL` and
+`UPLOAD_ROOT` in `.env` to override the database and upload storage locations.

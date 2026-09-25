@@ -38,6 +38,22 @@ class EscalationRepository(BaseSqlAlchemyRepository):
         instances = self.model.query.filter_by(case_reference=case_reference).all()
         return [self._serialize(instance) for instance in instances]
 
+    def list_unresolved(self):
+        instances = self.session.query(self.model).filter(self.model.status.in_(["OPEN", "UNDER_REVIEW"])).all()
+        return [self._serialize(instance) for instance in instances]
+
+    def get_unresolved_for_case(self, case_reference):
+        instances = (
+            self.session.query(self.model)
+            .filter(
+                self.model.case_reference == case_reference,
+                self.model.status.in_(["OPEN", "UNDER_REVIEW"]),
+            )
+            .order_by(self.model.id.asc())
+            .all()
+        )
+        return self._serialize(instances[0]) if instances else None
+
     def list_open(self):
         instances = self.model.query.filter_by(status="OPEN").all()
         return [self._serialize(instance) for instance in instances]

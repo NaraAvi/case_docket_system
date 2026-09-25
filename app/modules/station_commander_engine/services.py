@@ -190,8 +190,14 @@ class StationCommanderService:
 
         storage_reference = payload.get("storage_reference") or filename
         media = self.media_manager.register_file(filename, {"storage_reference": storage_reference, "case_reference": case_reference})
+        existing_ids = []
+        for existing in case_record.get("evidence", []):
+            try:
+                existing_ids.append(int(existing.get("evidence_id")))
+            except (AttributeError, TypeError, ValueError):
+                continue
         evidence = {
-            "evidence_id": len(case_record.get("evidence", [])) + 1,
+            "evidence_id": max(existing_ids, default=0) + 1,
             "case_reference": case_reference,
             "submitted_by": actor_id,
             "submitted_by_role": "station_commander",

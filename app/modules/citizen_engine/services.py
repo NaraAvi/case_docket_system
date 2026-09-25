@@ -89,6 +89,22 @@ class CitizenDocketService:
         if case_data.get("status") not in {"DRAFT", "AWAITING_CONSTABLE_REGISTRATION", "REGISTERED"}:
             raise ValueError("This docket is no longer editable by the citizen.")
 
+    @staticmethod
+    def _next_evidence_id(evidence_records):
+        """Return a stable numeric id for a newly added evidence record.
+
+        Evidence is stored in the docket JSON document, so ``len(...) + 1``
+        can reuse an id after a removal.  Derive the next value from the
+        existing records instead so audit references remain unambiguous.
+        """
+        numeric_ids = []
+        for record in evidence_records or []:
+            try:
+                numeric_ids.append(int(record.get("evidence_id")))
+            except (AttributeError, TypeError, ValueError):
+                continue
+        return max(numeric_ids, default=0) + 1
+
     def _append_timeline_event(self, case_data, event_type, details=None):
         timeline = case_data.setdefault("timeline", [])
         event = {
@@ -215,12 +231,16 @@ class CitizenDocketService:
             raise ValueError("Evidence type, description, and filename are required.")
 
         evidence = {
-            "evidence_id": len(case.get("evidence", [])) + 1,
+            "evidence_id": self._next_evidence_id(case.get("evidence", [])),
             "case_reference": case_reference,
             "submitted_by": citizen_id,
             "evidence_type": evidence_type,
             "description": description,
             "filename": filename,
+            "storage_reference": payload.get("storage_reference"),
+            "content_type": payload.get("content_type"),
+            "size_bytes": payload.get("size_bytes"),
+            "sha256_hash": payload.get("sha256_hash"),
             "created_at": self._utc_timestamp(),
         }
         case.setdefault("evidence", []).append(evidence)
@@ -236,6 +256,53 @@ class CitizenDocketService:
             }
         )
         return evidence
+
+    def remove_evidence(self, citizen_id, case_reference, evidence_id):
+        """Remove one citizen-owned evidence record from an editable docket.
+
+        Evidence is embedded in the docket JSON document, so removal is an
+        update to that document rather than a separate repository delete.  A
+        timeline and audit event preserve the fact that the item existed.
+        """
+        case = self._get_case(citizen_id, case_reference)
+        self._assert_evidence_editable(case)
+
+        evidence_records = case.get("evidence", [])
+        target_index = None
+        for index, record in enumerate(evidence_records):
+            if str(record.get("evidence_id")) == str(evidence_id):
+                target_index = index
+                break
+
+        if target_index is None:
+            raise ValueError("Evidence not found.")
+
+        target = evidence_records[target_index]
+        submitted_by = target.get("submitted_by")
+        if str(submitted_by or "") != str(citizen_id):
+            # Do not reveal whether another actor's evidence id exists.
+            raise ValueError("Evidence not found.")
+
+        removed = evidence_records.pop(target_index)
+        self._append_timeline_event(
+            case,
+            "evidence_removed",
+            {"evidence_id": removed.get("evidence_id"), "filename": removed.get("filename")},
+        )
+        self.docket_manager.update_docket(case)
+        self.audit_service.log(
+            {
+                "actor_id": citizen_id,
+                "actor_role": "citizen",
+                "action": "evidence_removed",
+                "case_reference": case_reference,
+                "details": {
+                    "evidence_id": removed.get("evidence_id"),
+                    "filename": removed.get("filename"),
+                },
+            }
+        )
+        return dict(removed)
 
     def list_timeline(self, citizen_id, case_reference):
         case = self._get_case(citizen_id, case_reference)

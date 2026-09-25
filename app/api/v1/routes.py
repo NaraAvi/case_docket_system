@@ -1,6 +1,8 @@
 from flask import Blueprint, current_app, jsonify, request
 from flask_jwt_extended import create_access_token, get_jwt, get_jwt_identity, jwt_required
 
+from app.modules.escalation_engine.services import DuplicateEscalationError
+
 api_v1_bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
 
 
@@ -14,6 +16,10 @@ def get_citizen_auth_service():
 
 def get_citizen_docket_service():
     return current_app.extensions["citizen_docket_service"]
+
+
+def get_media_manager():
+    return current_app.extensions["media_manager"]
 
 
 def get_constable_registration_service():
@@ -231,12 +237,52 @@ def add_docket_evidence(case_reference):
         return jsonify({"error": "Forbidden."}), 403
 
     citizen_id = get_jwt_identity()
-    payload = request.get_json(silent=True) or {}
+    uploaded_file = request.files.get("file")
+    media = None
+    if uploaded_file is not None:
+        try:
+            media = get_media_manager().save_upload(uploaded_file, subdir="evidence")
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        payload = {
+            "evidence_type": request.form.get("evidence_type", ""),
+            "description": request.form.get("description", ""),
+            **media,
+        }
+    else:
+        payload = request.get_json(silent=True) or {}
+
     try:
         evidence = get_citizen_docket_service().add_evidence(citizen_id, case_reference, payload)
     except ValueError as exc:
+        if media and media.get("storage_reference"):
+            get_media_manager().delete(media["storage_reference"])
         return jsonify({"error": str(exc)}), 400 if "not found" not in str(exc).lower() else 404
     return jsonify(evidence), 201
+
+
+@api_v1_bp.delete("/citizen/dockets/<case_reference>/evidence/<evidence_id>")
+@jwt_required()
+def remove_docket_evidence(case_reference, evidence_id):
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    citizen_id = get_jwt_identity()
+    try:
+        evidence = get_citizen_docket_service().remove_evidence(citizen_id, case_reference, evidence_id)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+
+    # Metadata-only records have no physical file.  For real uploads, remove
+    # the stored object only after the docket update has succeeded.
+    storage_reference = evidence.get("storage_reference")
+    if storage_reference:
+        remaining = get_citizen_docket_service().list_evidence(citizen_id, case_reference)
+        if not any(item.get("storage_reference") == storage_reference for item in remaining):
+            get_media_manager().delete(storage_reference)
+    return jsonify(evidence)
 
 
 @api_v1_bp.post("/citizen/dockets/<case_reference>/submit")
@@ -281,6 +327,12 @@ def create_citizen_escalation(case_reference):
     payload = request.get_json(silent=True) or {}
     try:
         escalation = get_citizen_docket_service().create_escalation(citizen_id, case_reference, payload)
+    except DuplicateEscalationError as exc:
+        return jsonify({
+            "error": str(exc),
+            "escalation_id": exc.escalation.get("escalation_id"),
+            "status": exc.escalation.get("status"),
+        }), 409
     except ValueError as exc:
         status = 404 if "not found" in str(exc).lower() else 400
         return jsonify({"error": str(exc)}), status

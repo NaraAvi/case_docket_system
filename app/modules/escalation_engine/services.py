@@ -4,8 +4,21 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from sqlalchemy.exc import IntegrityError
+
 from app.database.repositories.escalation_repository import EscalationRepository
 from app.modules.audit_engine.services import AuditTrailService
+
+
+class DuplicateEscalationError(ValueError):
+    """Raised when a docket already has an unresolved escalation."""
+
+    status_code = 409
+
+    def __init__(self, escalation):
+        self.escalation = dict(escalation or {})
+        escalation_id = self.escalation.get("escalation_id", "an existing escalation")
+        super().__init__(f"This docket already has an unresolved escalation ({escalation_id}).")
 
 
 class EscalationService:
@@ -19,6 +32,7 @@ class EscalationService:
         "OTHER",
     }
     VALID_STATUSES = {"OPEN", "UNDER_REVIEW", "RESOLVED"}
+    UNRESOLVED_STATUSES = {"OPEN", "UNDER_REVIEW"}
 
     def __init__(self, repository=None, audit_service=None):
         self.repository = repository or EscalationRepository()
@@ -131,9 +145,28 @@ class EscalationService:
                 raise ValueError("Status filter must be one of: OPEN, UNDER_REVIEW, RESOLVED.")
             escalations = self.repository.list_by_status(status_value)
         else:
-            escalations = self.repository.list_open()
+            list_unresolved = getattr(self.repository, "list_unresolved", None)
+            escalations = list_unresolved() if list_unresolved is not None else self.repository.list_open()
         escalations.sort(key=lambda item: str(item.get("created_at") or ""))
         return [dict(item) for item in escalations]
+
+    def find_unresolved_for_case(self, case_reference, created_by=None):
+        """Return the first unresolved escalation for a docket.
+
+        A docket has a single citizen owner, so the active-ticket invariant is
+        case-scoped.  ``created_by`` remains an optional compatibility filter
+        for callers that need to inspect a specific actor.
+        """
+        if created_by is None:
+            lookup = getattr(self.repository, "get_unresolved_for_case", None)
+            if lookup is not None:
+                return lookup(str(case_reference))
+        for escalation in self.repository.list_by_case(str(case_reference)):
+            if created_by is not None and str(escalation.get("created_by")) != str(created_by):
+                continue
+            if str(escalation.get("status") or "").upper() in self.UNRESOLVED_STATUSES:
+                return dict(escalation)
+        return None
 
     def create_escalation(self, case_reference, created_by, created_by_role, category, description):
         if not case_reference:
@@ -149,18 +182,31 @@ class EscalationService:
         if not description_value:
             raise ValueError("Escalation description is required.")
 
-        escalation = self.repository.create(
-            {
-                "case_reference": str(case_reference),
-                "created_by": str(created_by),
-                "created_by_role": str(created_by_role or "citizen"),
-                "category": category_value,
-                "description": description_value,
-                "status": "OPEN",
-                "created_at": self._utc_now(),
-                "updated_at": self._utc_now(),
-            }
-        )
+        existing = self.find_unresolved_for_case(case_reference)
+        if existing is not None:
+            raise DuplicateEscalationError(existing)
+
+        try:
+            escalation = self.repository.create(
+                {
+                    "case_reference": str(case_reference),
+                    "created_by": str(created_by),
+                    "created_by_role": str(created_by_role or "citizen"),
+                    "category": category_value,
+                    "description": description_value,
+                    "status": "OPEN",
+                    "created_at": self._utc_now(),
+                    "updated_at": self._utc_now(),
+                }
+            )
+        except IntegrityError as exc:
+            # A concurrent request may win the case-scoped active-ticket
+            # unique index between our check and insert.  Surface the same
+            # typed conflict rather than leaking a 500/IntegrityError.
+            existing = self.find_unresolved_for_case(case_reference)
+            if existing is not None:
+                raise DuplicateEscalationError(existing) from exc
+            raise
 
         self.audit_service.log(
             {

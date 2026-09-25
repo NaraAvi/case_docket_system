@@ -4,4 +4,5 @@ __pycache__/
 .env
 *.db
 instance/
+uploads/
 .pytest_cache/

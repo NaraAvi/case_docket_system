@@ -40,6 +40,10 @@ class IPIDReviewService:
         self.identity_registry = identity_registry or TestIdentityRegistry()
         self.disciplinary_service = disciplinary_service or DisciplinaryCaseService(audit_service=self.audit_service)
 
+    @staticmethod
+    def _is_refusal_to_register(escalation):
+        return str((escalation or {}).get("category") or "").upper() == "REFUSAL_TO_REGISTER"
+
     def _get_case_summary(self, case_reference):
         if not case_reference:
             return None
@@ -287,78 +291,175 @@ class IPIDReviewService:
         reason = str(decision_payload.get("reason") or "").strip()
         if not reason:
             raise ValueError("Uphold reason is required.")
+        if str(escalation.get("status") or "").upper() != "UNDER_REVIEW":
+            raise ValueError("Escalation must be under review before a decision can be made.")
 
-        reviewed = self.escalation_service.uphold_escalation(escalation_id, actor_id, "ipid", reason=reason)
         case_reference = escalation.get("case_reference")
-        if self.freeze_service and case_reference:
-            freeze = self.freeze_service.freeze_case(
-                case_reference,
-                actor_id,
-                "ipid",
-                reason=f"IPID uphold decision for escalation {escalation_id}",
-                source="IPID_REVIEW",
-                related_escalation_id=escalation_id,
-            )
+        case_summary = self._get_case_summary(case_reference)
+        if case_summary is None:
+            raise ValueError("Case not found.")
+
+        category = str(escalation.get("category") or "").upper()
+        is_refusal = self._is_refusal_to_register(escalation)
+        case_status = str(case_summary.get("status") or "").upper()
+
+        # A refusal-to-register complaint may be received before registration.
+        # It is the only category allowed to enter the narrow pre-registration
+        # custody path; all other categories still require a registered case.
+        if case_status == "AWAITING_CONSTABLE_REGISTRATION":
+            if not is_refusal:
+                raise ValueError("Freeze requires a registered case for this escalation category.")
+            if self.freeze_service is None:
+                raise ValueError("Freeze service is not configured for pre-registration custody.")
+        elif case_status != "REGISTERED":
+            raise ValueError("Uphold is not supported for a docket in its current state.")
+
+        assignment = None
+        if self.assignment_service is not None:
+            assignment = self.assignment_service.get_current_assignment_for_case(case_reference)
+        implicated_officer_id = assignment.get("officer_id") if assignment else None
+        officer = None
+        if implicated_officer_id is not None:
+            officer = self.identity_registry.get_identity(str(implicated_officer_id))
+            if officer is None:
+                raise ValueError("Implicated officer identity not found.")
+            if str(officer.get("role") or "").lower() in {"ipid", "citizen"}:
+                raise ValueError("IPID reviewer cannot be revoked as an operational officer.")
+
+        # Reject an unrelated active freeze before resolving the escalation.
+        current_freeze = self.freeze_service.get_current_freeze(case_reference) if self.freeze_service else None
+        if current_freeze is not None and current_freeze.get("related_escalation_id") != escalation_id:
+            raise ValueError("Case is already frozen.")
+
+        # Everything above is read-only validation.  Create custody first so a
+        # freeze validation/database failure cannot leave a RESOLVED escalation
+        # behind; if the decision write fails, release the newly-created freeze
+        # as a compensating recovery step.
+        freeze = None
+        newly_created_freeze = False
+        if self.freeze_service is not None:
+            freeze_reason = f"IPID uphold decision for escalation {escalation_id}"
+            if case_status == "AWAITING_CONSTABLE_REGISTRATION":
+                freeze = self.freeze_service.freeze_for_escalation_uphold(
+                    case_reference,
+                    escalation,
+                    actor_id,
+                    actor_role="ipid",
+                    reason=freeze_reason,
+                )
+            else:
+                freeze = self.freeze_service.freeze_case(
+                    case_reference,
+                    actor_id,
+                    "ipid",
+                    reason=freeze_reason,
+                    source=self.freeze_service.SOURCE_IPID_REVIEW,
+                    related_escalation_id=escalation_id,
+                )
+            newly_created_freeze = current_freeze is None
+            if newly_created_freeze:
+                self.audit_service.log(
+                    {
+                        "actor_id": actor_id,
+                        "actor_role": "ipid",
+                        "action": "ipid_docket_frozen",
+                        "case_reference": case_reference,
+                        "details": {
+                            "escalation_id": escalation_id,
+                            "freeze_id": freeze.get("freeze_id"),
+                            "reason": freeze.get("reason"),
+                            "case_status": case_status,
+                            "category": category,
+                            "source": freeze.get("source"),
+                        },
+                    }
+                )
+
+        try:
+            reviewed = self.escalation_service.uphold_escalation(escalation_id, actor_id, "ipid", reason=reason)
+        except Exception:
+            if newly_created_freeze and freeze and self.freeze_service is not None:
+                try:
+                    self.freeze_service.unfreeze_case(
+                        case_reference,
+                        actor_id,
+                        "ipid",
+                        reason="IPID uphold failed; custody freeze was released.",
+                        freeze_id=freeze.get("freeze_id"),
+                    )
+                except Exception:
+                    # Preserve the original decision error.  The append-only
+                    # audit trail records both the failed attempt and any
+                    # recovery outcome that was possible.
+                    pass
+            raise
+
+        if implicated_officer_id is None:
+            # A complaint about refusal to register has no officer assignment
+            # to revoke.  Preserve the upheld decision and custody freeze, but
+            # do not invent an accused person or create a disciplinary record.
+            reviewed["disciplinary_case"] = None
+            reviewed["implicated_officer_id"] = None
+            reviewed["officer_accountability"] = {
+                "status": "UNAVAILABLE",
+                "reason_code": "NO_ACTIVE_ASSIGNMENT",
+            }
             self.audit_service.log(
                 {
                     "actor_id": actor_id,
                     "actor_role": "ipid",
-                    "action": "ipid_docket_frozen",
+                    "action": "ipid_officer_accountability_skipped",
                     "case_reference": case_reference,
                     "details": {
                         "escalation_id": escalation_id,
-                        "freeze_id": freeze.get("freeze_id"),
-                        "reason": freeze.get("reason"),
+                        "category": category,
+                        "case_status": case_status,
+                        "assignment_id": assignment.get("assignment_id") if assignment else None,
+                        "reason_code": "NO_ACTIVE_ASSIGNMENT",
+                    },
+                }
+            )
+        else:
+            updated_officer = self.identity_registry.revoke_access(str(implicated_officer_id))
+            self.audit_service.log(
+                {
+                    "actor_id": actor_id,
+                    "actor_role": "ipid",
+                    "action": "officer_access_revoked",
+                    "case_reference": case_reference,
+                    "details": {
+                        "officer_id": implicated_officer_id,
+                        "officer_role": officer.get("role"),
+                        "revocation_reason": reason,
+                        "escalation_id": escalation_id,
+                        "access_state": updated_officer.get("access_state") if updated_officer else None,
                     },
                 }
             )
 
-        implicated_officer_id = None
-        if self.assignment_service is not None and case_reference:
-            assignment = self.assignment_service.get_current_assignment_for_case(case_reference)
-            if assignment:
-                implicated_officer_id = assignment.get("officer_id")
-
-        if implicated_officer_id is None:
-            raise ValueError("No active officer assignment is available to revoke for this uphold decision.")
-
-        officer = self.identity_registry.get_identity(str(implicated_officer_id))
-        if officer is None:
-            raise ValueError("Implicated officer identity not found.")
-        if str(officer.get("role") or "").lower() == "ipid":
-            raise ValueError("IPID reviewer cannot be revoked as an operational officer.")
-
-        updated_officer = self.identity_registry.revoke_access(str(implicated_officer_id))
-        self.audit_service.log(
-            {
-                "actor_id": actor_id,
-                "actor_role": "ipid",
-                "action": "officer_access_revoked",
-                "case_reference": case_reference,
-                "details": {
-                    "officer_id": implicated_officer_id,
-                    "officer_role": officer.get("role"),
-                    "revocation_reason": reason,
-                    "escalation_id": escalation_id,
-                    "access_state": updated_officer.get("access_state") if updated_officer else None,
-                },
+            disciplinary_case = self.disciplinary_service.create_case(
+                source_case_reference=case_reference,
+                escalation_id=escalation_id,
+                implicated_officer_id=implicated_officer_id,
+                created_by=actor_id,
+                created_by_role="ipid",
+                reason=reason,
+                category=escalation.get("category"),
+            )
+            reviewed["disciplinary_case"] = disciplinary_case
+            reviewed["implicated_officer_id"] = implicated_officer_id
+            reviewed["officer_accountability"] = {
+                "status": "COMPLETED",
+                "reason_code": None,
             }
-        )
 
-        disciplinary_case = self.disciplinary_service.create_case(
-            source_case_reference=case_reference,
-            escalation_id=escalation_id,
-            implicated_officer_id=implicated_officer_id,
-            created_by=actor_id,
-            created_by_role="ipid",
-            reason=reason,
-            category=escalation.get("category"),
-        )
-        reviewed["disciplinary_case"] = disciplinary_case
-        reviewed["implicated_officer_id"] = implicated_officer_id
         reviewed["decision"] = "UPHELD"
         reviewed["decision_by"] = actor_id
         reviewed["decision_reason"] = reason
+        reviewed["case_status"] = case_status
+        reviewed["freeze_status"] = "FROZEN" if freeze else "NOT_FROZEN"
+        if freeze:
+            reviewed["freeze_id"] = freeze.get("freeze_id")
         return reviewed
 
     def reassign_case_officer(self, case_reference, target_officer_id, actor_id, reason=None):

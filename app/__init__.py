@@ -70,7 +70,7 @@ def create_app(testing: bool = False, database_uri: str | None = None):
         audit_service=audit_service,
         escalation_service=EscalationService(audit_service=audit_service),
     )
-    media_manager = MediaManager()
+    media_manager = MediaManager(storage_root=app.config.get("UPLOAD_ROOT", "uploads"))
     evidence_service = EvidenceManagementService()
     compliance_service = ComplianceService(
         rule_service=regulatory_rule_service,

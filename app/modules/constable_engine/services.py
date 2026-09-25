@@ -70,6 +70,10 @@ class ConstableRegistrationService:
                 return case
         return None
 
+    def _assert_not_frozen(self, case_reference):
+        if self.freeze_service and self.freeze_service.is_case_frozen(case_reference):
+            raise ValueError("Case is frozen and operational mutation is restricted.")
+
     def _append_timeline_event(self, case, event_type, actor_id, actor_role, details=None):
         if case is None:
             return None
@@ -123,6 +127,7 @@ class ConstableRegistrationService:
         case = self._get_docket_by_reference(case_reference)
         if case is None:
             raise ValueError("Docket not found.")
+        self._assert_not_frozen(case_reference)
         if case.get("status") != "AWAITING_CONSTABLE_REGISTRATION":
             raise ValueError("Docket is not awaiting constable registration.")
         if case.get("citizen_id") == constable_id:
@@ -349,6 +354,7 @@ class ConstableRegistrationService:
         case = self._get_docket_by_reference(case_reference)
         if case is None:
             raise ValueError("Docket not found.")
+        self._assert_not_frozen(case_reference)
         if case.get("status") != "AWAITING_CONSTABLE_REGISTRATION":
             raise ValueError("Docket is not awaiting constable registration.")
 
@@ -451,6 +457,7 @@ class ConstableRegistrationService:
         case = self._get_docket_by_reference(interview.get("case_reference"))
         if case is None:
             raise ValueError("Docket not found.")
+        self._assert_not_frozen(interview.get("case_reference"))
 
         filename = (payload.get("filename") if isinstance(payload, dict) else None) or f"{recording_type}.wav"
         storage_reference = payload.get("storage_reference") if isinstance(payload, dict) else None
@@ -526,6 +533,7 @@ class ConstableRegistrationService:
         case = self._get_docket_by_reference(interview.get("case_reference"))
         if case is None:
             raise ValueError("Docket not found.")
+        self._assert_not_frozen(interview.get("case_reference"))
         if case.get("status") != "AWAITING_CONSTABLE_REGISTRATION":
             raise ValueError("Docket is not awaiting constable registration.")
         if interview.get("status") != "COMPLETED":

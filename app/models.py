@@ -2,6 +2,8 @@
 
 from datetime import datetime, timezone
 
+from sqlalchemy import CheckConstraint, Index, text
+
 from app.extensions import db
 
 
@@ -160,6 +162,16 @@ class InvestigationFinding(db.Model):
 
 class Escalation(db.Model):
     __tablename__ = "escalations"
+    __table_args__ = (
+        CheckConstraint("status IN ('OPEN', 'UNDER_REVIEW', 'RESOLVED')", name="ck_escalation_status"),
+        Index(
+            "uq_escalation_unresolved_case",
+            "case_reference",
+            unique=True,
+            sqlite_where=text("status IN ('OPEN', 'UNDER_REVIEW')"),
+            postgresql_where=text("status IN ('OPEN', 'UNDER_REVIEW')"),
+        ),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     escalation_id = db.Column(db.String(50), unique=True, nullable=False, index=True)

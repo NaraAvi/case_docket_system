@@ -13,6 +13,9 @@ class FreezeService:
     """Shared case freeze lifecycle used by future oversight and access-control boundaries."""
 
     VALID_STATUSES = {"ACTIVE", "RELEASED"}
+    SOURCE_IPID_REVIEW = "IPID_REVIEW"
+    REFUSAL_CATEGORY = "REFUSAL_TO_REGISTER"
+    UNREGISTERED_IPID_STATUS = "AWAITING_CONSTABLE_REGISTRATION"
 
     def __init__(self, repository=None, case_service=None, audit_service=None):
         self.repository = repository or FreezeRepository()
@@ -40,15 +43,11 @@ class FreezeService:
     def get_freeze_history(self, case_reference):
         return self.repository.get_history_for_case(case_reference)
 
-    def freeze_case(self, case_reference, actor_id, actor_role, reason=None, source=None, related_escalation_id=None):
-        case = self._get_case(case_reference)
-        if case is None:
-            raise ValueError("Case not found.")
-        if case.get("status") != "REGISTERED":
-            raise ValueError("Freeze requires a registered case.")
-
+    def _create_freeze(self, case_reference, actor_id, actor_role, reason=None, source=None, related_escalation_id=None):
         current = self.repository.get_current_for_case(case_reference)
         if current is not None and current.get("status") == "ACTIVE":
+            if related_escalation_id and current.get("related_escalation_id") == related_escalation_id:
+                return dict(current)
             raise ValueError("Case is already frozen.")
 
         freeze = self.repository.create(
@@ -82,6 +81,53 @@ class FreezeService:
             }
         )
         return dict(freeze)
+
+    def freeze_case(self, case_reference, actor_id, actor_role, reason=None, source=None, related_escalation_id=None):
+        case = self._get_case(case_reference)
+        if case is None:
+            raise ValueError("Case not found.")
+        if case.get("status") != "REGISTERED":
+            raise ValueError("Freeze requires a registered case.")
+        return self._create_freeze(
+            case_reference,
+            actor_id,
+            actor_role,
+            reason=reason,
+            source=source,
+            related_escalation_id=related_escalation_id,
+        )
+
+    def freeze_for_escalation_uphold(self, case_reference, escalation, actor_id, actor_role="ipid", reason=None):
+        """Apply the narrow pre-registration custody policy for IPID.
+
+        A refusal-to-register complaint is about the registration step itself,
+        so it can be upheld before a docket is registered.  This deliberately
+        does not relax the ordinary ``freeze_case`` rule for every source.
+        """
+        case = self._get_case(case_reference)
+        if case is None:
+            raise ValueError("Case not found.")
+        if actor_role != "ipid":
+            raise ValueError("Only IPID may apply an escalation custody freeze.")
+        if str(case.get("status") or "").upper() != self.UNREGISTERED_IPID_STATUS:
+            raise ValueError("Pre-registration custody is only available for an awaiting docket.")
+        if str((escalation or {}).get("category") or "").upper() != self.REFUSAL_CATEGORY:
+            raise ValueError("This escalation category cannot freeze an unregistered docket.")
+        if str((escalation or {}).get("status") or "").upper() != "UNDER_REVIEW":
+            raise ValueError("Escalation must be under review before custody can be applied.")
+        if not (escalation or {}).get("escalation_id"):
+            raise ValueError("Escalation reference is required.")
+        if str((escalation or {}).get("case_reference") or "") != str(case_reference):
+            raise ValueError("Escalation does not belong to this case.")
+
+        return self._create_freeze(
+            case_reference,
+            actor_id,
+            actor_role,
+            reason=reason,
+            source=self.SOURCE_IPID_REVIEW,
+            related_escalation_id=escalation.get("escalation_id"),
+        )
 
     def get_related_ipid_freeze(self, case_reference, escalation_id=None):
         if not case_reference:

@@ -17,6 +17,7 @@ class Config:
         "case-docket-jwt-dev-secret-key-32-chars-123",
     )
     SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", "sqlite:///case_docket_dev.db")
+    UPLOAD_ROOT = os.getenv("UPLOAD_ROOT", "uploads")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     JSON_SORT_KEYS = False
 
