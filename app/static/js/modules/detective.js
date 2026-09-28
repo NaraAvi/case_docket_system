@@ -3,7 +3,8 @@
  */
 
 import { fetchJson } from '../core/api.js';
-import { buildStatusBadge, flashToast, populateSelect, renderDocketCardList, renderEvidenceTable, renderStatementList, renderTimelineList, renderWorkflowRail, setEmptyState, showToast } from '../core/ui.js';
+import { renderLawNote } from '../core/law_notes.js';
+import { buildStatusBadge, flashToast, populateSelect, renderDocketCardList, renderEvidenceTable, renderProtectedSourceGroups, renderStatementList, renderTimelineList, renderWorkflowRail, setCollapsibleExpanded, setEmptyState, showToast } from '../core/ui.js';
 
 const DETECTIVE_EVIDENCE_TYPES = ['PHOTO', 'VIDEO', 'DOCUMENT', 'AUDIO', 'WITNESS_STATEMENT', 'OTHER'];
 
@@ -37,26 +38,13 @@ function renderProtectedSubmission(container, docket) {
   const originalContent = docket?.citizen_submission?.original_content && typeof docket.citizen_submission.original_content === 'object'
     ? docket.citizen_submission.original_content
     : {};
-  const flattenedEntries = Object.entries(originalContent).filter(([, value]) => value !== undefined && value !== null && value !== '');
 
-  if (!flattenedEntries.length) {
-    container.innerHTML = '<div class="empty-state">No original protected citizen submission is available for this docket.</div>';
-    return;
-  }
-
-  const entries = flattenedEntries
-    .map(([key, value]) => `<dt>${String(key).replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())}</dt><dd>${String(Array.isArray(value) ? value.join(', ') : value)}</dd>`)
-    .join('');
-
-  container.innerHTML = `
-    <article class="mini-case-card">
-      <div class="stack-row" style="justify-content:space-between; align-items:center;">
-        <strong>Original protected citizen submission</strong>
-        <span class="badge badge-muted">read-only</span>
-      </div>
-      <dl class="meta-list compact">${entries}</dl>
-    </article>
-  `;
+  // Same grouped, expandable renderer as the constable's protected source view.
+  renderProtectedSourceGroups(container, originalContent, {
+    title: 'Original protected citizen submission',
+    badge: 'read-only',
+    emptyMessage: 'No original protected citizen submission is available for this docket.',
+  });
 }
 
 export function getDetectiveCaseReference() {
@@ -177,6 +165,7 @@ function renderFindings(container, findings, actions = []) {
   if (!container) {
     return;
   }
+  document.getElementById('detectiveFindingsPanel')?.classList.toggle('is-complete', findings.length > 0);
   if (!findings.length) {
     container.innerHTML = '<div class="empty-state">No findings have been recorded yet.</div>';
     return;
@@ -453,51 +442,101 @@ function renderActionModalReadOnly(action) {
   `;
 }
 
+// Layout helpers for the investigative action forms. They only arrange the
+// existing controls (same data-action-field keys, types and options) into
+// labelled groups; `showWhen` wrappers start hidden and are revealed by
+// bindActionFormConditionals using the same rules validateActionModalPayload
+// already enforces.
+function actionField(label, control, { required = false, wide = false, showWhen = null, hint = '' } = {}) {
+  const classes = ['action-field', required ? 'is-required' : '', wide ? 'span-2' : '', showWhen ? 'hidden' : ''].filter(Boolean).join(' ');
+  const conditional = showWhen ? ` data-show-when="${showWhen.field}" data-show-values="${showWhen.values.join(' ')}"` : '';
+  return `<div class="${classes}"${conditional}><label class="input-label">${label}</label>${control}${hint ? `<p class="field-hint">${hint}</p>` : ''}</div>`;
+}
+
+function actionGroup(legend, fields) {
+  return `<fieldset class="action-group"><legend>${legend}</legend><div class="action-grid">${fields.join('')}</div></fieldset>`;
+}
+
+const ACTION_REQUIRED_LEGEND = '<p class="action-required-legend">Required fields. Extra fields appear when an answer needs them.</p>';
+
+function syncActionFormConditionals(form, { clearHidden = false } = {}) {
+  form.querySelectorAll('[data-show-when]').forEach((wrapper) => {
+    const scope = wrapper.closest('[data-evidence-collection-item]') || form;
+    const controller = scope.querySelector(`[data-action-field="${wrapper.dataset.showWhen}"]`);
+    const values = String(wrapper.dataset.showValues || '').split(' ').filter(Boolean);
+    const show = Boolean(controller) && values.includes(controller.value);
+    wrapper.classList.toggle('hidden', !show);
+    if (!show && clearHidden) {
+      wrapper.querySelectorAll('[data-action-field]').forEach((field) => {
+        if (field.type !== 'file') {
+          field.value = '';
+        }
+      });
+    }
+  });
+}
+
+function bindActionFormConditionals(form) {
+  if (!form) {
+    return;
+  }
+  if (form.dataset.actionConditionalsBound !== 'true') {
+    form.dataset.actionConditionalsBound = 'true';
+    form.addEventListener('change', (event) => {
+      if (event.target.closest('[data-action-field]')) {
+        syncActionFormConditionals(form, { clearHidden: true });
+      }
+    });
+  }
+  syncActionFormConditionals(form);
+}
+
+const EVIDENCE_COLLECTION_EXPLANATION_RESULTS = ['PARTIALLY_OBTAINED', 'REQUESTED_BUT_UNAVAILABLE', 'REFUSED', 'NO_LONGER_AVAILABLE', 'OTHER'];
+
 function renderEvidenceCollectionItemMarkup(index) {
+  const itemNumber = Number(index) + 1;
   return `
-    <div data-evidence-collection-item="${index}" data-evidence-collection-index="${index}" style="border:1px solid rgba(148,163,184,0.35); border-radius:10px; padding:12px; margin-bottom:12px;">
-      <label class="input-label" style="margin-top:0; display:block;">Description</label>
-      <textarea rows="3" data-action-field="description" data-evidence-collection-index="${index}" placeholder="Describe the evidence item"></textarea>
-      <label class="input-label" style="margin-top:12px; display:block;">Evidence type</label>
-      <select class="field-select" data-action-field="evidence_type" data-evidence-collection-index="${index}">
-        <option value="">Select evidence type</option>
-        <option value="PHOTO">Photo</option>
-        <option value="VIDEO">Video</option>
-        <option value="DOCUMENT">Document</option>
-        <option value="AUDIO">Audio</option>
-        <option value="WITNESS_STATEMENT">Witness statement</option>
-        <option value="OTHER">Other</option>
-      </select>
-      <label class="input-label" style="margin-top:12px; display:block;">Source</label>
-      <input class="field-input" data-action-field="source" data-evidence-collection-index="${index}" type="text" placeholder="Source of the evidence" />
-      <label class="input-label" style="margin-top:12px; display:block;">Date / time obtained</label>
-      <input class="field-input" data-action-field="date_time_obtained" data-evidence-collection-index="${index}" type="datetime-local" />
-      <label class="input-label" style="margin-top:12px; display:block;">Person / institution providing it</label>
-      <input class="field-input" data-action-field="provider" data-evidence-collection-index="${index}" type="text" placeholder="Provider or custodian" />
-      <label class="input-label" style="margin-top:12px; display:block;">Collection method</label>
-      <select class="field-select" data-action-field="collection_method" data-evidence-collection-index="${index}">
-        <option value="">Select method</option>
-        <option value="PHYSICAL_COLLECTION">PHYSICAL_COLLECTION</option>
-        <option value="ELECTRONIC_FILE_RECEIVED">ELECTRONIC_FILE_RECEIVED</option>
-        <option value="CCTV_EXPORT">CCTV_EXPORT</option>
-        <option value="DOCUMENT_SUPPLIED">DOCUMENT_SUPPLIED</option>
-        <option value="PHOTOGRAPH_VIDEO">PHOTOGRAPH_VIDEO</option>
-        <option value="OTHER">OTHER</option>
-      </select>
-      <label class="input-label" style="margin-top:12px; display:block;">Collection result</label>
-      <select class="field-select" data-action-field="result" data-evidence-collection-index="${index}">
-        <option value="">Select result</option>
-        <option value="OBTAINED">OBTAINED</option>
-        <option value="PARTIALLY_OBTAINED">PARTIALLY_OBTAINED</option>
-        <option value="REQUESTED_BUT_UNAVAILABLE">REQUESTED_BUT_UNAVAILABLE</option>
-        <option value="REFUSED">REFUSED</option>
-        <option value="NO_LONGER_AVAILABLE">NO_LONGER_AVAILABLE</option>
-        <option value="OTHER">OTHER</option>
-      </select>
-      <label class="input-label" style="margin-top:12px; display:block;">Explanation</label>
-      <textarea rows="3" data-action-field="explanation" data-evidence-collection-index="${index}" placeholder="Required if the evidence was not fully obtained"></textarea>
-      <label class="input-label" style="margin-top:12px; display:block;">Upload(s)</label>
-      <input class="field-input" data-action-field="uploads" data-evidence-collection-index="${index}" type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx,.mp4,.mov" />
+    <div class="evidence-collection-item" data-evidence-collection-item="${index}" data-evidence-collection-index="${index}">
+      ${actionGroup(`Evidence item ${itemNumber}`, [
+        actionField('Description', `<textarea rows="3" data-action-field="description" data-evidence-collection-index="${index}" placeholder="Describe the evidence item"></textarea>`, { required: true, wide: true }),
+        actionField('Evidence type', `
+          <select class="field-select" data-action-field="evidence_type" data-evidence-collection-index="${index}">
+            <option value="">Select evidence type</option>
+            <option value="PHOTO">Photo</option>
+            <option value="VIDEO">Video</option>
+            <option value="DOCUMENT">Document</option>
+            <option value="AUDIO">Audio</option>
+            <option value="WITNESS_STATEMENT">Witness statement</option>
+            <option value="OTHER">Other</option>
+          </select>`, { required: true }),
+        actionField('Source', `<input class="field-input" data-action-field="source" data-evidence-collection-index="${index}" type="text" placeholder="Source of the evidence" />`, { required: true }),
+        actionField('Date / time obtained', `<input class="field-input" data-action-field="date_time_obtained" data-evidence-collection-index="${index}" type="datetime-local" />`, { required: true }),
+        actionField('Person / institution providing it', `<input class="field-input" data-action-field="provider" data-evidence-collection-index="${index}" type="text" placeholder="Provider or custodian" />`, { required: true }),
+      ])}
+      ${actionGroup('Collection', [
+        actionField('Collection method', `
+          <select class="field-select" data-action-field="collection_method" data-evidence-collection-index="${index}">
+            <option value="">Select method</option>
+            <option value="PHYSICAL_COLLECTION">PHYSICAL_COLLECTION</option>
+            <option value="ELECTRONIC_FILE_RECEIVED">ELECTRONIC_FILE_RECEIVED</option>
+            <option value="CCTV_EXPORT">CCTV_EXPORT</option>
+            <option value="DOCUMENT_SUPPLIED">DOCUMENT_SUPPLIED</option>
+            <option value="PHOTOGRAPH_VIDEO">PHOTOGRAPH_VIDEO</option>
+            <option value="OTHER">OTHER</option>
+          </select>`, { required: true }),
+        actionField('Collection result', `
+          <select class="field-select" data-action-field="result" data-evidence-collection-index="${index}">
+            <option value="">Select result</option>
+            <option value="OBTAINED">OBTAINED</option>
+            <option value="PARTIALLY_OBTAINED">PARTIALLY_OBTAINED</option>
+            <option value="REQUESTED_BUT_UNAVAILABLE">REQUESTED_BUT_UNAVAILABLE</option>
+            <option value="REFUSED">REFUSED</option>
+            <option value="NO_LONGER_AVAILABLE">NO_LONGER_AVAILABLE</option>
+            <option value="OTHER">OTHER</option>
+          </select>`, { required: true }),
+        actionField('Explanation', `<textarea rows="3" data-action-field="explanation" data-evidence-collection-index="${index}" placeholder="Required if the evidence was not fully obtained"></textarea>`, { required: true, wide: true, showWhen: { field: 'result', values: EVIDENCE_COLLECTION_EXPLANATION_RESULTS } }),
+        actionField('Upload(s)', `<input class="field-input" data-action-field="uploads" data-evidence-collection-index="${index}" type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx,.mp4,.mov" />`, { wide: true }),
+      ])}
     </div>
   `;
 }
@@ -546,145 +585,153 @@ function populateActionFormOptions(actionType, evidenceItems = [], form = docume
 }
 
 function renderActionFormForType(actionType, actions = []) {
-  const header = renderActionHeader(actionType, actions);
+  const header = `${renderActionHeader(actionType, actions)}${ACTION_REQUIRED_LEGEND}`;
   switch (actionType) {
     case 'WITNESS_CONTACT':
       return `
         ${header}
-        <label class="input-label" style="margin-top:12px; display:block;">Witness</label>
-        <input class="field-input" data-action-field="witness_name" type="text" placeholder="Witness name or identifier" />
-        <label class="input-label" style="margin-top:12px; display:block;">Relationship to incident</label>
-        <input class="field-input" data-action-field="relationship_to_incident" type="text" placeholder="Relationship" />
-        <label class="input-label" style="margin-top:12px; display:block;">Known contact information</label>
-        <input class="field-input" data-action-field="known_contact_information" type="text" placeholder="Phone, email, address, or known contact details" />
-        <label class="input-label" style="margin-top:12px; display:block;">How witness was identified</label>
-        <textarea rows="3" data-action-field="how_witness_was_identified" placeholder="Describe how the witness was identified"></textarea>
-        <label class="input-label" style="margin-top:12px; display:block;">Contact date</label>
-        <input class="field-input" data-action-field="contact_date" type="date" />
-        <label class="input-label" style="margin-top:12px; display:block;">Contact time</label>
-        <input class="field-input" data-action-field="contact_time" type="time" />
-        <label class="input-label" style="margin-top:12px; display:block;">Contact method</label>
-        <select class="field-select" data-action-field="contact_method">
-          <option value="">Select contact method</option>
-          <option value="PHONE">PHONE</option>
-          <option value="IN_PERSON">IN_PERSON</option>
-          <option value="EMAIL">EMAIL</option>
-          <option value="OTHER">OTHER</option>
-        </select>
-        <label class="input-label" style="margin-top:12px; display:block;">Result</label>
-        <select class="field-select" data-action-field="result">
-          <option value="">Select result</option>
-          <option value="PROVIDED_INFORMATION">PROVIDED_INFORMATION</option>
-          <option value="AGREED_TO_INTERVIEW">AGREED_TO_INTERVIEW</option>
-          <option value="UNAVAILABLE">UNAVAILABLE</option>
-          <option value="DECLINED">DECLINED</option>
-          <option value="NO_RELEVANT_INFORMATION">NO_RELEVANT_INFORMATION</option>
-          <option value="REFERRED_TO_PERSON_OR_EVIDENCE">REFERRED_TO_PERSON_OR_EVIDENCE</option>
-          <option value="OTHER">OTHER</option>
-        </select>
-        <label class="input-label" style="margin-top:12px; display:block;">Information obtained</label>
-        <textarea rows="4" data-action-field="information_obtained" placeholder="What was actually learned?"></textarea>
-        <label class="input-label" style="margin-top:12px; display:block;">Lead generated</label>
-        <select class="field-select" data-action-field="lead_generated">
-          <option value="">Select</option>
-          <option value="true">YES</option>
-          <option value="false">NO</option>
-        </select>
-        <label class="input-label" style="margin-top:12px; display:block;">Lead description</label>
-        <textarea rows="3" data-action-field="lead_description" placeholder="If a lead was generated, describe it"></textarea>
-        <label class="input-label" style="margin-top:12px; display:block;">Explanation</label>
-        <textarea rows="3" data-action-field="explanation" placeholder="Required for unsuccessful, unavailable, declined, or similar outcomes"></textarea>
+        ${actionGroup('Witness', [
+          actionField('Witness', '<input class="field-input" data-action-field="witness_name" type="text" placeholder="Witness name or identifier" />', { required: true }),
+          actionField('Relationship to incident', `
+            <select class="field-select" data-action-field="relationship_to_incident">
+              <option value="">Select relationship</option>
+              <option value="EYEWITNESS">Eyewitness</option>
+              <option value="VICTIM_OR_COMPLAINANT">Victim / complainant</option>
+              <option value="BYSTANDER">Bystander</option>
+              <option value="FAMILY_MEMBER">Family member</option>
+              <option value="NEIGHBOUR_OR_COMMUNITY_MEMBER">Neighbour / community member</option>
+              <option value="EMPLOYER_OR_COLLEAGUE">Employer / colleague</option>
+              <option value="POLICE_OFFICIAL">Police official</option>
+              <option value="MEDICAL_OR_EMERGENCY_RESPONDER">Medical / emergency responder</option>
+              <option value="OTHER">Other</option>
+              <option value="UNKNOWN">Unknown</option>
+            </select>`),
+          actionField('Known contact information', '<input class="field-input" data-action-field="known_contact_information" type="text" placeholder="Phone, email, address, or known contact details" />', { wide: true }),
+          actionField('How witness was identified', '<textarea rows="3" data-action-field="how_witness_was_identified" placeholder="Describe how the witness was identified"></textarea>', { wide: true }),
+        ])}
+        ${actionGroup('Contact attempt', [
+          actionField('Contact date', '<input class="field-input" data-action-field="contact_date" type="date" />', { required: true }),
+          actionField('Contact time', '<input class="field-input" data-action-field="contact_time" type="time" />', { required: true }),
+          actionField('Contact method', `
+            <select class="field-select" data-action-field="contact_method">
+              <option value="">Select contact method</option>
+              <option value="PHONE">PHONE</option>
+              <option value="IN_PERSON">IN_PERSON</option>
+              <option value="EMAIL">EMAIL</option>
+              <option value="OTHER">OTHER</option>
+            </select>`, { required: true }),
+          actionField('Result', `
+            <select class="field-select" data-action-field="result">
+              <option value="">Select result</option>
+              <option value="PROVIDED_INFORMATION">PROVIDED_INFORMATION</option>
+              <option value="AGREED_TO_INTERVIEW">AGREED_TO_INTERVIEW</option>
+              <option value="UNAVAILABLE">UNAVAILABLE</option>
+              <option value="DECLINED">DECLINED</option>
+              <option value="NO_RELEVANT_INFORMATION">NO_RELEVANT_INFORMATION</option>
+              <option value="REFERRED_TO_PERSON_OR_EVIDENCE">REFERRED_TO_PERSON_OR_EVIDENCE</option>
+              <option value="OTHER">OTHER</option>
+            </select>`, { required: true }),
+        ])}
+        ${actionGroup('Outcome', [
+          actionField('Information obtained', '<textarea rows="4" data-action-field="information_obtained" placeholder="What was actually learned?"></textarea>', { required: true, wide: true }),
+          actionField('Lead generated', `
+            <select class="field-select" data-action-field="lead_generated">
+              <option value="">Select</option>
+              <option value="true">YES</option>
+              <option value="false">NO</option>
+            </select>`),
+          actionField('Lead description', '<textarea rows="3" data-action-field="lead_description" placeholder="If a lead was generated, describe it"></textarea>', { required: true, wide: true, showWhen: { field: 'lead_generated', values: ['true'] } }),
+          actionField('Explanation', '<textarea rows="3" data-action-field="explanation" placeholder="Required for unsuccessful, unavailable, declined, or similar outcomes"></textarea>', { wide: true }),
+        ])}
       `;
     case 'INTERVIEW':
       return `
         ${header}
-        <label class="input-label" style="margin-top:12px; display:block;">Person interviewed</label>
-        <input class="field-input" data-action-field="person_name" type="text" placeholder="Name or identifier" />
-        <label class="input-label" style="margin-top:12px; display:block;">Role</label>
-        <select class="field-select" data-action-field="role">
-          <option value="">Select role</option>
-          <option value="COMPLAINANT">COMPLAINANT</option>
-          <option value="VICTIM">VICTIM</option>
-          <option value="WITNESS">WITNESS</option>
-          <option value="POLICE_OFFICIAL">POLICE_OFFICIAL</option>
-          <option value="IMPLICATED_PERSON">IMPLICATED_PERSON</option>
-          <option value="OTHER">OTHER</option>
-        </select>
-        <label class="input-label" style="margin-top:12px; display:block;">Interview date</label>
-        <input class="field-input" data-action-field="interview_date" type="date" />
-        <label class="input-label" style="margin-top:12px; display:block;">Interview time</label>
-        <input class="field-input" data-action-field="interview_time" type="time" />
-        <label class="input-label" style="margin-top:12px; display:block;">Location / method</label>
-        <input class="field-input" data-action-field="location_method" type="text" placeholder="Interview location or method" />
-        <label class="input-label" style="margin-top:12px; display:block;">Interview type</label>
-        <select class="field-select" data-action-field="interview_type">
-          <option value="">Select interview type</option>
-          <option value="INITIAL">INITIAL</option>
-          <option value="FOLLOW_UP">FOLLOW_UP</option>
-          <option value="FORMAL">FORMAL</option>
-          <option value="OTHER">OTHER</option>
-        </select>
-        <label class="input-label" style="margin-top:12px; display:block;">Recording upload(s)</label>
-        <input class="field-input" data-action-field="recordings" type="file" multiple accept="audio/*,video/*,.mp3,.wav,.m4a,.m4v,.mp4,.mov" />
-        <p class="field-hint">Attach the actual audio or video recording(s) captured for this interview.</p>
-        <label class="input-label" style="margin-top:12px; display:block;">Interview notes / document upload(s)</label>
-        <input class="field-input" data-action-field="interview_notes_uploads" type="file" multiple accept=".pdf,.doc,.docx,.txt,image/*" />
-        <p class="field-hint">Attach notes, transcripts, or supporting documents created during the interview.</p>
-        <label class="input-label" style="margin-top:12px; display:block;">Information obtained</label>
-        <textarea rows="4" data-action-field="information_obtained" placeholder="What did the person say happened? What did they observe? What did they identify?"></textarea>
-        <label class="input-label" style="margin-top:12px; display:block;">Contradictions / inconsistencies</label>
-        <select class="field-select" data-action-field="contradictions">
-          <option value="">Select contradiction status</option>
-          <option value="NONE_IDENTIFIED">NONE_IDENTIFIED</option>
-          <option value="IDENTIFIED">IDENTIFIED</option>
-        </select>
-        <label class="input-label" style="margin-top:12px; display:block;">Contradiction explanation</label>
-        <textarea rows="3" data-action-field="contradiction_explanation" placeholder="Explain any contradiction found"></textarea>
-        <label class="input-label" style="margin-top:12px; display:block;">Follow-up lead</label>
-        <select class="field-select" data-action-field="follow_up_lead">
-          <option value="">Select</option>
-          <option value="true">YES</option>
-          <option value="false">NO</option>
-        </select>
-        <label class="input-label" style="margin-top:12px; display:block;">Lead description</label>
-        <textarea rows="3" data-action-field="lead_description" placeholder="Describe the follow-up line of inquiry"></textarea>
-        <label class="input-label" style="margin-top:12px; display:block;">Outcome</label>
-        <select class="field-select" data-action-field="outcome">
-          <option value="">Select outcome</option>
-          <option value="INFORMATION_OBTAINED">INFORMATION_OBTAINED</option>
-          <option value="NO_MATERIAL_INFORMATION">NO_MATERIAL_INFORMATION</option>
-          <option value="PERSON_DISPUTED_ALLEGATION">PERSON_DISPUTED_ALLEGATION</option>
-          <option value="INTERVIEW_UNSUCCESSFUL">INTERVIEW_UNSUCCESSFUL</option>
-          <option value="OTHER">OTHER</option>
-        </select>
-        <label class="input-label" style="margin-top:12px; display:block;">Outcome explanation</label>
-        <textarea rows="3" data-action-field="outcome_explanation" placeholder="Explain the unsuccessful or materially limited outcome"></textarea>
+        ${actionGroup('Interviewee', [
+          actionField('Person interviewed', '<input class="field-input" data-action-field="person_name" type="text" placeholder="Name or identifier" />', { required: true }),
+          actionField('Role', `
+            <select class="field-select" data-action-field="role">
+              <option value="">Select role</option>
+              <option value="COMPLAINANT">COMPLAINANT</option>
+              <option value="VICTIM">VICTIM</option>
+              <option value="WITNESS">WITNESS</option>
+              <option value="POLICE_OFFICIAL">POLICE_OFFICIAL</option>
+              <option value="IMPLICATED_PERSON">IMPLICATED_PERSON</option>
+              <option value="OTHER">OTHER</option>
+            </select>`, { required: true }),
+        ])}
+        ${actionGroup('Session', [
+          actionField('Interview date', '<input class="field-input" data-action-field="interview_date" type="date" />', { required: true }),
+          actionField('Interview time', '<input class="field-input" data-action-field="interview_time" type="time" />', { required: true }),
+          actionField('Location / method', '<input class="field-input" data-action-field="location_method" type="text" placeholder="Interview location or method" />', { required: true }),
+          actionField('Interview type', `
+            <select class="field-select" data-action-field="interview_type">
+              <option value="">Select interview type</option>
+              <option value="INITIAL">INITIAL</option>
+              <option value="FOLLOW_UP">FOLLOW_UP</option>
+              <option value="FORMAL">FORMAL</option>
+              <option value="OTHER">OTHER</option>
+            </select>`, { required: true }),
+        ])}
+        ${actionGroup('Recordings and notes (at least one upload required)', [
+          actionField('Recording upload(s)', '<input class="field-input" data-action-field="recordings" type="file" multiple accept="audio/*,video/*,.mp3,.wav,.m4a,.m4v,.mp4,.mov" />', { hint: 'Attach the actual audio or video recording(s) captured for this interview.' }),
+          actionField('Interview notes / document upload(s)', '<input class="field-input" data-action-field="interview_notes_uploads" type="file" multiple accept=".pdf,.doc,.docx,.txt,image/*" />', { hint: 'Attach notes, transcripts, or supporting documents created during the interview.' }),
+        ])}
+        ${actionGroup('Account and outcome', [
+          actionField('Information obtained', '<textarea rows="4" data-action-field="information_obtained" placeholder="What did the person say happened? What did they observe? What did they identify?"></textarea>', { required: true, wide: true }),
+          actionField('Contradictions / inconsistencies', `
+            <select class="field-select" data-action-field="contradictions">
+              <option value="">Select contradiction status</option>
+              <option value="NONE_IDENTIFIED">NONE_IDENTIFIED</option>
+              <option value="IDENTIFIED">IDENTIFIED</option>
+            </select>`, { required: true }),
+          actionField('Contradiction explanation', '<textarea rows="3" data-action-field="contradiction_explanation" placeholder="Explain any contradiction found"></textarea>', { required: true, wide: true, showWhen: { field: 'contradictions', values: ['IDENTIFIED'] } }),
+          actionField('Follow-up lead', `
+            <select class="field-select" data-action-field="follow_up_lead">
+              <option value="">Select</option>
+              <option value="true">YES</option>
+              <option value="false">NO</option>
+            </select>`),
+          actionField('Lead description', '<textarea rows="3" data-action-field="lead_description" placeholder="Describe the follow-up line of inquiry"></textarea>', { required: true, wide: true, showWhen: { field: 'follow_up_lead', values: ['true'] } }),
+          actionField('Outcome', `
+            <select class="field-select" data-action-field="outcome">
+              <option value="">Select outcome</option>
+              <option value="INFORMATION_OBTAINED">INFORMATION_OBTAINED</option>
+              <option value="NO_MATERIAL_INFORMATION">NO_MATERIAL_INFORMATION</option>
+              <option value="PERSON_DISPUTED_ALLEGATION">PERSON_DISPUTED_ALLEGATION</option>
+              <option value="INTERVIEW_UNSUCCESSFUL">INTERVIEW_UNSUCCESSFUL</option>
+              <option value="OTHER">OTHER</option>
+            </select>`, { required: true, wide: true }),
+          actionField('Outcome explanation', '<textarea rows="3" data-action-field="outcome_explanation" placeholder="Explain the unsuccessful or materially limited outcome"></textarea>', { required: true, wide: true, showWhen: { field: 'outcome', values: ['NO_MATERIAL_INFORMATION', 'PERSON_DISPUTED_ALLEGATION', 'INTERVIEW_UNSUCCESSFUL', 'OTHER'] } }),
+        ])}
       `;
     case 'EVIDENCE_REVIEW':
       return `
         ${header}
-        <label class="input-label" style="margin-top:12px; display:block;">Existing evidence to review</label>
-        <select class="field-select" data-action-field="selected_evidence_ids">
-          <option value="">Select case evidence…</option>
-        </select>
-        <label class="input-label" style="margin-top:12px; display:block;">Observation</label>
-        <textarea rows="4" data-action-field="observation" placeholder="What was actually observed?"></textarea>
-        <label class="input-label" style="margin-top:12px; display:block;">Interpretation</label>
-        <textarea rows="4" data-action-field="interpretation" placeholder="What might the observation indicate?"></textarea>
-        <label class="input-label" style="margin-top:12px; display:block;">Unknown / limitation</label>
-        <textarea rows="4" data-action-field="unknown_limitation" placeholder="What does the evidence not establish or leave unresolved?"></textarea>
-        <label class="input-label" style="margin-top:12px; display:block;">Consistency</label>
-        <select class="field-select" data-action-field="consistency">
-          <option value="">Select consistency</option>
-          <option value="SUPPORTS_EXISTING_INFORMATION">SUPPORTS_EXISTING_INFORMATION</option>
-          <option value="CONTRADICTS_EXISTING_INFORMATION">CONTRADICTS_EXISTING_INFORMATION</option>
-          <option value="PROVIDES_NEW_INFORMATION">PROVIDES_NEW_INFORMATION</option>
-          <option value="INCONCLUSIVE">INCONCLUSIVE</option>
-        </select>
+        ${actionGroup('Evidence', [
+          actionField('Existing evidence to review', `
+            <select class="field-select" data-action-field="selected_evidence_ids">
+              <option value="">Select case evidence…</option>
+            </select>`, { required: true, wide: true }),
+        ])}
+        ${actionGroup('Assessment', [
+          actionField('Observation', '<textarea rows="4" data-action-field="observation" placeholder="What was actually observed?"></textarea>', { required: true, wide: true }),
+          actionField('Interpretation', '<textarea rows="4" data-action-field="interpretation" placeholder="What might the observation indicate?"></textarea>', { required: true, wide: true }),
+          actionField('Unknown / limitation', '<textarea rows="4" data-action-field="unknown_limitation" placeholder="What does the evidence not establish or leave unresolved?"></textarea>', { required: true, wide: true }),
+          actionField('Consistency', `
+            <select class="field-select" data-action-field="consistency">
+              <option value="">Select consistency</option>
+              <option value="SUPPORTS_EXISTING_INFORMATION">SUPPORTS_EXISTING_INFORMATION</option>
+              <option value="CONTRADICTS_EXISTING_INFORMATION">CONTRADICTS_EXISTING_INFORMATION</option>
+              <option value="PROVIDES_NEW_INFORMATION">PROVIDES_NEW_INFORMATION</option>
+              <option value="INCONCLUSIVE">INCONCLUSIVE</option>
+            </select>`, { required: true }),
+        ])}
       `;
     case 'EVIDENCE_COLLECTION':
       return `
         ${header}
+        <div class="law-notes">${renderLawNote('ecta_s15')}${renderLawNote('cpa_s212')}</div>
         <div data-evidence-collection-container="true">
           ${renderEvidenceCollectionItemMarkup(0)}
         </div>
@@ -695,82 +742,70 @@ function renderActionFormForType(actionType, actions = []) {
     case 'RECORD_REQUEST':
       return `
         ${header}
-        <label class="input-label" style="margin-top:12px; display:block;">Record type</label>
-        <input class="field-input" data-action-field="record_type" type="text" placeholder="CCTV, medical record, duty roster, etc." />
-        <label class="input-label" style="margin-top:12px; display:block;">Institution / person holding the record</label>
-        <input class="field-input" data-action-field="record_holder" type="text" placeholder="Institution, business, or person" />
-        <label class="input-label" style="margin-top:12px; display:block;">Specific record requested</label>
-        <textarea rows="3" data-action-field="specific_record_requested" placeholder="Describe the document or record being sought"></textarea>
-        <label class="input-label" style="margin-top:12px; display:block;">Relevant date range (from)</label>
-        <input class="field-input" data-action-field="date_range_from" type="date" />
-        <label class="input-label" style="margin-top:12px; display:block;">Relevant date range (to)</label>
-        <input class="field-input" data-action-field="date_range_to" type="date" />
-        <label class="input-label" style="margin-top:12px; display:block;">Reason it is relevant</label>
-        <textarea rows="3" data-action-field="reason_relevant" placeholder="Why is this record significant to the case?"></textarea>
-        <label class="input-label" style="margin-top:12px; display:block;">Date requested</label>
-        <input class="field-input" data-action-field="date_requested" type="date" />
-        <label class="input-label" style="margin-top:12px; display:block;">Request / reference number</label>
-        <input class="field-input" data-action-field="request_reference" type="text" placeholder="Reference or case note number" />
-        <label class="input-label" style="margin-top:12px; display:block;">Request method</label>
-        <select class="field-select" data-action-field="request_method">
-          <option value="">Select request method</option>
-          <option value="EMAIL">EMAIL</option>
-          <option value="PHONE">PHONE</option>
-          <option value="IN_PERSON">IN_PERSON</option>
-          <option value="PORTAL">PORTAL</option>
-          <option value="OTHER">OTHER</option>
-        </select>
-        <label class="input-label" style="margin-top:12px; display:block;">Response</label>
-        <select class="field-select" data-action-field="response">
-          <option value="">Select response</option>
-          <option value="RECEIVED">RECEIVED</option>
-          <option value="PARTIALLY_RECEIVED">PARTIALLY_RECEIVED</option>
-          <option value="NO_RESPONSE">NO_RESPONSE</option>
-          <option value="REFUSED">REFUSED</option>
-          <option value="UNAVAILABLE">UNAVAILABLE</option>
-          <option value="PENDING">PENDING</option>
-        </select>
-        <label class="input-label" style="margin-top:12px; display:block;">Explanation</label>
-        <textarea rows="3" data-action-field="response_explanation" placeholder="Explain a no-response, refusal, or unavailable outcome"></textarea>
-        <label class="input-label" style="margin-top:12px; display:block;">Uploaded response records</label>
-        <input class="field-input" data-action-field="uploaded_records" type="file" multiple accept=".pdf,.doc,.docx,.txt,image/*" />
+        <div class="law-notes">${renderLawNote('paia')}</div>
+        ${actionGroup('Record', [
+          actionField('Record type', '<input class="field-input" data-action-field="record_type" type="text" placeholder="CCTV, medical record, duty roster, etc." />', { required: true }),
+          actionField('Institution / person holding the record', '<input class="field-input" data-action-field="record_holder" type="text" placeholder="Institution, business, or person" />', { required: true }),
+          actionField('Specific record requested', '<textarea rows="3" data-action-field="specific_record_requested" placeholder="Describe the document or record being sought"></textarea>', { required: true, wide: true }),
+          actionField('Relevant date range (from)', '<input class="field-input" data-action-field="date_range_from" type="date" />', { required: true }),
+          actionField('Relevant date range (to)', '<input class="field-input" data-action-field="date_range_to" type="date" />'),
+          actionField('Reason it is relevant', '<textarea rows="3" data-action-field="reason_relevant" placeholder="Why is this record significant to the case?"></textarea>', { required: true, wide: true }),
+        ])}
+        ${actionGroup('Request', [
+          actionField('Date requested', '<input class="field-input" data-action-field="date_requested" type="date" />', { required: true }),
+          actionField('Request / reference number', '<input class="field-input" data-action-field="request_reference" type="text" placeholder="Reference or case note number" />', { required: true }),
+          actionField('Request method', `
+            <select class="field-select" data-action-field="request_method">
+              <option value="">Select request method</option>
+              <option value="EMAIL">EMAIL</option>
+              <option value="PHONE">PHONE</option>
+              <option value="IN_PERSON">IN_PERSON</option>
+              <option value="PORTAL">PORTAL</option>
+              <option value="OTHER">OTHER</option>
+            </select>`, { required: true }),
+        ])}
+        ${actionGroup('Response', [
+          actionField('Response', `
+            <select class="field-select" data-action-field="response">
+              <option value="">Select response</option>
+              <option value="RECEIVED">RECEIVED</option>
+              <option value="PARTIALLY_RECEIVED">PARTIALLY_RECEIVED</option>
+              <option value="NO_RESPONSE">NO_RESPONSE</option>
+              <option value="REFUSED">REFUSED</option>
+              <option value="UNAVAILABLE">UNAVAILABLE</option>
+              <option value="PENDING">PENDING</option>
+            </select>`, { required: true }),
+          actionField('Explanation', '<textarea rows="3" data-action-field="response_explanation" placeholder="Explain a no-response, refusal, or unavailable outcome"></textarea>', { required: true, wide: true, showWhen: { field: 'response', values: ['NO_RESPONSE', 'REFUSED', 'UNAVAILABLE'] } }),
+          actionField('Uploaded response records', '<input class="field-input" data-action-field="uploaded_records" type="file" multiple accept=".pdf,.doc,.docx,.txt,image/*" />', { wide: true }),
+        ])}
       `;
     case 'SCENE_REVIEW':
       return `
         ${header}
-        <label class="input-label" style="margin-top:12px; display:block;">Location</label>
-        <input class="field-input" data-action-field="location" type="text" placeholder="Scene location" />
-        <label class="input-label" style="margin-top:12px; display:block;">Date</label>
-        <input class="field-input" data-action-field="scene_date" type="date" />
-        <label class="input-label" style="margin-top:12px; display:block;">Time</label>
-        <input class="field-input" data-action-field="scene_time" type="time" />
-        <label class="input-label" style="margin-top:12px; display:block;">Persons present</label>
-        <input class="field-input" data-action-field="persons_present" type="text" placeholder="Who was present at the scene?" />
-        <label class="input-label" style="margin-top:12px; display:block;">Scene condition</label>
-        <textarea rows="3" data-action-field="scene_condition" placeholder="Describe the scene condition"></textarea>
-        <label class="input-label" style="margin-top:12px; display:block;">Observations</label>
-        <textarea rows="3" data-action-field="observations" placeholder="What was observed?"></textarea>
-        <label class="input-label" style="margin-top:12px; display:block;">Consistent with the reported incident</label>
-        <textarea rows="3" data-action-field="consistent_with_incident" placeholder="What was consistent with the reported incident?"></textarea>
-        <label class="input-label" style="margin-top:12px; display:block;">What differed</label>
-        <textarea rows="3" data-action-field="differed" placeholder="What differed from the report or expectation?"></textarea>
-        <label class="input-label" style="margin-top:12px; display:block;">What could not be established</label>
-        <textarea rows="3" data-action-field="not_established" placeholder="What could not be established or confirmed?"></textarea>
-        <label class="input-label" style="margin-top:12px; display:block;">Scene material</label>
-        <input class="field-input" data-action-field="scene_material" type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx,.mp4,.mov" />
-        <p class="field-hint">Attach photographs, video stills, plan diagrams, or scene documentation collected during the review.</p>
-        <label class="input-label" style="margin-top:12px; display:block;">Visibility</label>
-        <input class="field-input" data-action-field="visibility" type="text" placeholder="Visibility" />
-        <label class="input-label" style="margin-top:12px; display:block;">Lighting</label>
-        <input class="field-input" data-action-field="lighting" type="text" placeholder="Lighting conditions" />
-        <label class="input-label" style="margin-top:12px; display:block;">Access points</label>
-        <input class="field-input" data-action-field="access_points" type="text" placeholder="Access points or entry routes" />
-        <label class="input-label" style="margin-top:12px; display:block;">Distances</label>
-        <input class="field-input" data-action-field="distances" type="text" placeholder="Distances or positioning" />
-        <label class="input-label" style="margin-top:12px; display:block;">Obstructions</label>
-        <input class="field-input" data-action-field="obstructions" type="text" placeholder="Obstructions or barriers" />
-        <label class="input-label" style="margin-top:12px; display:block;">Limitations</label>
-        <textarea rows="3" data-action-field="limitations" placeholder="What could not be assessed and why?"></textarea>
+        ${actionGroup('Scene visit', [
+          actionField('Location', '<input class="field-input" data-action-field="location" type="text" placeholder="Scene location" />', { required: true, wide: true }),
+          actionField('Date', '<input class="field-input" data-action-field="scene_date" type="date" />', { required: true }),
+          actionField('Time', '<input class="field-input" data-action-field="scene_time" type="time" />', { required: true }),
+          actionField('Persons present', '<input class="field-input" data-action-field="persons_present" type="text" placeholder="Who was present at the scene?" />', { required: true, wide: true }),
+        ])}
+        ${actionGroup('Observations', [
+          actionField('Scene condition', '<textarea rows="3" data-action-field="scene_condition" placeholder="Describe the scene condition"></textarea>', { required: true, wide: true }),
+          actionField('Observations', '<textarea rows="3" data-action-field="observations" placeholder="What was observed?"></textarea>', { required: true, wide: true }),
+          actionField('Consistent with the reported incident', '<textarea rows="3" data-action-field="consistent_with_incident" placeholder="What was consistent with the reported incident?"></textarea>', { required: true }),
+          actionField('What differed', '<textarea rows="3" data-action-field="differed" placeholder="What differed from the report or expectation?"></textarea>', { required: true }),
+          actionField('What could not be established', '<textarea rows="3" data-action-field="not_established" placeholder="What could not be established or confirmed?"></textarea>', { required: true, wide: true }),
+        ])}
+        ${actionGroup('Scene material', [
+          actionField('Scene material', '<input class="field-input" data-action-field="scene_material" type="file" multiple accept="image/*,video/*,.pdf,.doc,.docx,.mp4,.mov" />', { wide: true, hint: 'Attach photographs, video stills, plan diagrams, or scene documentation collected during the review.' }),
+        ])}
+        ${actionGroup('Conditions', [
+          actionField('Visibility', '<input class="field-input" data-action-field="visibility" type="text" placeholder="Visibility" />', { required: true }),
+          actionField('Lighting', '<input class="field-input" data-action-field="lighting" type="text" placeholder="Lighting conditions" />', { required: true }),
+          actionField('Access points', '<input class="field-input" data-action-field="access_points" type="text" placeholder="Access points or entry routes" />', { required: true }),
+          actionField('Distances', '<input class="field-input" data-action-field="distances" type="text" placeholder="Distances or positioning" />', { required: true }),
+          actionField('Obstructions', '<input class="field-input" data-action-field="obstructions" type="text" placeholder="Obstructions or barriers" />', { required: true }),
+          actionField('Limitations', '<textarea rows="3" data-action-field="limitations" placeholder="What could not be assessed and why?"></textarea>', { required: true, wide: true }),
+        ])}
       `;
     default:
       return '<div class="empty-state">No action-specific form is currently configured for this required action.</div>';
@@ -1098,9 +1133,9 @@ function renderInvestigationOrder(container, actions = [], evidenceItems = []) {
         : `${isCompleted ? 'Add another' : 'Complete'} ${actionLabel}`;
       const buttonClass = 'primary-btn';
       return `
-        <article class="mini-case-card">
+        <article class="mini-case-card${isCompleted ? ' is-complete' : ''}">
           <div class="stack-row" style="justify-content:space-between; align-items:center;">
-            <strong>${escapeHtml(actionLabel)}</strong>
+            <strong class="required-action-title">${escapeHtml(actionLabel)}</strong>
             <span class="${badgeClass}">${escapeHtml(statusText)}</span>
           </div>
           <p class="field-hint">Status: ${escapeHtml(statusText)}</p>
@@ -1132,6 +1167,7 @@ function renderInvestigationOrder(container, actions = [], evidenceItems = []) {
           bindEvidenceCollectionControls(fields);
         }
         populateActionFormOptions(actionType, evidenceItems, fields);
+        bindActionFormConditionals(fields);
       }
       modal.dataset.viewMode = 'edit';
       if (modalContext) {
@@ -1549,6 +1585,7 @@ function bindActionModal(investigationId, evidenceItems = [], { onSaved, actions
         bindEvidenceCollectionControls(actionFields);
       }
       populateActionFormOptions(selectedActionType, evidenceItems, actionFields);
+      bindActionFormConditionals(actionFields);
     }
     if (modalContext) {
       const actionLabel = formatRequiredActionLabel(selectedActionType);
@@ -2120,6 +2157,13 @@ export async function hydrateDetectiveCase() {
         ? 'Investigation is complete.'
         : (investigation ? 'Investigation is active.' : 'Investigation has not started.');
     }
+    const investigationCompleted = Boolean(investigation) && String(investigation.status || '').toUpperCase() === 'COMPLETED';
+    document.getElementById('detectiveFinalReasoningPanel')?.classList.toggle('is-complete', investigationCompleted);
+    if (investigationCompleted) {
+      // Finished investigation work starts collapsed; the outcome under Final Reasoning stays open.
+      ['detectiveInvestigationActions', 'detectiveFindingsPanel', 'caseFactsVerificationPanel']
+        .forEach((panelId) => setCollapsibleExpanded(document.getElementById(panelId), false));
+    }
     if (investigationPanels) {
       investigationPanels.classList.toggle('hidden', !investigation);
     }
@@ -2195,6 +2239,7 @@ export async function hydrateDetectiveCase() {
       const isCaseFactsStage = String((procedureState.current_stage || 'CASE_REVIEW')).toUpperCase() === 'CASE_FACTS_VERIFICATION';
       caseFactsPanel.classList.toggle('hidden', !investigation && !isCaseFactsStage);
       caseFactsStatusBadge.textContent = isCaseFactsStage ? 'Pending' : (factsRecord.verified ? 'Verified' : 'Open');
+      caseFactsPanel.classList.toggle('is-complete', Boolean(factsRecord.verified));
     }
 
     if (caseFactsComparisonResults) {

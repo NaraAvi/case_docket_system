@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% from 'components/_timeline.html' import timeline_skeleton %}
 {% from 'components/_evidence_table.html' import evidence_table_skeleton %}
-{% from 'components/_statutory_badge.html' import statutory_badge %}
+{% from 'components/_statutory_badge.html' import statutory_badge, law_note %}
 
 {% block content %}
   <section class="detail-shell">
@@ -35,79 +35,83 @@
       </div>
     </div>
 
-    <div id="constableDocketContent">
-      <div class="detail-grid">
-        <div class="detail-card">
-          <h3>Citizen Submission</h3>
-          <dl class="meta-list" id="constableCaseMeta">
-            <dt>Title</dt><dd>Loading…</dd>
-            <dt>Location</dt><dd>Loading…</dd>
-            <dt>Incident Date</dt><dd>Loading…</dd>
-            <dt>Status</dt><dd>Loading…</dd>
-          </dl>
-          <div class="stack-list" style="margin-top:14px;" id="constableStatementsList">
-            <p>Loading statements…</p>
-          </div>
-          <div class="stack-list" style="margin-top:14px;" id="constableProtectedSource">
-            <p>Loading protected source details…</p>
-          </div>
-          <div class="stack-list" style="margin-top:14px;" id="constableSourceProvenance">
-            <p>Loading source provenance…</p>
+    <div id="constableDocketContent" class="stack-cards">
+      <div class="detail-card">
+        <h3>Citizen Submission</h3>
+        <div class="law-notes">{{ law_note('constitution_s14') }}{{ law_note('popia_s11') }}</div>
+        <dl class="meta-list" id="constableCaseMeta">
+          <dt>Title</dt><dd>Loading…</dd>
+          <dt>Location</dt><dd>Loading…</dd>
+          <dt>Incident Date</dt><dd>Loading…</dd>
+          <dt>Status</dt><dd>Loading…</dd>
+        </dl>
+        <div class="stack-list" style="margin-top:14px;" id="constableStatementsList">
+          <p>Loading statements…</p>
+        </div>
+        <div class="stack-list" style="margin-top:14px;" id="constableProtectedSource">
+          <p>Loading protected source details…</p>
+        </div>
+        <div class="stack-list" style="margin-top:14px;" id="constableSourceProvenance">
+          <p>Loading source provenance…</p>
+        </div>
+      </div>
+
+      <div class="detail-card">
+        <h3>Potential Invalidity Flags {{ law_note('paja_s3') }}</h3>
+        <div class="stack-list" id="constableFlagList">
+          <div class="empty-state">Loading flags…</div>
+        </div>
+        <div class="stack-list" style="margin-top:16px;" id="constableProceduralAssessment">
+          <div class="empty-state">Loading procedural assessment…</div>
+        </div>
+        <div class="stack-row" style="margin-top:16px;">
+          <button class="primary-btn" type="button" id="continueToInterview">Continue to Interview</button>
+        </div>
+      </div>
+
+      <div class="cards-grid">
+        <div class="panel-card" data-collapsible>
+          <div class="card-head" data-collapsible-head><h3>Evidence</h3></div>
+          <div data-collapsible-body>
+            <div class="law-notes">{{ law_note('cpa_s212') }}{{ law_note('ecta_s15') }}</div>
+            {{ evidence_table_skeleton('constableCaseEvidence') }}
           </div>
         </div>
 
-        <div class="detail-card">
-          <h3>Potential Invalidity Flags {{ statutory_badge('PAJA §3', 'Every administrative status change requires a recorded justification.') }}</h3>
-          <div class="stack-list" id="constableFlagList">
-            <div class="empty-state">Loading flags…</div>
-          </div>
-          <div class="stack-list" style="margin-top:16px;" id="constableProceduralAssessment">
-            <div class="empty-state">Loading procedural assessment…</div>
-          </div>
-          <div class="stack-row" style="margin-top:16px;">
-            <button class="primary-btn" type="button" id="continueToInterview">Continue to Interview</button>
+        <div class="panel-card" data-collapsible>
+          <div class="card-head" data-collapsible-head><h3>Related Cases</h3></div>
+          <div data-collapsible-body>
+            <div class="statement-box" id="constableRelatedCases">
+              <p>Loading related case links…</p>
+            </div>
+            <label class="input-label" style="margin-top:12px; display:block;">Link Another Docket</label>
+            <input id="relatedCaseReference" type="text" placeholder="Case reference (e.g. CD-20260101-000001)" style="margin-bottom:8px;" />
+            <textarea id="relatedCaseNotes" rows="2" placeholder="Notes (optional)"></textarea>
+            <p class="inline-error hidden" id="relatedCaseError"></p>
+            <button class="secondary-btn" type="button" id="addRelatedCaseBtn" style="margin-top:8px;">Link Case</button>
           </div>
         </div>
       </div>
 
-      <div class="cards-grid" style="margin-top:18px;">
-        <div class="panel-card">
-          <h3>Evidence</h3>
-          {{ evidence_table_skeleton('constableCaseEvidence') }}
+      <div class="panel-card wide-card hidden" id="constableInterviewPanel">
+        <h3>Interview & Recording</h3>
+        <div class="statement-box" id="constableInterviewStatus">
+          <p>Loading interview status…</p>
         </div>
-
-        <div class="panel-card">
-          <h3>Related Cases</h3>
-          <div class="statement-box" id="constableRelatedCases">
-            <p>Loading related case links…</p>
-          </div>
-          <label class="input-label" style="margin-top:12px; display:block;">Link Another Docket</label>
-          <input id="relatedCaseReference" type="text" placeholder="Case reference (e.g. CD-20260101-000001)" style="margin-bottom:8px;" />
-          <textarea id="relatedCaseNotes" rows="2" placeholder="Notes (optional)"></textarea>
-          <p class="inline-error hidden" id="relatedCaseError"></p>
-          <button class="secondary-btn" type="button" id="addRelatedCaseBtn" style="margin-top:8px;">Link Case</button>
+        <div class="file-input-row" style="margin-top:14px;">
+          <label class="input-label">Recording File</label>
+          <input type="file" id="constableRecordingFile" accept="audio/*,video/*" />
+          <p class="file-name-preview hidden" id="constableRecordingFilePreview"></p>
         </div>
-
-        <div class="panel-card wide-card hidden" id="constableInterviewPanel">
-          <h3>Interview & Recording</h3>
-          <div class="statement-box" id="constableInterviewStatus">
-            <p>Loading interview status…</p>
-          </div>
-          <div class="file-input-row" style="margin-top:14px;">
-            <label class="input-label">Recording File</label>
-            <input type="file" id="constableRecordingFile" accept="audio/*,video/*" />
-            <p class="file-name-preview hidden" id="constableRecordingFilePreview"></p>
-          </div>
-          <div class="stack-row" style="justify-content:flex-end; margin-top:10px;">
-            <button class="secondary-btn" type="button" id="submitConstableRecording">Submit My Recording</button>
-          </div>
-          <p class="inline-error hidden" id="constableRecordingError"></p>
-          <div class="statement-box" style="margin-top:16px;" id="constableRecordingComparison">
-            <p>Loading recording comparison…</p>
-          </div>
-          <div class="stack-row" style="margin-top:16px; justify-content:flex-end;">
-            <button class="primary-btn" type="button" id="registerDocketBtn" disabled>Register Docket</button>
-          </div>
+        <div class="stack-row" style="justify-content:flex-end; margin-top:10px;">
+          <button class="secondary-btn" type="button" id="submitConstableRecording">Submit My Recording</button>
+        </div>
+        <p class="inline-error hidden" id="constableRecordingError"></p>
+        <div class="statement-box" style="margin-top:16px;" id="constableRecordingComparison">
+          <p>Loading recording comparison…</p>
+        </div>
+        <div class="stack-row" style="margin-top:16px; justify-content:flex-end;">
+          <button class="primary-btn" type="button" id="registerDocketBtn" disabled>Register Docket</button>
         </div>
       </div>
     </div>

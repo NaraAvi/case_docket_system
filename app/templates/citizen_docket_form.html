@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from 'components/_statutory_badge.html' import law_note %}
 
 {% block content %}
   <section class="file-step-shell">
@@ -9,11 +10,13 @@
     </div>
 
     <div class="wizard-card" id="citizenSubmissionForm">
-      <div class="section-block">
+      <p class="form-legend">Each section turns green once its key questions are answered. You can still submit with sections left incomplete.</p>
+      <div class="section-block" data-form-section="1">
         <h3>1. About You</h3>
+        <div class="law-notes">{{ law_note('constitution_s14') }}</div>
         <div class="wizard-row">
           <label for="reporterRelationship">Your relationship to the matter</label>
-          <select id="reporterRelationship">
+          <select id="reporterRelationship" data-required>
             <option value="">Select</option>
             <option value="victim">Victim</option>
             <option value="witness">Witness</option>
@@ -25,11 +28,12 @@
         </div>
         <div class="wizard-row hidden" id="reporterRelationshipOtherWrap">
           <label for="reporterRelationshipOther">Describe the relationship</label>
-          <input id="reporterRelationshipOther" type="text" placeholder="e.g. family member, neighbour, community observer" />
+          <input id="reporterRelationshipOther" type="text" placeholder="e.g. family member, neighbour, community observer" data-required />
         </div>
         <div class="wizard-row">
           <label for="canContact">Do you consent to contact about this report?</label>
-          <select id="canContact">
+          {{ law_note('popia_s11') }}
+          <select id="canContact" data-required>
             <option value="">Select</option>
             <option value="Yes">Yes</option>
             <option value="No">No</option>
@@ -44,23 +48,59 @@
             <option value="Email">Email</option>
             <option value="SMS">SMS</option>
           </select>
-          <div class="stack-row">
-            <input id="contactPhone" type="tel" placeholder="Phone number" />
-            <input id="contactEmail" type="email" placeholder="Email address" />
-            <input id="contactSms" type="text" placeholder="SMS / messaging" />
+          <p class="field-hint">Fill in at least one way to reach you.</p>
+          <div class="contact-lines" id="contactLines" data-required-any>
+            <div class="contact-line contact-line-phone">
+              <label class="contact-line-label" for="contactPhone">Phone</label>
+              <div class="phone-combo">
+                <select id="contactPhoneCountry" aria-label="Phone country code">
+                  <option value="+27" selected>ZA +27</option>
+                  <option value="+267">BW +267</option>
+                  <option value="+266">LS +266</option>
+                  <option value="+258">MZ +258</option>
+                  <option value="+264">NA +264</option>
+                  <option value="+268">SZ +268</option>
+                  <option value="+263">ZW +263</option>
+                  <option value="+260">ZM +260</option>
+                  <option value="+265">MW +265</option>
+                  <option value="+254">KE +254</option>
+                  <option value="+234">NG +234</option>
+                  <option value="+44">GB +44</option>
+                  <option value="+1">US/CA +1</option>
+                  <option value="+61">AU +61</option>
+                  <option value="+91">IN +91</option>
+                  <option value="+49">DE +49</option>
+                  <option value="+351">PT +351</option>
+                  <option value="+86">CN +86</option>
+                </select>
+                <input id="contactPhone" type="tel" placeholder="Phone number" />
+              </div>
+            </div>
+            <div class="contact-line contact-line-email">
+              <label class="contact-line-label" for="contactEmail">Email</label>
+              <div class="email-combo">
+                <input id="contactEmail" type="text" inputmode="email" placeholder="Email name" aria-label="Email address, part before the @" />
+                <span class="email-at" aria-hidden="true">@</span>
+                <input id="contactEmailDomain" type="text" inputmode="email" placeholder="domain.co.za" aria-label="Email address, domain after the @" />
+              </div>
+            </div>
+            <div class="contact-line contact-line-sms">
+              <label class="contact-line-label" for="contactSms">SMS / messaging</label>
+              <input id="contactSms" type="text" placeholder="SMS / messaging" />
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="section-block">
+      <div class="section-block" data-form-section="2">
         <h3>2. Incident Details</h3>
         <div class="wizard-row">
           <label for="crimeType">Submission title</label>
-          <input id="crimeType" type="text" placeholder="e.g. Unsafe gate / broken streetlight" />
+          <input id="crimeType" type="text" placeholder="e.g. Unsafe gate / broken streetlight" data-required />
         </div>
         <div class="wizard-row">
           <label for="incidentType">Incident type</label>
-          <select id="incidentType">
+          <select id="incidentType" data-required>
             <option value="">Select</option>
             <option value="public_safety_hazard">Public safety hazard</option>
             <option value="officer_conduct">Officer conduct</option>
@@ -71,13 +111,15 @@
             <option value="other">Other</option>
           </select>
         </div>
+        <div class="law-notes hidden" data-incident-law="harassment">{{ law_note('harassment_act') }}{{ law_note('domestic_violence_act') }}</div>
+        <div class="law-notes hidden" data-incident-law="officer_conduct">{{ law_note('ipid_s28') }}{{ law_note('saps_act') }}</div>
         <div class="wizard-row hidden" id="incidentTypeOtherWrap">
           <label for="incidentTypeOther">Describe the incident type</label>
-          <input id="incidentTypeOther" type="text" placeholder="e.g. unsafe detention environment" />
+          <input id="incidentTypeOther" type="text" placeholder="e.g. unsafe detention environment" data-required />
         </div>
         <div class="wizard-row">
           <label for="dateCertainty">When did this happen?</label>
-          <select id="dateCertainty">
+          <select id="dateCertainty" data-required>
             <option value="">Select</option>
             <option value="exact">Exact date and time</option>
             <option value="approximate">Approximate date</option>
@@ -86,19 +128,19 @@
         </div>
         <div class="wizard-row hidden" id="exactDateWrap">
           <label for="incidentDate">Exact date</label>
-          <input id="incidentDate" type="date" />
+          <input id="incidentDate" type="date" data-required />
         </div>
         <div class="wizard-row hidden" id="approximateDateWrap">
           <label for="approximateDate">Approximate date or period</label>
-          <input id="approximateDate" type="text" placeholder="e.g. early January 2026" />
+          <input id="approximateDate" type="text" placeholder="e.g. early January 2026" data-required />
         </div>
         <div class="wizard-row hidden" id="unknownDateWrap">
           <label for="dateUnknownReason">Why the date is not known</label>
-          <textarea id="dateUnknownReason" rows="2" placeholder="Describe what makes the date uncertain."></textarea>
+          <textarea id="dateUnknownReason" rows="2" placeholder="Describe what makes the date uncertain." data-required></textarea>
         </div>
         <div class="wizard-row">
           <label for="locationKnown">Do you know the location?</label>
-          <select id="locationKnown">
+          <select id="locationKnown" data-required>
             <option value="">Select</option>
             <option value="Yes">Yes</option>
             <option value="No">No</option>
@@ -107,7 +149,7 @@
         </div>
         <div class="wizard-row hidden" id="locationKnownFields">
           <label for="incidentLocation">Location details</label>
-          <input id="incidentLocation" type="text" placeholder="e.g. 123 Main St, Springfield Sector 4" />
+          <input id="incidentLocation" type="text" placeholder="e.g. 123 Main St, Springfield Sector 4" data-required />
         </div>
         <div class="wizard-row hidden" id="policeFacilityWrap">
           <label for="policeFacility">Police station or facility</label>
@@ -115,7 +157,7 @@
         </div>
         <div class="wizard-row">
           <label for="description">Summary of what happened</label>
-          <textarea id="description" rows="5" placeholder="Describe the facts clearly so the backend review process can classify the incident and decide whether any procedural case may be created."></textarea>
+          <textarea id="description" rows="5" placeholder="Describe the facts clearly so the backend review process can classify the incident and decide whether any procedural case may be created." data-required></textarea>
         </div>
         <div class="wizard-row">
           <label for="beforeIncident">What happened before the event?</label>
@@ -127,11 +169,11 @@
         </div>
       </div>
 
-      <div class="section-block">
+      <div class="section-block" data-form-section="3">
         <h3>3. People Involved</h3>
         <div class="wizard-row">
           <label for="otherPeopleInvolved">Were other people involved?</label>
-          <select id="otherPeopleInvolved">
+          <select id="otherPeopleInvolved" data-required>
             <option value="">Select</option>
             <option value="Yes">Yes</option>
             <option value="No">No</option>
@@ -140,7 +182,7 @@
         </div>
         <div class="wizard-row hidden" id="personCountWrap">
           <label for="peopleCount">Approximate number of people involved</label>
-          <select id="peopleCount">
+          <select id="peopleCount" data-required>
             <option value="">Select</option>
             <option value="1">1</option>
             <option value="2">2</option>
@@ -152,11 +194,11 @@
         </div>
       </div>
 
-      <div class="section-block">
+      <div class="section-block" data-form-section="4">
         <h3>4. Harm, Injury and Impact</h3>
         <div class="wizard-row">
           <label for="wasAnyoneHarmed">Was anyone harmed or at risk?</label>
-          <select id="wasAnyoneHarmed">
+          <select id="wasAnyoneHarmed" data-required>
             <option value="">Select</option>
             <option value="Yes">Yes</option>
             <option value="No">No</option>
@@ -165,7 +207,8 @@
         </div>
         <div class="wizard-row hidden" id="harmFields">
           <label>Harm or risk type</label>
-          <div class="checkbox-grid">
+          <div class="law-notes">{{ law_note('harassment_act') }}{{ law_note('domestic_violence_act') }}</div>
+          <div class="checkbox-grid" data-required-group>
             <label><input type="checkbox" name="harmType" value="physical" /> Physical</label>
             <label><input type="checkbox" name="harmType" value="psychological" /> Psychological</label>
             <label><input type="checkbox" name="harmType" value="financial" /> Financial</label>
@@ -176,11 +219,12 @@
         </div>
         <div class="wizard-row hidden" id="harmFieldsText">
           <label for="harmImpact">Describe the harm or risk</label>
-          <textarea id="harmImpact" rows="3" placeholder="Describe injury, distress, loss, danger or other impact."></textarea>
+          <textarea id="harmImpact" rows="3" placeholder="Describe injury, distress, loss, danger or other impact." data-required></textarea>
         </div>
-        <div class="wizard-row">
+        {# Set automatically from "Was anyone harmed or at risk?" (citizen.js syncHarm); kept for the unchanged was_anyone_injured payload key. #}
+        <div class="wizard-row hidden" id="wasAnyoneInjuredWrap" aria-hidden="true">
           <label for="wasAnyoneInjured">Was anyone injured?</label>
-          <select id="wasAnyoneInjured">
+          <select id="wasAnyoneInjured" tabindex="-1">
             <option value="">Select</option>
             <option value="Yes">Yes</option>
             <option value="No">No</option>
@@ -189,7 +233,7 @@
         </div>
         <div class="wizard-row hidden" id="injuryFields">
           <label>Type of injury</label>
-          <div class="checkbox-grid">
+          <div class="checkbox-grid" data-required-group>
             <label><input type="checkbox" name="injuryType" value="minor" /> Minor</label>
             <label><input type="checkbox" name="injuryType" value="serious" /> Serious</label>
             <label><input type="checkbox" name="injuryType" value="emergency" /> Emergency / urgent</label>
@@ -197,7 +241,7 @@
           </div>
           <div class="wizard-row">
             <label for="injuryPersonType">Who was injured?</label>
-            <select id="injuryPersonType">
+            <select id="injuryPersonType" data-required>
               <option value="">Select</option>
               <option value="affected_person">Affected person</option>
               <option value="witness">Witness</option>
@@ -209,11 +253,11 @@
           </div>
           <div class="wizard-row hidden" id="injuryPersonOtherWrap">
             <label for="injuryPersonOther">Who was injured? — please describe</label>
-            <input id="injuryPersonOther" type="text" placeholder="Please describe who was injured" />
+            <input id="injuryPersonOther" type="text" placeholder="Please describe who was injured" data-required />
           </div>
           <div class="wizard-row">
             <label for="medicalAttention">Medical attention required?</label>
-            <select id="medicalAttention">
+            <select id="medicalAttention" data-required>
               <option value="">Select</option>
               <option value="Yes">Yes</option>
               <option value="No">No</option>
@@ -231,7 +275,7 @@
         </div>
         <div class="wizard-row">
           <label for="propertyImpactQuestion">Was there property or financial impact?</label>
-          <select id="propertyImpactQuestion">
+          <select id="propertyImpactQuestion" data-required>
             <option value="">Select</option>
             <option value="Yes">Yes</option>
             <option value="No">No</option>
@@ -240,7 +284,7 @@
         </div>
         <div class="wizard-row hidden" id="propertyFields">
           <label>Property type</label>
-          <div class="checkbox-grid">
+          <div class="checkbox-grid" data-required-group>
             <label><input type="checkbox" name="propertyType" value="vehicle" /> Vehicle</label>
             <label><input type="checkbox" name="propertyType" value="personal_belonging" /> Personal belonging</label>
             <label><input type="checkbox" name="propertyType" value="business" /> Business property</label>
@@ -256,16 +300,16 @@
           </div>
           <div class="wizard-row">
             <label for="propertyImpact">Property or financial impact</label>
-            <textarea id="propertyImpact" rows="3" placeholder="Describe property damage, loss or financial consequence."></textarea>
+            <textarea id="propertyImpact" rows="3" placeholder="Describe property damage, loss or financial consequence." data-required></textarea>
           </div>
         </div>
       </div>
 
-      <div class="section-block">
+      <div class="section-block" data-form-section="5">
         <h3>5. Evidence and Prior Reports</h3>
         <div class="wizard-row">
           <label for="evidenceAvailable">Do you have evidence?</label>
-          <select id="evidenceAvailable">
+          <select id="evidenceAvailable" data-required>
             <option value="">Select</option>
             <option value="Yes">Yes</option>
             <option value="No">No</option>
@@ -274,7 +318,8 @@
         </div>
         <div class="wizard-row hidden" id="evidenceFields">
           <label>Evidence type</label>
-          <div class="checkbox-grid">
+          {{ law_note('ecta_s15') }}
+          <div class="checkbox-grid" data-required-group>
             <label><input type="checkbox" name="evidenceType" value="photo" /> Photo</label>
             <label><input type="checkbox" name="evidenceType" value="video" /> Video</label>
             <label><input type="checkbox" name="evidenceType" value="audio" /> Audio</label>
@@ -284,12 +329,12 @@
           </div>
           <div class="wizard-row">
             <label for="evidenceSummary">Evidence description</label>
-            <textarea id="evidenceSummary" rows="3" placeholder="List photos, recordings, documents or physical items available."></textarea>
+            <textarea id="evidenceSummary" rows="3" placeholder="List photos, recordings, documents or physical items available." data-required></textarea>
           </div>
         </div>
         <div class="wizard-row">
           <label for="previousReportQuestion">Is this related to a previous report?</label>
-          <select id="previousReportQuestion">
+          <select id="previousReportQuestion" data-required>
             <option value="">Select</option>
             <option value="Yes">Yes</option>
             <option value="No">No</option>
@@ -298,7 +343,7 @@
         </div>
         <div class="wizard-row hidden" id="previousReportFields">
           <label for="previousReportType">Previous report type</label>
-          <input id="previousReportType" type="text" placeholder="e.g. prior complaint, verbal report, case reference" />
+          <input id="previousReportType" type="text" placeholder="e.g. prior complaint, verbal report, case reference" data-required />
           <label for="previousReportReference">Reference or case number</label>
           <input id="previousReportReference" type="text" placeholder="If applicable, provide the reference" />
           <label for="previousReportDate">Approximate date of previous report</label>
@@ -308,7 +353,7 @@
         </div>
         <div class="wizard-row">
           <label for="currentSafetyQuestion">Is there an immediate safety concern?</label>
-          <select id="currentSafetyQuestion">
+          <select id="currentSafetyQuestion" data-required>
             <option value="">Select</option>
             <option value="Yes">Yes</option>
             <option value="No">No</option>
@@ -324,7 +369,7 @@
             <label><input type="checkbox" name="currentRiskType" value="medical" /> Medical urgency</label>
           </div>
           <label for="currentSafetySummary">Explain the risk or safety need</label>
-          <textarea id="currentSafetySummary" rows="3" placeholder="Describe immediate safety concerns, support requested or urgent action needed."></textarea>
+          <textarea id="currentSafetySummary" rows="3" placeholder="Describe immediate safety concerns, support requested or urgent action needed." data-required></textarea>
         </div>
       </div>
 

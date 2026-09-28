@@ -5,49 +5,69 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{ page_title or 'PDAS' }}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/pdas.css') }}" />
+    <script>
+      // Apply the remembered sidebar state before first paint (core/ui.js::bindNavToggle owns the toggle).
+      try { if (localStorage.getItem('pdasNavCollapsed') === '1') { document.documentElement.classList.add('nav-collapsed'); } } catch (error) {}
+    </script>
   </head>
   <body data-role="{{ role or '' }}" data-page="{{ page_title or '' }}">
-    {% macro nav_link(href, label) %}
-      <a class="nav-item{{ ' active' if request.path == href or (href != '/' and request.path.startswith(href ~ '/')) else '' }}" href="{{ href }}">{{ label }}</a>
+    {% macro nav_icon(name) %}
+      <span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        {% if name == 'dashboard' %}<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>
+        {% elif name == 'new' %}<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 8v8M8 12h8"/>
+        {% elif name == 'cases' %}<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+        {% elif name == 'vault' %}<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>
+        {% elif name == 'accountability' %}<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/>
+        {% elif name == 'logout' %}<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>
+        {% endif %}
+      </svg></span>
+    {% endmacro %}
+    {% macro nav_link(href, label, short_label, icon) %}
+      <a class="nav-item{{ ' active' if request.path == href or (href != '/' and request.path.startswith(href ~ '/')) else '' }}" href="{{ href }}" title="{{ label }}">{{ nav_icon(icon) }}<span class="nav-label">{{ label }}</span><span class="nav-short" aria-hidden="true">{{ short_label }}</span></a>
     {% endmacro %}
 
     {% if role %}
       <div class="pdas-shell">
-        <aside class="pdas-sidebar">
-          <div class="brand-block">
-            <div class="brand-mark">PDAS</div>
-            <div class="brand-copy">
-              <strong>PDAS Admin</strong>
-              <span>Accountability Portal</span>
+        <aside class="pdas-sidebar" id="pdasSidebar">
+          <div class="brand-row">
+            <div class="brand-block">
+              <div class="brand-mark">PDAS</div>
+              <div class="brand-copy">
+                <strong>PDAS Admin</strong>
+                <span>Accountability Portal</span>
+              </div>
             </div>
+            <button class="nav-toggle" id="navToggle" type="button" aria-controls="pdasSidebar" aria-expanded="true" aria-label="Collapse navigation" title="Collapse navigation">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
           </div>
 
           <nav class="nav-list">
             {% if role == 'citizen' %}
-              {{ nav_link('/citizen', 'Dashboard') }}
-              {{ nav_link('/citizen/dockets/new', 'Submit New Submission') }}
+              {{ nav_link('/citizen', 'Dashboard', 'Home', 'dashboard') }}
+              {{ nav_link('/citizen/dockets/new', 'Submit New Submission', 'New', 'new') }}
             {% elif role == 'constable' %}
-              {{ nav_link('/constable', 'Dashboard') }}
-              {{ nav_link('/active-cases', 'Cases') }}
-              {{ nav_link('/evidence-vault', 'Evidence Vault') }}
+              {{ nav_link('/constable', 'Dashboard', 'Home', 'dashboard') }}
+              {{ nav_link('/active-cases', 'Cases', 'Cases', 'cases') }}
+              {{ nav_link('/evidence-vault', 'Evidence Vault', 'Vault', 'vault') }}
             {% elif role == 'detective' %}
-              {{ nav_link('/detective', 'Dashboard') }}
-              {{ nav_link('/active-cases', 'Cases') }}
-              {{ nav_link('/evidence-vault', 'Evidence Vault') }}
+              {{ nav_link('/detective', 'Dashboard', 'Home', 'dashboard') }}
+              {{ nav_link('/active-cases', 'Cases', 'Cases', 'cases') }}
+              {{ nav_link('/evidence-vault', 'Evidence Vault', 'Vault', 'vault') }}
             {% elif role == 'station_commander' %}
-              {{ nav_link('/station-commander', 'Dashboard') }}
-              {{ nav_link('/active-cases', 'Cases') }}
-              {{ nav_link('/evidence-vault', 'Evidence Vault') }}
+              {{ nav_link('/station-commander', 'Dashboard', 'Home', 'dashboard') }}
+              {{ nav_link('/active-cases', 'Cases', 'Cases', 'cases') }}
+              {{ nav_link('/evidence-vault', 'Evidence Vault', 'Vault', 'vault') }}
             {% elif role == 'ipid' %}
-              {{ nav_link('/ipid', 'Dashboard') }}
-              {{ nav_link('/active-cases', 'Cases') }}
-              {{ nav_link('/evidence-vault', 'Evidence Vault') }}
+              {{ nav_link('/ipid', 'Dashboard', 'Home', 'dashboard') }}
+              {{ nav_link('/active-cases', 'Cases', 'Cases', 'cases') }}
+              {{ nav_link('/evidence-vault', 'Evidence Vault', 'Vault', 'vault') }}
             {% endif %}
-            {{ nav_link('/accountability', 'Accountability') }}
+            {{ nav_link('/accountability', 'Accountability', 'Audit', 'accountability') }}
           </nav>
 
           <div class="nav-footer">
-            <button class="nav-logout" id="logoutButton" type="button">Logout</button>
+            <button class="nav-logout" id="logoutButton" type="button" title="Logout">{{ nav_icon('logout') }}<span>Logout</span></button>
           </div>
         </aside>
 

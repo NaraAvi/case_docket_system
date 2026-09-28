@@ -3,7 +3,7 @@
  */
 
 import { fetchJson, postForm } from '../core/api.js';
-import { bindFilePreview, bindMediaViewButtons, buildStatusBadge, flashToast, renderDocketCardList, renderEvidenceTable, renderMediaViewButton, renderStatementList, renderWorkflowRail, setEmptyState, showToast } from '../core/ui.js';
+import { bindFilePreview, bindMediaViewButtons, buildStatusBadge, flashToast, renderDocketCardList, renderEvidenceTable, renderMediaViewButton, renderProtectedSourceGroups, renderStatementList, renderWorkflowRail, setEmptyState, showToast } from '../core/ui.js';
 
 export function getConstableCaseReference() {
   const match = window.location.pathname.match(/\/constable\/dockets\/([^/]+)/);
@@ -52,19 +52,6 @@ export async function hydrateConstableDashboard() {
   bindConstableSearch(container);
 }
 
-function formatProtectedSourceValue(value) {
-  if (value === undefined || value === null || value === '') {
-    return 'Not provided';
-  }
-  if (Array.isArray(value)) {
-    return value.filter((item) => item !== undefined && item !== null && item !== '').map((item) => String(item)).join(', ') || 'Not provided';
-  }
-  if (typeof value === 'object') {
-    return JSON.stringify(value);
-  }
-  return String(value);
-}
-
 function renderProtectedSource(container, docket) {
   if (!container) {
     return;
@@ -72,27 +59,13 @@ function renderProtectedSource(container, docket) {
   const originalContent = docket?.citizen_submission?.original_content && typeof docket.citizen_submission.original_content === 'object'
     ? docket.citizen_submission.original_content
     : {};
-  const sourceEntries = Array.isArray(Object.entries(originalContent)) ? Object.entries(originalContent) : [];
-  const rows = sourceEntries.filter(([, value]) => value !== undefined && value !== null && value !== '');
 
-  if (!rows.length) {
-    container.innerHTML = '<div class="empty-state">No preserved citizen source details are available for this docket.</div>';
-    return;
-  }
-
-  const renderedRows = rows
-    .map(([key, value]) => `<dt>${key.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())}</dt><dd>${formatProtectedSourceValue(value)}</dd>`)
-    .join('');
-
-  container.innerHTML = `
-    <article class="mini-case-card">
-      <div class="stack-row" style="justify-content:space-between;">
-        <strong>Protected citizen source (read-only)</strong>
-        <span class="badge badge-muted">immutable</span>
-      </div>
-      <dl class="meta-list compact">${renderedRows}</dl>
-    </article>
-  `;
+  // Grouped into expandable sections; every key/value is still rendered via formatProtectedSourceValue.
+  renderProtectedSourceGroups(container, originalContent, {
+    title: 'Protected citizen source (read-only)',
+    badge: 'immutable',
+    emptyMessage: 'No preserved citizen source details are available for this docket.',
+  });
 }
 
 function renderProtectedSourceProvenance(container, docket) {

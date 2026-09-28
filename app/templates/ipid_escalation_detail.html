@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% from 'components/_timeline.html' import timeline_skeleton %}
 {% from 'components/_evidence_table.html' import evidence_table_skeleton %}
-{% from 'components/_statutory_badge.html' import statutory_badge %}
+{% from 'components/_statutory_badge.html' import statutory_badge, law_note %}
 
 {% block content %}
   <section class="detail-shell">
@@ -17,7 +17,7 @@
 
     <div class="detail-grid">
       <div class="detail-card">
-        <h3>Escalation Context {{ statutory_badge('IPID Act §28', 'Independent Police Investigative Directorate Act 1 of 2011, Section 28 mandatory referral.') }}</h3>
+        <h3>Escalation Context {{ law_note('ipid_s28') }}</h3>
         <dl class="meta-list" id="ipidEscalationMeta">
           <dt>Case Reference</dt><dd>Loading…</dd>
           <dt>Category</dt><dd>Loading…</dd>
@@ -27,7 +27,7 @@
       </div>
 
       <div class="detail-card">
-        <h3>Assignment & Freeze</h3>
+        <h3>Assignment & Freeze {{ law_note('ipid_s29') }}</h3>
         <dl class="meta-list" id="ipidAssignmentMeta">
           <dt>Assigned Officer</dt><dd>Loading…</dd>
           <dt>Freeze Status</dt><dd>Loading…</dd>
@@ -38,45 +38,60 @@
     </div>
 
     <div class="cards-grid" style="margin-top:18px;">
-      <div class="panel-card wide-card">
-        <h3>Statements</h3>
-        <div class="stack-list" id="ipidStatementsList">
-          <p>Loading statements…</p>
-        </div>
-        <div class="stack-row" style="margin-top:10px; justify-content:flex-end;">
-          <button class="secondary-btn" type="button" id="openIpidStatementModal">Add Victim Statement</button>
-        </div>
-      </div>
-
-      <div class="panel-card">
-        <h3>Evidence</h3>
-        {{ evidence_table_skeleton('ipidCaseEvidence') }}
-      </div>
-
-      <div class="panel-card">
-        <h3>Case Timeline</h3>
-        {{ timeline_skeleton('ipidCaseTimeline', 'Loading case timeline') }}
-      </div>
-
-      <div class="panel-card">
-        <h3>Review Notes</h3>
-        {{ timeline_skeleton('ipidReviewNotes', 'Loading review notes') }}
-      </div>
-
-      <div class="panel-card">
-        <h3>Internal Findings</h3>
-        <div class="stack-list" id="ipidReviewFindings">
-          <div class="empty-state">Loading internal findings…</div>
+      <div class="panel-card wide-card" data-collapsible>
+        <div class="card-head" data-collapsible-head><h3>Statements</h3></div>
+        <div data-collapsible-body>
+          <div class="stack-list" id="ipidStatementsList">
+            <p>Loading statements…</p>
+          </div>
+          <div class="stack-row" style="margin-top:10px; justify-content:flex-end;">
+            <button class="secondary-btn" type="button" id="openIpidStatementModal">Add Victim Statement</button>
+          </div>
         </div>
       </div>
 
-      <div class="panel-card">
-        <h3>Audit History</h3>
-        {{ timeline_skeleton('ipidAuditList', 'Loading audit history') }}
+      <div class="panel-card" data-collapsible>
+        <div class="card-head" data-collapsible-head><h3>Evidence</h3></div>
+        <div data-collapsible-body>
+          <div class="law-notes">{{ law_note('cpa_s212') }}{{ law_note('ecta_s15') }}</div>
+          {{ evidence_table_skeleton('ipidCaseEvidence') }}
+        </div>
+      </div>
+
+      <div class="panel-card" data-collapsible>
+        <div class="card-head" data-collapsible-head><h3>Case Timeline</h3></div>
+        <div data-collapsible-body>
+          {{ timeline_skeleton('ipidCaseTimeline', 'Loading case timeline') }}
+        </div>
+      </div>
+
+      <div class="panel-card" data-collapsible>
+        <div class="card-head" data-collapsible-head><h3>Review Notes</h3></div>
+        <div data-collapsible-body>
+          {{ timeline_skeleton('ipidReviewNotes', 'Loading review notes') }}
+        </div>
+      </div>
+
+      <div class="panel-card" data-collapsible>
+        <div class="card-head" data-collapsible-head><h3>Internal Findings</h3></div>
+        <div data-collapsible-body>
+          <div class="law-notes">{{ law_note('precca_s34') }}</div>
+          <div class="stack-list" id="ipidReviewFindings">
+            <div class="empty-state">Loading internal findings…</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-card" data-collapsible>
+        <div class="card-head" data-collapsible-head><h3>Audit History</h3></div>
+        <div data-collapsible-body>
+          {{ timeline_skeleton('ipidAuditList', 'Loading audit history') }}
+        </div>
       </div>
 
       <div class="panel-card">
         <h3>Decision</h3>
+        <div class="law-notes">{{ law_note('paja_s3') }}{{ law_note('constitution_s33') }}</div>
         <div class="stack-row" style="flex-direction:column; align-items:stretch;">
           <button class="secondary-btn full-width" type="button" id="dismissEscalationBtn" data-open-reauth>Dismiss Escalation</button>
           <button class="primary-btn full-width" type="button" id="upholdEscalationBtn" data-open-reauth>Uphold Escalation</button>
