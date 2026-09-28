@@ -7,7 +7,7 @@
   <section class="detail-shell">
     <div class="page-head-row">
       <div>
-        <p class="eyebrow">Active Investigation</p>
+        <p class="eyebrow">Detective Case Review</p>
         <h1>{{ case_reference }}</h1>
       </div>
       <div class="stack-row">
@@ -36,110 +36,200 @@
       </div>
     </div>
 
-    <div id="detectiveDocketContent">
-      <div class="detail-grid">
-        <div class="detail-card">
-          <h3>Case Metadata</h3>
-          <dl class="meta-list" id="detectiveCaseMeta">
-            <dt>Incident Location</dt><dd>Loading…</dd>
-            <dt>Incident Date</dt><dd>Loading…</dd>
-            <dt>Assigned Officer</dt><dd>Loading…</dd>
-            <dt>Status</dt><dd>Loading…</dd>
-          </dl>
+    <div class="panel-card wide-card" id="detectiveProcedureBoard">
+      <div class="stack-row" style="justify-content:space-between; align-items:flex-start;">
+        <div>
+          <p class="eyebrow">Procedure Control</p>
+          <h3>Investigation Control Board</h3>
         </div>
+        <span class="badge badge-muted">Loading procedure state…</span>
+      </div>
+    </div>
 
+    <div id="detectiveDocketContent">
+      <div class="panel-card wide-card">
+        <h3>Case / Docket Details</h3>
+        <dl class="meta-list" id="detectiveCaseMeta">
+          <dt>Incident Location</dt><dd>Loading…</dd>
+          <dt>Incident Date</dt><dd>Loading…</dd>
+          <dt>Assigned Detective</dt><dd>Loading…</dd>
+          <dt>Status</dt><dd>Loading…</dd>
+        </dl>
+      </div>
+
+      <div class="detail-grid" style="margin-top:18px;">
+        <div class="panel-card wide-card">
+          <h3>Original Protected Citizen Submission</h3>
+          <div class="stack-list" id="detectiveProtectedSubmission">
+            <p>Loading protected submission…</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="detail-grid" style="margin-top:18px;">
         <div class="detail-card">
-          <h3>Initial Deposition</h3>
+          <h3>Initial Deposition / Constable Interview</h3>
           <div class="statement-box" id="detectiveDeposition">
             <p>Loading docket description and witness information…</p>
           </div>
+        </div>
+
+        <div class="detail-card">
+          <h3>Protected Evidence</h3>
+          {{ evidence_table_skeleton('detectiveCaseEvidence') }}
         </div>
       </div>
 
       <div class="cards-grid" style="margin-top:18px;">
         <div class="panel-card">
-          <h3>Investigation Notes</h3>
-          <textarea rows="7" placeholder="Document note chronology and witness follow-ups..." id="investigationNotes"></textarea>
-          <div class="stack-row" style="margin-top:10px; justify-content:flex-end;">
-            <button class="secondary-btn" type="button" id="saveInvestigationNote">Save Note</button>
-          </div>
-          <p class="inline-error hidden" id="investigationNotesError"></p>
-        </div>
-
-        <div class="panel-card wide-card">
-          <h3>Statements</h3>
+          <h3>Recordings / Statements</h3>
           <div class="stack-list" id="detectiveStatementsList">
             <p>Loading statements…</p>
           </div>
-          <div class="stack-row" style="margin-top:10px; justify-content:flex-end;">
-            <button class="secondary-btn" type="button" id="openStatementModal">Add Victim Statement</button>
-          </div>
         </div>
 
         <div class="panel-card">
-          <h3>Evidence</h3>
-          {{ evidence_table_skeleton('detectiveCaseEvidence') }}
-        </div>
-
-        <div class="panel-card">
-          <h3>Audit Timeline</h3>
+          <h3>Procedural / Audit History</h3>
           {{ timeline_skeleton('detectiveCaseTimeline', 'Loading audit timeline') }}
         </div>
+      </div>
 
-        <div class="panel-card">
-          <h3>Potential Invalidity Flags {{ statutory_badge('PAJA §3', 'Every administrative status change requires a recorded justification.') }}</h3>
-          <div class="stack-list" id="detectiveFlagsList">
-            <div class="empty-state">Start the investigation to review constable-raised flags.</div>
-          </div>
-        </div>
-
-        <div class="panel-card">
-          <h3>Related Cases</h3>
-          <div class="statement-box" id="detectiveRelatedCases">
-            <p>Start the investigation to review related case links.</p>
-          </div>
-        </div>
-
-        <div class="panel-card wide-card">
-          <h3>Findings {{ statutory_badge('CPA §212', 'Evidence and findings must be recorded with an auditable chain of reasoning.') }}</h3>
-          <div class="stack-list" id="detectiveFindingsList">
-            <div class="empty-state">Loading findings…</div>
-          </div>
-        </div>
-
-        <div class="panel-card wide-card">
-          <h3>Notes &amp; Evidence Annotations</h3>
-          <p class="field-hint">Standalone notes, or notes attached to a specific evidence item, kept separate from the working summary above.</p>
-          <div class="stack-list" id="detectiveNoteEntriesList">
-            <div class="empty-state">Start the investigation to add notes.</div>
-          </div>
+      <div class="panel-card wide-card" style="margin-top:18px;">
+        <h3>Investigation</h3>
+        <p id="detectiveInvestigationStateText">Investigation has not started.</p>
+        <div id="detectiveInvestigationTimer" class="stack-list" style="margin-top:12px;"></div>
+        <div class="stack-row" style="margin-top:12px; justify-content:flex-end;">
+          <button class="primary-btn" type="button" id="startInvestigation" hidden>Start Investigation</button>
         </div>
       </div>
 
-      <div class="stack-row" style="margin-top:18px; justify-content:flex-end;">
-        <button class="secondary-btn" type="button" id="openNoteEntryModal" disabled>Add Note</button>
-        <button class="secondary-btn" type="button" id="openFindingModal" disabled>Add Finding</button>
-        <button class="primary-btn" type="button" id="openCompleteInvestigationModal" disabled>Complete Investigation</button>
-        <button class="primary-btn" type="button" id="startInvestigation">Start Investigation</button>
+      <div class="panel-card wide-card hidden" id="detectiveInvestigationActions" style="margin-top:18px;">
+        <div class="stack-row" style="justify-content:space-between; align-items:flex-start;">
+          <div>
+            <p class="eyebrow">Active Investigation</p>
+            <h3>Investigation Order</h3>
+          </div>
+        </div>
+        <p class="eyebrow" style="margin-top:8px;">Required Investigative Actions</p>
+        <div class="hidden" aria-hidden="true">Complete Interview Complete Evidence Review Complete Evidence Collection Complete Record Request Complete Witness Contact Complete Scene Review</div>
+        <div class="stack-list" id="detectiveInvestigationOrder" style="margin-top:8px;"></div>
+        <div class="stack-list" id="detectiveActionList" style="margin-top:12px;"></div>
       </div>
+
+      <div class="panel-card wide-card" style="margin-top:18px;">
+        <div class="stack-row" style="justify-content:space-between; align-items:flex-start;">
+          <div>
+            <p class="eyebrow">Detective findings</p>
+            <h3>Investigation Findings</h3>
+          </div>
+          <button class="primary-btn" type="button" id="openFindingModal" hidden>Record Finding</button>
+        </div>
+        <div class="stack-list" id="detectiveFindingsList" style="margin-top:12px;">
+          <p>Loading findings…</p>
+        </div>
+      </div>
+
+      <div class="panel-card wide-card" style="margin-top:18px;">
+        <div class="stack-row" style="justify-content:space-between; align-items:flex-start;">
+          <div>
+            <p class="eyebrow">Final review</p>
+            <h3>Final Reasoning and Completion</h3>
+          </div>
+          <button class="primary-btn" type="button" id="openCompleteInvestigationModal" hidden>Complete Investigation</button>
+        </div>
+        <div class="stack-list" id="detectiveNoteEntriesList" style="margin-top:12px;">
+          <p>Loading investigation notes…</p>
+        </div>
+      </div>
+
+      <div class="panel-card wide-card" id="caseFactsVerificationPanel" style="margin-top:18px;">
+        <div class="stack-row" style="justify-content:space-between; align-items:flex-start;">
+          <div>
+            <p class="eyebrow">Detective case facts</p>
+            <h3>Case Facts Verification</h3>
+          </div>
+          <span class="badge badge-muted" id="caseFactsStatusBadge">Pending</span>
+        </div>
+
+        <div class="detail-grid" style="margin-top:12px;">
+          <div class="detail-card">
+            <label class="input-label">Incident date</label>
+            <input class="field-input" id="caseFactsIncidentDate" type="date" />
+
+            <label class="input-label" style="margin-top:12px; display:block;">Incident time</label>
+            <input class="field-input" id="caseFactsIncidentTime" type="time" />
+
+            <label class="input-label" style="margin-top:12px; display:block;">Incident location</label>
+            <input class="field-input" id="caseFactsLocation" type="text" placeholder="Describe the location" />
+
+            <label class="input-label" style="margin-top:12px; display:block;">People involved</label>
+            <input class="field-input" id="caseFactsPeopleInvolved" type="text" placeholder="Comma-separated names" />
+          </div>
+
+          <div class="detail-card">
+            <label class="input-label">Witnesses</label>
+            <input class="field-input" id="caseFactsWitnesses" type="text" placeholder="Comma-separated witnesses" />
+
+            <label class="input-label" style="margin-top:12px; display:block;">Harm types</label>
+            <input class="field-input" id="caseFactsHarmTypes" type="text" placeholder="Comma-separated harm types" />
+
+            <label class="input-label" style="margin-top:12px; display:block;">Injury types</label>
+            <input class="field-input" id="caseFactsInjuryTypes" type="text" placeholder="Comma-separated injury types" />
+
+            <label class="input-label" style="margin-top:12px; display:block;">Police / official involvement</label>
+            <select class="field-select" id="caseFactsPoliceInvolvement">
+              <option value="">Select</option>
+              <option value="true">Yes</option>
+              <option value="false">No</option>
+            </select>
+          </div>
+        </div>
+
+        <label class="input-label" style="margin-top:12px; display:block;">Relevant factual circumstances</label>
+        <textarea rows="4" id="caseFactsCircumstances" placeholder="Document the factual circumstances as observed by the detective."></textarea>
+
+        <label class="input-label" style="margin-top:12px; display:block;">Discrepancy status</label>
+        <select class="field-select" id="caseFactsDiscrepancyStatus">
+          <option value="OPEN">Open</option>
+          <option value="ADDRESSED">Addressed</option>
+          <option value="UNRESOLVED">Unresolved</option>
+        </select>
+
+        <label class="input-label" style="margin-top:12px; display:block;">Discrepancy basis / explanation</label>
+        <textarea rows="3" id="caseFactsDiscrepancyBasis" placeholder="If a preserved fact conflicts with the detective record, document the investigative basis or explanation."></textarea>
+
+        <div style="margin-top:16px;">
+          <p class="eyebrow">Case facts verification result</p>
+          <div id="caseFactsComparisonResults" class="stack-list" style="margin-top:8px;"></div>
+        </div>
+
+        <div id="caseFactsDiscrepancies" class="stack-list" style="margin-top:12px;"></div>
+
+        <div class="stack-row" style="margin-top:12px; justify-content:flex-end;">
+          <button class="primary-btn" type="button" id="submitCaseFactsVerification">Record Case Facts</button>
+        </div>
+      </div>
+
     </div>
   </section>
 
-  <div class="reauth-modal hidden" id="statementModal" aria-hidden="true">
+  <div class="reauth-modal hidden" id="actionModal" aria-hidden="true">
     <div class="reauth-card">
       <div class="reauth-header">
-        <span class="lock-icon">🗣️</span>
-        <span>Add Victim Statement</span>
+        <span class="lock-icon">🧭</span>
+        <span>Complete Required Investigative Action</span>
       </div>
-      <p class="reauth-subtitle">Record an additional statement taken from the victim or a witness during the investigation.</p>
+      <p class="reauth-subtitle" id="actionModalContext">Complete the selected investigative action. The six required tasks are independent and may be recorded in any order.</p>
 
-      <label class="input-label">Statement</label>
-      <textarea rows="5" placeholder="Record the statement..." id="statementText"></textarea>
-      <p class="inline-error hidden" id="statementModalError"></p>
+      <p class="field-hint" style="margin-top:8px;">This form is specific to the selected action. The required action is determined by the card you opened.</p>
+
+      <div id="actionModalFields"></div>
+
+      <p class="inline-error hidden" id="actionModalError"></p>
 
       <div class="modal-actions">
-        <button type="button" class="secondary-btn" id="closeStatementModal">Cancel</button>
-        <button type="button" class="primary-btn" id="submitStatementModal">Save Statement</button>
+        <button type="button" class="secondary-btn" id="closeActionModal">Cancel</button>
+        <button type="button" class="primary-btn" id="submitActionModal">Save Action</button>
       </div>
     </div>
   </div>
@@ -147,20 +237,17 @@
   <div class="reauth-modal hidden" id="findingModal" aria-hidden="true">
     <div class="reauth-card">
       <div class="reauth-header">
-        <span class="lock-icon">🔎</span>
-        <span>Add Investigation Finding</span>
+        <span class="lock-icon">🧾</span>
+        <span>Record Investigation Finding</span>
       </div>
-      <p class="reauth-subtitle">Findings record the evidence-backed assessment that supports the final investigative conclusion.</p>
+      <p class="reauth-subtitle">Document the finding based on the completed investigative record.</p>
 
-      <label class="input-label">Finding Type</label>
-      <select class="field-select" id="findingType">
-        <option value="VALID">Valid</option>
-        <option value="INVALID">Invalid</option>
-        <option value="REVIEW_REQUIRED">Review Required</option>
-      </select>
+      <label class="input-label" style="margin-top:12px; display:block;">Investigation records referenced</label>
+      <div id="findingActionReferences" aria-label="Investigation records referenced"></div>
 
-      <label class="input-label" style="margin-top:12px; display:block;">Notes</label>
-      <textarea rows="4" placeholder="Describe the finding and supporting reasoning..." id="findingNotes"></textarea>
+      <label class="input-label" style="margin-top:12px; display:block;">Finding</label>
+      <textarea rows="4" id="findingNotes" placeholder="Document what the investigation established or observed based on the referenced records."></textarea>
+
       <p class="inline-error hidden" id="findingModalError"></p>
 
       <div class="modal-actions">
@@ -173,47 +260,29 @@
   <div class="reauth-modal hidden" id="completeInvestigationModal" aria-hidden="true">
     <div class="reauth-card">
       <div class="reauth-header">
-        <span class="lock-icon">🔒</span>
+        <span class="lock-icon">✅</span>
         <span>Complete Investigation</span>
       </div>
-      <p class="reauth-subtitle">This records the final investigative conclusion and preserves the evidence-based reasoning trail. It does not make a legal or disciplinary determination.</p>
+      <p class="reauth-subtitle">Provide the final investigative reasoning before marking the case as complete.</p>
 
-      <label class="input-label">Investigative Conclusion</label>
+      <label class="input-label" style="margin-top:12px; display:block;">Outcome</label>
       <select class="field-select" id="completeInvestigationOutcome">
-        <option value="VALID">Valid</option>
-        <option value="INVALID">Invalid</option>
-        <option value="REVIEW_REQUIRED">Review Required</option>
+        <option value="VALID">VALID</option>
+        <option value="INVALID">INVALID</option>
+        <option value="REVIEW_REQUIRED">REVIEW_REQUIRED</option>
       </select>
 
-      <label class="input-label" style="margin-top:12px; display:block;">Final Reasoning</label>
-      <textarea rows="4" placeholder="Summarize the reasoning behind the final outcome..." id="completeInvestigationNotes"></textarea>
+      <label class="input-label" style="margin-top:12px; display:block;">Findings referenced</label>
+      <div id="completeInvestigationFindingReferences" aria-label="Findings referenced"></div>
+
+      <label class="input-label" style="margin-top:12px; display:block;">Final reasoning</label>
+      <textarea rows="4" id="completeInvestigationNotes" placeholder="Explain the final conclusion and basis for completion."></textarea>
+
       <p class="inline-error hidden" id="completeInvestigationModalError"></p>
 
       <div class="modal-actions">
         <button type="button" class="secondary-btn" id="closeCompleteInvestigationModal">Cancel</button>
         <button type="button" class="primary-btn" id="submitCompleteInvestigationModal">Complete Investigation</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="reauth-modal hidden" id="noteEntryModal" aria-hidden="true">
-    <div class="reauth-card">
-      <div class="reauth-header">
-        <span class="lock-icon">📝</span>
-        <span>Add Note</span>
-      </div>
-      <p class="reauth-subtitle">Optionally attach this note to a specific evidence item, or leave it as a general investigation note.</p>
-
-      <label class="input-label">Evidence Item</label>
-      <select class="field-select" id="noteEntryEvidence"></select>
-
-      <label class="input-label" style="margin-top:12px; display:block;">Note</label>
-      <textarea rows="4" placeholder="Add a note..." id="noteEntryText"></textarea>
-      <p class="inline-error hidden" id="noteEntryModalError"></p>
-
-      <div class="modal-actions">
-        <button type="button" class="secondary-btn" id="closeNoteEntryModal">Cancel</button>
-        <button type="button" class="primary-btn" id="submitNoteEntryModal">Save Note</button>
       </div>
     </div>
   </div>

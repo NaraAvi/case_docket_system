@@ -23,7 +23,20 @@ export async function fetchJson(url, options = {}) {
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload.error || 'Request failed.');
+    const backendMessage = (() => {
+      const candidate = payload && (payload.error || payload.message || payload.detail);
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return candidate.trim();
+      }
+      if (candidate && typeof candidate === 'object') {
+        const nested = candidate.message || candidate.detail || candidate.error;
+        if (typeof nested === 'string' && nested.trim()) {
+          return nested.trim();
+        }
+      }
+      return 'Request failed.';
+    })();
+    throw new Error(backendMessage);
   }
   return payload;
 }
@@ -48,7 +61,20 @@ export async function postForm(url, formData) {
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload.error || 'Request failed.');
+    const backendMessage = (() => {
+      const candidate = payload && (payload.error || payload.message || payload.detail);
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return candidate.trim();
+      }
+      if (candidate && typeof candidate === 'object') {
+        const nested = candidate.message || candidate.detail || candidate.error;
+        if (typeof nested === 'string' && nested.trim()) {
+          return nested.trim();
+        }
+      }
+      return 'Request failed.';
+    })();
+    throw new Error(backendMessage);
   }
   return payload;
 }

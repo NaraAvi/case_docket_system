@@ -240,6 +240,34 @@ function renderInterviewStatus(container, interview) {
   bindMediaViewButtons(container);
 }
 
+function renderRecordingComparison(container, report) {
+  if (!container) {
+    return;
+  }
+
+  const isWaitingForBoth = report?.status === 'WAITING_FOR_BOTH_TRANSCRIPTS';
+  if (!report || report.status === 'COMPARISON_UNAVAILABLE' || isWaitingForBoth) {
+    const message = isWaitingForBoth
+      ? (report?.error || 'Waiting for both transcripts before comparison can run.')
+      : (report?.error || 'No transcript comparison is available yet.');
+    container.innerHTML = `
+      <strong>Recording consistency check</strong>
+      <p>${message}</p>
+    `;
+    return;
+  }
+
+  const findings = Array.isArray(report.findings) && report.findings.length
+    ? report.findings.map((finding) => `<li><strong>${finding.category}</strong> — ${finding.summary}</li>`).join('')
+    : '<li>No material differences detected in the current transcript comparison.</li>';
+
+  container.innerHTML = `
+    <strong>Recording consistency check</strong>
+    <p>Overall similarity: ${report.overall_similarity ?? 'n/a'}%</p>
+    <ul>${findings}</ul>
+  `;
+}
+
 async function hydrateInterview(caseReference, interviewId) {
   const panel = document.getElementById('constableInterviewPanel');
   const continueButton = document.getElementById('continueToInterview');
@@ -248,6 +276,7 @@ async function hydrateInterview(caseReference, interviewId) {
   const submitButton = document.getElementById('submitConstableRecording');
   const errorEl = document.getElementById('constableRecordingError');
   const registerButton = document.getElementById('registerDocketBtn');
+  const comparisonBox = document.getElementById('constableRecordingComparison');
   if (!panel) {
     return;
   }
@@ -274,8 +303,21 @@ async function hydrateInterview(caseReference, interviewId) {
     return interview;
   }
 
+  async function refreshComparisonStatus() {
+    if (!comparisonBox) {
+      return;
+    }
+    try {
+      const report = await fetchJson(`/api/v1/constable/interviews/${interviewId}/recording-comparison`);
+      renderRecordingComparison(comparisonBox, report);
+    } catch (error) {
+      renderRecordingComparison(comparisonBox, { status: 'COMPARISON_UNAVAILABLE', error: error.message || 'Unable to load recording comparison.' });
+    }
+  }
+
   try {
     await refreshInterview();
+    await refreshComparisonStatus();
   } catch (error) {
     if (statusBox) {
       statusBox.innerHTML = `<p>${error.message || 'Unable to load interview status.'}</p>`;
@@ -296,6 +338,7 @@ async function hydrateInterview(caseReference, interviewId) {
       formData.append('recording_type', 'constable_recording');
       await postForm(`/api/v1/constable/interviews/${interviewId}/recording`, formData);
       await refreshInterview();
+      await refreshComparisonStatus();
       showToast('Recording submitted.');
     } catch (error) {
       errorEl.textContent = error.message || 'Unable to submit recording.';

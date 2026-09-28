@@ -92,6 +92,101 @@ def _registered_case(app_client):
     return case_reference
 
 
+def test_detective_docket_preserves_protected_citizen_evidence_chain(app_client):
+    citizen_token = _login(app_client, "citizen")
+    constable_token = _login(app_client, "constable")
+    submission_response = app_client.post(
+        "/api/v1/citizen/submissions",
+        headers=_auth_headers(citizen_token),
+        json={
+            "title": "Protected photo evidence continuity",
+            "description": "The detective docket must read the original citizen evidence chain, not an empty procedural wrapper.",
+            "incident_date": "2026-09-24",
+            "location": "Gate Camera Zone",
+        },
+    )
+    assert submission_response.status_code == 201
+    submission_id = submission_response.get_json()["submission_id"]
+
+    evidence_response = app_client.post(
+        f"/api/v1/citizen/submissions/{submission_id}/evidence",
+        headers=_auth_headers(citizen_token),
+        json={
+            "evidence_type": "PHOTO",
+            "description": "Front gate photo from the citizen submission.",
+            "filename": "gate-photo.jpg",
+            "content_type": "image/jpeg",
+            "storage_reference": "evidence/gate-photo.jpg",
+        },
+    )
+    assert evidence_response.status_code == 201
+
+    assertion_response = app_client.post(
+        f"/api/v1/citizen/submissions/{submission_id}/assertions",
+        headers=_auth_headers(citizen_token),
+        json={"assertion_text": "I saw the officer by the front gate."},
+    )
+    assert assertion_response.status_code == 201
+    assertion_id = assertion_response.get_json()["assertion_id"]
+
+    claim_response = app_client.post(
+        f"/api/v1/citizen/submissions/{submission_id}/assertions/{assertion_id}/claims",
+        headers=_auth_headers(citizen_token),
+    )
+    assert claim_response.status_code == 201
+
+    analysis_response = app_client.post(
+        f"/api/v1/citizen/submissions/{submission_id}/analyze",
+        headers=_auth_headers(citizen_token),
+    )
+    assert analysis_response.status_code == 201
+    candidate_id = analysis_response.get_json()["candidate"]["candidate_id"]
+
+    case_response = app_client.post(
+        f"/api/v1/citizen/submissions/{submission_id}/incident-candidates/{candidate_id}/create-case",
+        headers=_auth_headers(citizen_token),
+    )
+    assert case_response.status_code in {200, 202}
+    case_reference = case_response.get_json()["case_reference"]
+
+    interview_response = app_client.post(
+        f"/api/v1/constable/dockets/{case_reference}/interview",
+        headers=_auth_headers(constable_token),
+    )
+    assert interview_response.status_code in {200, 201}
+    interview_id = interview_response.get_json()["interview_id"]
+
+    citizen_recording_response = app_client.post(
+        f"/api/v1/citizen/interviews/{interview_id}/recording",
+        headers=_auth_headers(citizen_token),
+        json={"filename": "citizen.wav"},
+    )
+    assert citizen_recording_response.status_code == 201
+
+    constable_recording_response = app_client.post(
+        f"/api/v1/constable/interviews/{interview_id}/recording",
+        headers=_auth_headers(constable_token),
+        json={"filename": "constable.wav"},
+    )
+    assert constable_recording_response.status_code == 201
+
+    register_response = app_client.post(
+        f"/api/v1/constable/interviews/{interview_id}/register",
+        headers=_auth_headers(constable_token),
+    )
+    assert register_response.status_code in {200, 201}
+
+    detective_token = _login(app_client, "detective")
+    response = app_client.get(f"/api/v1/detective/dockets/{case_reference}", headers=_auth_headers(detective_token))
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["source_submission_id"] == submission_id
+    assert payload["citizen_evidence"]
+    assert payload["evidence"]
+    assert payload["citizen_evidence"][0]["description"] == "Front gate photo from the citizen submission."
+    assert payload["evidence"][0]["description"] == "Front gate photo from the citizen submission."
+
+
 class TestMiscEndpoints:
     def test_api_status(self, app_client):
         response = app_client.get("/api/v1/status")

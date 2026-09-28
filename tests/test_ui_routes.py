@@ -67,6 +67,34 @@ def test_authenticated_role_dashboard_routes_render():
         assert response.status_code == 200, f"{route} should render successfully for a valid session"
 
 
+def test_accountability_route_redirects_without_session():
+    app = create_app(testing=True)
+    client = app.test_client()
+
+    response = client.get("/accountability", follow_redirects=False)
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/login")
+
+
+def test_accountability_route_renders_for_authenticated_users():
+    app = create_app(testing=True)
+    client = app.test_client()
+
+    for role, test_id in [
+        ("citizen", "2200223333111"),
+        ("constable", "2200223333114"),
+        ("detective", "2200223333115"),
+        ("station_commander", "2200223333116"),
+        ("ipid", "2200223333117"),
+    ]:
+        set_role_cookie(app, client, role, test_id)
+        response = client.get("/accountability")
+        assert response.status_code == 200, f"/accountability should render for {role}"
+        assert b"Accountability" in response.data
+        assert b"CLEAR" in response.data
+        assert b"0" in response.data
+
+
 def test_authenticated_workflow_detail_routes_render():
     app = create_app(testing=True)
     client = app.test_client()

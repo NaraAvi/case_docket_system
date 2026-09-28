@@ -1,6 +1,6 @@
 from functools import wraps
 
-from flask import Blueprint, redirect, render_template, request, url_for
+from flask import Blueprint, current_app, redirect, render_template, request, url_for
 from flask_jwt_extended import decode_token
 
 ui_bp = Blueprint("ui", __name__, template_folder="../templates", static_folder="../static", url_prefix="")
@@ -133,7 +133,7 @@ def station_commander_dashboard():
 @require_ui_role("constable", "detective", "station_commander", "ipid")
 def active_cases():
     role = get_ui_claims().get("role")
-    return render_template("active_cases.html", role=role, page_title="Active Cases")
+    return render_template("active_cases.html", role=role, page_title="Cases")
 
 
 @ui_bp.route("/evidence-vault")
@@ -141,6 +141,34 @@ def active_cases():
 def evidence_vault():
     role = get_ui_claims().get("role")
     return render_template("evidence_vault.html", role=role, page_title="Evidence Vault")
+
+
+@ui_bp.route("/accountability")
+@require_ui_role("citizen", "constable", "detective", "station_commander", "ipid")
+def accountability():
+    claims = get_ui_claims()
+    role = claims.get("role") if claims else None
+    subject_id = str(claims.get("sub") or claims.get("identity") or claims.get("test_id") or "")
+    service = current_app.extensions.get("accountability_service")
+    profile = service.get_profile(subject_id) if service and subject_id else {
+        "subject_id": subject_id,
+        "profile_id": "ACCT-PROFILE-PENDING",
+        "total_demerits": 0,
+        "status": "CLEAR",
+        "access_state": "ACTIVE",
+    }
+    history = service.list_events(subject_id) if service and subject_id else []
+    normalized_status = str(profile.get("status") or "CLEAR").upper()
+    status_label = "CLEAR" if normalized_status in {"CLEAR", "NORMAL"} else normalized_status.replace("_", " ")
+    return render_template(
+        "accountability.html",
+        role=role,
+        page_title="Accountability",
+        profile=profile,
+        history=history,
+        status_label=status_label,
+        user_name=claims.get("full_name") if claims else "Authenticated User",
+    )
 
 
 @ui_bp.route("/station-commander/dockets/<case_reference>")

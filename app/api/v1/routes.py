@@ -1,5 +1,9 @@
+import hashlib
+from io import BytesIO
+
 from flask import Blueprint, current_app, jsonify, request, send_file
 from flask_jwt_extended import create_access_token, get_jwt, get_jwt_identity, jwt_required
+from werkzeug.formparser import parse_form_data
 
 api_v1_bp = Blueprint("api_v1", __name__, url_prefix="/api/v1")
 
@@ -19,18 +23,63 @@ def get_media_manager():
     return current_app.extensions["media_manager"]
 
 
+def get_transcription_service():
+    return current_app.extensions.get("transcript_service") or current_app.extensions.get("transcription_service")
+
+
+def get_recording_comparison_engine():
+    return (
+        current_app.extensions.get("recording_comparison_engine")
+        or current_app.extensions.get("comparison_engine")
+        or current_app.extensions.get("transcription_comparison_engine")
+    )
+
+
 def get_case_service():
     return current_app.extensions["case_service"]
+
+
+def _multipart_file_and_form_data():
+    """Return the uploaded file and form values even when Flask's normal
+    request.files mapping is empty after a raw-body parse or parser quirk."""
+    uploaded_file = request.files.get("file")
+    form_data = request.form.to_dict()
+    if uploaded_file is not None:
+        return uploaded_file, form_data
+
+    if request.mimetype != "multipart/form-data":
+        return None, form_data
+
+    raw_body = request.get_data(cache=True)
+    if not raw_body:
+        return None, form_data
+
+    environ = request.environ.copy()
+    environ["wsgi.input"] = BytesIO(raw_body)
+    environ["CONTENT_LENGTH"] = str(len(raw_body))
+    environ["CONTENT_TYPE"] = request.content_type
+
+    try:
+        _stream, form, files = parse_form_data(environ, silent=True)
+    except Exception:
+        return None, form_data
+
+    uploaded_file = files.get("file")
+    if uploaded_file is None:
+        uploaded_file = form.get("file")
+    if uploaded_file is not None and hasattr(uploaded_file, "filename"):
+        return uploaded_file, form.to_dict()
+    return None, form.to_dict()
 
 
 def _recording_payload_from_request():
     """Build a submit_recording() payload from either a real multipart file
     upload or a JSON body, raising ValueError on a bad upload."""
-    uploaded_file = request.files.get("file")
+    uploaded_file, form_data = _multipart_file_and_form_data()
     if uploaded_file is not None:
         media = get_media_manager().save_upload(uploaded_file, subdir="recordings")
         return {
-            "recording_type": request.form.get("recording_type"),
+            "recording_type": form_data.get("recording_type"),
             "filename": media["filename"],
             "storage_reference": media["storage_reference"],
             "content_type": media["content_type"],
@@ -62,6 +111,10 @@ def get_constable_registration_service():
 
 def get_investigation_service():
     return current_app.extensions["investigation_service"]
+
+
+def get_detective_procedure_service():
+    return current_app.extensions.get("detective_procedure_service") or current_app.extensions.get("procedure_service")
 
 
 def get_station_commander_service():
@@ -349,15 +402,15 @@ def create_citizen_evidence(submission_id):
         return jsonify({"error": "Forbidden."}), 403
 
     citizen_id = get_jwt_identity()
-    uploaded_file = request.files.get("file")
+    uploaded_file, form_data = _multipart_file_and_form_data()
     if uploaded_file is not None:
         try:
             media = get_media_manager().save_upload(uploaded_file, subdir="evidence")
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         payload = {
-            "evidence_type": request.form.get("evidence_type", ""),
-            "description": request.form.get("description", ""),
+            "evidence_type": form_data.get("evidence_type", ""),
+            "description": form_data.get("description", ""),
             "filename": media["filename"],
             "storage_reference": media["storage_reference"],
             "content_type": media["content_type"],
@@ -621,15 +674,15 @@ def add_docket_evidence(case_reference):
         return jsonify({"error": "Forbidden."}), 403
 
     citizen_id = get_jwt_identity()
-    uploaded_file = request.files.get("file")
+    uploaded_file, form_data = _multipart_file_and_form_data()
     if uploaded_file is not None:
         try:
             media = get_media_manager().save_upload(uploaded_file, subdir="evidence")
         except ValueError as exc:
             return jsonify({"error": str(exc)}), 400
         payload = {
-            "evidence_type": request.form.get("evidence_type", ""),
-            "description": request.form.get("description", ""),
+            "evidence_type": form_data.get("evidence_type", ""),
+            "description": form_data.get("description", ""),
             "filename": media["filename"],
             "storage_reference": media["storage_reference"],
             "content_type": media["content_type"],
@@ -638,6 +691,8 @@ def add_docket_evidence(case_reference):
         }
     else:
         payload = request.get_json(silent=True) or {}
+        payload.pop("sha256_hash", None)
+        payload.pop("content_hash", None)
 
     try:
         evidence = get_citizen_docket_service().add_evidence(citizen_id, case_reference, payload)
@@ -1315,6 +1370,45 @@ def get_citizen_interview(interview_id):
     return jsonify(interview)
 
 
+@api_v1_bp.get("/constable/interviews/<interview_id>/transcripts")
+@jwt_required()
+def get_constable_interview_transcripts(interview_id):
+    claims = get_jwt()
+    if claims.get("role") != "constable":
+        return jsonify({"error": "Forbidden."}), 403
+
+    constable_id = get_jwt_identity()
+    interview = get_constable_registration_service().get_interview_for_constable(constable_id, interview_id)
+    if interview is None:
+        return jsonify({"error": "Interview not found."}), 404
+
+    service = get_transcription_service()
+    transcripts = {}
+    for key in ("citizen_recording", "constable_recording"):
+        transcripts[key] = service.generate_transcript(interview.get(key)) if service is not None else {"status": "FAILED", "error": "Transcript service unavailable."}
+    return jsonify({"interview_id": interview_id, "transcripts": transcripts})
+
+
+@api_v1_bp.get("/constable/interviews/<interview_id>/recording-comparison")
+@jwt_required()
+def get_constable_recording_comparison(interview_id):
+    claims = get_jwt()
+    if claims.get("role") != "constable":
+        return jsonify({"error": "Forbidden."}), 403
+
+    constable_id = get_jwt_identity()
+    interview = get_constable_registration_service().get_interview_for_constable(constable_id, interview_id)
+    if interview is None:
+        return jsonify({"error": "Interview not found."}), 404
+
+    engine = get_recording_comparison_engine()
+    if engine is None:
+        return jsonify({"status": "COMPARISON_UNAVAILABLE", "overall_similarity": 0.0, "findings": [], "error": "Comparison engine unavailable."})
+
+    report = engine.compare(interview.get("citizen_recording"), interview.get("constable_recording"))
+    return jsonify(report)
+
+
 @api_v1_bp.get("/detective/dockets/<case_reference>")
 @jwt_required()
 def get_detective_docket(case_reference):
@@ -1324,11 +1418,66 @@ def get_detective_docket(case_reference):
 
     detective_id = get_jwt_identity()
     try:
-        docket = get_investigation_service().get_docket_for_detective(case_reference)
+        docket = get_investigation_service().get_docket_for_detective(case_reference, detective_id)
     except ValueError as exc:
         status = 404 if "not found" in str(exc).lower() else 400
         return jsonify({"error": str(exc)}), status
     return jsonify(docket)
+
+
+@api_v1_bp.get("/detective/dockets/<case_reference>/procedure-state")
+@jwt_required()
+def get_detective_procedure_state(case_reference):
+    claims = get_jwt()
+    if claims.get("role") != "detective":
+        return jsonify({"error": "Forbidden."}), 403
+
+    detective_id = get_jwt_identity()
+    service = get_detective_procedure_service()
+    if service is None:
+        return jsonify({"error": "Procedure service unavailable."}), 503
+    result = service.evaluate_case(case_reference, actor_id=detective_id, actor_role="detective", action="start_investigation")
+    return jsonify(result)
+
+
+@api_v1_bp.post("/detective/dockets/<case_reference>/evidence-review")
+@jwt_required()
+def complete_detective_evidence_review(case_reference):
+    claims = get_jwt()
+    if claims.get("role") != "detective":
+        return jsonify({"error": "Forbidden."}), 403
+
+    detective_id = get_jwt_identity()
+    payload = request.get_json(silent=True) or {}
+    service = get_detective_procedure_service()
+    if service is None:
+        return jsonify({"error": "Procedure service unavailable."}), 503
+    try:
+        result = service.record_evidence_review(case_reference, actor_id=detective_id, actor_role="detective", evidence_ids=payload.get("evidence_ids"), payload=payload)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+    return jsonify(result), 200
+
+
+@api_v1_bp.post("/detective/dockets/<case_reference>/case-facts-verification")
+@jwt_required()
+def record_detective_case_facts_verification(case_reference):
+    claims = get_jwt()
+    if claims.get("role") != "detective":
+        return jsonify({"error": "Forbidden."}), 403
+
+    detective_id = get_jwt_identity()
+    payload = request.get_json(silent=True) or {}
+    service = get_detective_procedure_service()
+    if service is None:
+        return jsonify({"error": "Procedure service unavailable."}), 503
+    try:
+        result = service.record_case_facts_verification(case_reference, actor_id=detective_id, actor_role="detective", payload=payload)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 400
+        return jsonify({"error": str(exc), "status": status}), status
+    return jsonify(result), 200
 
 
 @api_v1_bp.post("/detective/dockets/<case_reference>/statements")
@@ -1528,6 +1677,39 @@ def list_detective_note_entries(investigation_id):
     return jsonify(notes)
 
 
+@api_v1_bp.post("/detective/investigations/<investigation_id>/actions")
+@jwt_required()
+def create_detective_investigation_action(investigation_id):
+    claims = get_jwt()
+    if claims.get("role") != "detective":
+        return jsonify({"error": "Forbidden."}), 403
+
+    detective_id = get_jwt_identity()
+    payload = request.get_json(silent=True) or {}
+    try:
+        action = get_investigation_service().create_action(investigation_id, detective_id, payload)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+    return jsonify(action), 201
+
+
+@api_v1_bp.get("/detective/investigations/<investigation_id>/actions")
+@jwt_required()
+def list_detective_investigation_actions(investigation_id):
+    claims = get_jwt()
+    if claims.get("role") != "detective":
+        return jsonify({"error": "Forbidden."}), 403
+
+    detective_id = get_jwt_identity()
+    try:
+        actions = get_investigation_service().list_actions_for_investigation(investigation_id, detective_id)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
+    return jsonify(actions)
+
+
 @api_v1_bp.post("/detective/investigations/<investigation_id>/complete")
 @jwt_required()
 def complete_detective_investigation(investigation_id):
@@ -1598,15 +1780,26 @@ def submit_citizen_recording(interview_id):
 def _find_evidence_by_storage_reference(storage_reference):
     for case in get_case_service().get_all_cases():
         for item in case.get("evidence", []):
-            if item.get("storage_reference") == storage_reference:
-                return case.get("citizen_id"), item
+            if str(item.get("storage_reference") or "") == storage_reference:
+                return case.get("case_reference"), case.get("citizen_id"), item
 
     evidence_repository = current_app.extensions.get("evidence_repository")
     if evidence_repository is not None:
         for item in evidence_repository.list_all():
             if str(item.get("storage_reference") or "") == storage_reference:
-                return item.get("citizen_id"), item
-    return None, None
+                return item.get("case_reference"), item.get("citizen_id"), item
+    return None, None, None
+
+
+def _recompute_evidence_hash(storage_reference):
+    path = get_media_manager().resolve_path(storage_reference)
+    if path is None:
+        return None
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 @api_v1_bp.get("/media/evidence/<path:stored_filename>")
@@ -1614,15 +1807,33 @@ def _find_evidence_by_storage_reference(storage_reference):
 def get_evidence_file(stored_filename):
     claims = get_jwt()
     storage_reference = f"evidence/{stored_filename}"
-    owning_citizen_id, evidence = _find_evidence_by_storage_reference(storage_reference)
+    case_reference, owning_citizen_id, evidence = _find_evidence_by_storage_reference(storage_reference)
     if evidence is None:
         return jsonify({"error": "File not found."}), 404
     if claims.get("role") == "citizen" and str(owning_citizen_id) != str(get_jwt_identity()):
+        return jsonify({"error": "Forbidden."}), 403
+    if claims.get("role") in OPERATIONAL_ROLES and case_reference is None:
         return jsonify({"error": "Forbidden."}), 403
 
     path = get_media_manager().resolve_path(storage_reference)
     if path is None:
         return jsonify({"error": "File not found."}), 404
+    computed_hash = None
+    current_hash = str(evidence.get("sha256_hash") or "").strip()
+    if len(current_hash) != 64:
+        computed_hash = _recompute_evidence_hash(storage_reference)
+        if computed_hash:
+            evidence["sha256_hash"] = computed_hash
+            evidence["content_hash"] = computed_hash
+            evidence["integrity_status"] = "VERIFIED"
+            for case in get_case_service().get_all_cases():
+                for item in case.get("evidence", []):
+                    if str(item.get("storage_reference") or "") == storage_reference:
+                        item["sha256_hash"] = computed_hash
+                        item["content_hash"] = computed_hash
+                        item["integrity_status"] = "VERIFIED"
+                        get_case_service().update_case(case)
+                        break
     return send_file(
         path,
         mimetype=evidence.get("content_type") or "application/octet-stream",

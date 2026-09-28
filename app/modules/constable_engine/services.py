@@ -555,7 +555,10 @@ class ConstableRegistrationService:
 
         for interview in self._interviews.values():
             if interview.get("case_reference") == case_reference:
-                return interview
+                persisted = self._rehydrate_interview_from_case(case_reference=case_reference)
+                if persisted is not None:
+                    return dict(persisted)
+                return dict(interview)
 
         interview_id = f"INT-{case_reference}-{len(self._interviews) + 1:04d}"
         interview = {
@@ -573,7 +576,6 @@ class ConstableRegistrationService:
         }
         self._interviews[interview_id] = interview
         case["interview_id"] = interview_id
-        self.case_service.update_case(case)
         self._append_timeline_event(
             case,
             "constable_registration_interview_started",
@@ -581,6 +583,7 @@ class ConstableRegistrationService:
             "constable",
             {"interview_id": interview_id},
         )
+        self.case_service.update_case(case)
         self.audit_service.log(
             {
                 "actor_id": constable_id,
@@ -591,6 +594,23 @@ class ConstableRegistrationService:
             }
         )
         return dict(interview)
+
+    @staticmethod
+    def _recording_is_submitted(recording):
+        if not isinstance(recording, dict):
+            return False
+        return str(recording.get("status") or "").upper() == "SUBMITTED"
+
+    @staticmethod
+    def _interview_has_complete_recordings(interview):
+        if not isinstance(interview, dict):
+            return False
+        citizen = interview.get("citizen_recording")
+        constable = interview.get("constable_recording")
+        return (
+            ConstableRegistrationService._recording_is_submitted(citizen)
+            and ConstableRegistrationService._recording_is_submitted(constable)
+        )
 
     def find_recording_by_storage_reference(self, storage_reference):
         for recording in self._recordings.values():
@@ -646,11 +666,14 @@ class ConstableRegistrationService:
                     interview["constable_id"] = actor
                 interview["status"] = "STARTED"
             elif event.get("event_type") == "citizen_recording_submitted":
+                actor = event.get("actor_id")
+                if actor and (interview.get("citizen_id") is None or str(interview.get("citizen_id") or "") == ""):
+                    interview["citizen_id"] = actor
                 recording = {
                     "recording_id": details.get("recording_id"),
                     "interview_id": interview_id,
                     "case_reference": case.get("case_reference"),
-                    "recorder_id": case.get("citizen_id"),
+                    "recorder_id": actor or case.get("citizen_id"),
                     "recorder_role": "citizen",
                     "recording_type": "citizen_recording",
                     "status": "SUBMITTED",
@@ -664,14 +687,17 @@ class ConstableRegistrationService:
                 }
                 interview["citizen_recording"] = recording
                 self._recordings[recording["recording_id"]] = recording
-                if interview["status"] != "COMPLETED":
+                if interview["status"] not in {"COMPLETED"}:
                     interview["status"] = "AWAITING_AUDIO"
             elif event.get("event_type") == "constable_recording_submitted":
+                actor = event.get("actor_id")
+                if actor and (interview.get("constable_id") is None or str(interview.get("constable_id") or "") == ""):
+                    interview["constable_id"] = actor
                 recording = {
                     "recording_id": details.get("recording_id"),
                     "interview_id": interview_id,
                     "case_reference": case.get("case_reference"),
-                    "recorder_id": interview.get("constable_id") or actor_id or case.get("citizen_id"),
+                    "recorder_id": actor or interview.get("constable_id") or case.get("citizen_id"),
                     "recorder_role": "constable",
                     "recording_type": "constable_recording",
                     "status": "SUBMITTED",
@@ -685,34 +711,62 @@ class ConstableRegistrationService:
                 }
                 interview["constable_recording"] = recording
                 self._recordings[recording["recording_id"]] = recording
-                if interview["status"] != "COMPLETED":
+                if interview["status"] not in {"COMPLETED"}:
                     interview["status"] = "AWAITING_AUDIO"
             elif event.get("event_type") == "interview_completed":
-                interview["status"] = "COMPLETED"
-                interview["completion_timestamp"] = event.get("timestamp") or interview["completion_timestamp"]
-                interview["updated_at"] = event.get("timestamp") or interview["updated_at"]
+                if self._interview_has_complete_recordings(interview):
+                    interview["status"] = "COMPLETED"
+                    interview["completion_timestamp"] = event.get("timestamp") or interview["completion_timestamp"]
+                    interview["updated_at"] = event.get("timestamp") or interview["updated_at"]
+                elif interview.get("citizen_recording") or interview.get("constable_recording"):
+                    interview["status"] = "AWAITING_AUDIO"
+                    interview["completion_timestamp"] = None
+                else:
+                    interview["status"] = "STARTED"
+                    interview["completion_timestamp"] = None
 
-        if interview.get("status") == "STARTED" and interview.get("citizen_recording") and interview.get("constable_recording"):
-            interview["status"] = "COMPLETED" if interview.get("completion_timestamp") else "AWAITING_AUDIO"
-
-        if interview.get("status") == "COMPLETED" and interview.get("completion_timestamp") is None:
-            interview["completion_timestamp"] = interview.get("updated_at")
+        if self._interview_has_complete_recordings(interview):
+            interview["status"] = "COMPLETED"
+            if interview.get("completion_timestamp") is None:
+                interview["completion_timestamp"] = interview.get("updated_at")
+        elif interview.get("citizen_recording") or interview.get("constable_recording"):
+            interview["status"] = "AWAITING_AUDIO"
+            if interview.get("completion_timestamp") is not None:
+                interview["completion_timestamp"] = None
+        elif interview.get("status") == "COMPLETED":
+            interview["status"] = "STARTED"
+            interview["completion_timestamp"] = None
 
         self._interviews[interview_id] = dict(interview)
         return dict(interview)
 
+    def _get_authoritative_interview(self, interview_id=None, case_reference=None):
+        if interview_id is None and case_reference is None:
+            return None
+
+        if case_reference:
+            case = self._get_docket_by_reference(case_reference)
+            if case is not None:
+                interview_id = str(interview_id or case.get("interview_id") or "").strip() or None
+
+        interview = self._rehydrate_interview_from_case(interview_id=interview_id, case_reference=case_reference)
+        if interview is not None:
+            self._interviews[interview["interview_id"]] = dict(interview)
+            return dict(interview)
+
+        interview = self._interviews.get(interview_id) if interview_id else None
+        if interview is None and case_reference:
+            interview = next((item for item in self._interviews.values() if item.get("case_reference") == case_reference), None)
+        return dict(interview) if interview is not None else None
+
     def get_interview_by_id(self, interview_id):
-        interview = self._interviews.get(interview_id)
-        if interview is None:
-            interview = self._rehydrate_interview_from_case(interview_id=interview_id)
+        interview = self._get_authoritative_interview(interview_id=interview_id)
         if interview is None:
             return None
         return dict(interview)
 
     def get_interview_for_citizen(self, citizen_id, interview_id):
-        interview = self._interviews.get(interview_id)
-        if interview is None:
-            interview = self._rehydrate_interview_from_case(interview_id=interview_id)
+        interview = self._get_authoritative_interview(interview_id=interview_id)
         if interview is None:
             return None
         if interview.get("citizen_id") not in (None, citizen_id) and str(interview.get("citizen_id") or "") != str(citizen_id):
@@ -723,9 +777,7 @@ class ConstableRegistrationService:
         return dict(interview)
 
     def get_interview_for_constable(self, constable_id, interview_id):
-        interview = self._interviews.get(interview_id)
-        if interview is None:
-            interview = self._rehydrate_interview_from_case(interview_id=interview_id)
+        interview = self._get_authoritative_interview(interview_id=interview_id)
         if interview is None:
             return None
         if interview.get("constable_id") not in (None, constable_id) and str(interview.get("constable_id") or "") != str(constable_id):
@@ -749,7 +801,7 @@ class ConstableRegistrationService:
         return True
 
     def submit_recording(self, actor_id, actor_role, interview_id, payload):
-        interview = self._interviews.get(interview_id)
+        interview = self._get_authoritative_interview(interview_id=interview_id)
         if interview is None:
             raise ValueError("Interview not found.")
 
@@ -816,6 +868,23 @@ class ConstableRegistrationService:
         interview["updated_at"] = self._utc_now()
         self._recordings[recording["recording_id"]] = recording
 
+        self._append_timeline_event(
+            case,
+            f"{recording_type}_submitted",
+            actor_id,
+            actor_role,
+            {"recording_id": recording["recording_id"], "interview_id": interview_id},
+        )
+        self.audit_service.log(
+            {
+                "actor_id": actor_id,
+                "actor_role": actor_role,
+                "action": f"{recording_type}_submitted",
+                "case_reference": interview.get("case_reference"),
+                "details": {"recording_id": recording["recording_id"], "interview_id": interview_id},
+            }
+        )
+
         if self._ensure_interview_complete(interview):
             self._append_timeline_event(
                 case,
@@ -833,31 +902,14 @@ class ConstableRegistrationService:
                     "details": {"interview_id": interview_id},
                 }
             )
-        else:
-            self._append_timeline_event(
-                case,
-                f"{recording_type}_submitted",
-                actor_id,
-                actor_role,
-                {"recording_id": recording["recording_id"], "interview_id": interview_id},
-            )
 
-        self.audit_service.log(
-            {
-                "actor_id": actor_id,
-                "actor_role": actor_role,
-                "action": f"{recording_type}_submitted",
-                "case_reference": interview.get("case_reference"),
-                "details": {"recording_id": recording["recording_id"], "interview_id": interview_id},
-            }
-        )
         case["interview_id"] = interview_id
         self.case_service.update_case(case)
         self.evidence_service.add_recording(recording)
         return recording
 
     def register_docket(self, interview_id, constable_id):
-        interview = self._interviews.get(interview_id)
+        interview = self._get_authoritative_interview(interview_id=interview_id)
         if interview is None:
             raise ValueError("Interview not found.")
         if interview.get("constable_id") != constable_id:
@@ -903,6 +955,14 @@ class ConstableRegistrationService:
             }
         )
         self.case_service.update_case(case)
+
+        if self.assignment_service is not None:
+            self.assignment_service.auto_assign_detective_for_registered_case(
+                case.get("case_reference"),
+                actor_id="system",
+                actor_role="system",
+                reason="Case registered; the assignment engine selected the eligible detective for the initial investigation assignment.",
+            )
         return dict(case)
 
     def get_case_detail_for_constable(self, case_reference):

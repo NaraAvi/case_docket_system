@@ -75,6 +75,112 @@ describe('modules/citizen.js (integration: module + core/api + core/ui + DOM)', 
       expect(window.location.href).toBe('/citizen/dockets/SUB-1');
     });
 
+    it('uses the persisted investigation status when a submission is already completed', async () => {
+      document.body.innerHTML = '<div id="citizenDockets"></div>';
+      setLocation('/citizen');
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve([{ submission_id: 'SUB-1', title: 'Broken window', status: 'RECEIVED', investigation_status: 'COMPLETED' }]),
+        })
+      );
+
+      await hydrateCitizenDashboard();
+
+      const container = document.getElementById('citizenDockets');
+      expect(container.textContent).toContain('SUB-1');
+      expect(container.textContent).toContain('Completed');
+      expect(container.textContent).not.toContain('RECEIVED');
+    });
+
+    it('derives completion from the linked procedural case on the citizen dashboard', async () => {
+      document.body.innerHTML = '<div id="citizenDockets"></div>';
+      setLocation('/citizen');
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url) => {
+          if (url === '/api/v1/citizen/submissions') {
+            return Promise.resolve({
+              ok: true,
+              json: () => Promise.resolve([
+                { submission_id: 'SUB-000003', title: 'Broken window', status: 'RECEIVED' },
+              ]),
+            });
+          }
+          if (url === '/api/v1/citizen/dockets') {
+            return Promise.resolve({
+              ok: true,
+              json: () => Promise.resolve([
+                {
+                  case_reference: 'CD-2026-000123',
+                  source_submission_id: 'SUB-000003',
+                  status: 'AWAITING_CONSTABLE_REGISTRATION',
+                  investigation: { status: 'COMPLETED', outcome: 'VALID', final_notes: 'Evidence supports the account.', completed_at: '2026-01-02T12:00:00Z' },
+                },
+              ]),
+            });
+          }
+          return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+        })
+      );
+
+      await hydrateCitizenDashboard();
+
+      const container = document.getElementById('citizenDockets');
+      expect(container.textContent).toContain('SUB-000003');
+      expect(container.textContent).toContain('Completed');
+      expect(container.textContent).not.toContain('RECEIVED');
+    });
+
+    it('splits completed cases from active work and opens a View Outcome modal with semantic investigation labels', async () => {
+      document.body.innerHTML = '<div id="citizenDockets"></div>';
+      setLocation('/citizen');
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url) => {
+          if (url === '/api/v1/citizen/submissions') {
+            return Promise.resolve({
+              ok: true,
+              json: () => Promise.resolve([
+                { submission_id: 'SUB-000001', title: 'Open case', status: 'RECEIVED' },
+                { submission_id: 'SUB-000003', title: 'Completed case', status: 'RECEIVED' },
+              ]),
+            });
+          }
+          if (url === '/api/v1/citizen/dockets') {
+            return Promise.resolve({
+              ok: true,
+              json: () => Promise.resolve([
+                { case_reference: 'CD-2026-000001', source_submission_id: 'SUB-000001', status: 'REGISTERED' },
+                {
+                  case_reference: 'CD-2026-000123',
+                  source_submission_id: 'SUB-000003',
+                  status: 'CLOSED',
+                  investigation: { status: 'COMPLETED', outcome: 'VALID', final_notes: 'Evidence supports the account.', completed_at: '2026-01-02T12:00:00Z' },
+                },
+              ]),
+            });
+          }
+          return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+        })
+      );
+
+      await hydrateCitizenDashboard();
+
+      const container = document.getElementById('citizenDockets');
+      expect(container.textContent).toContain('Active / In Review');
+      expect(container.textContent).toContain('Completed Cases');
+      expect(container.textContent).toContain('View Outcome');
+      expect(container.querySelectorAll('[data-view-outcome]').length).toBe(1);
+
+      container.querySelector('[data-view-outcome]').click();
+
+      expect(document.getElementById('citizenOutcomeModal').classList.contains('hidden')).toBe(false);
+      expect(document.getElementById('citizenOutcomeValue').textContent).toContain('VALID');
+      expect(document.getElementById('citizenOutcomeNotes').textContent).toContain('Evidence supports the account.');
+    });
+
     it('shows an empty state when there are no submissions', async () => {
       document.body.innerHTML = '<div id="citizenDockets"></div>';
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) }));
@@ -151,6 +257,64 @@ describe('modules/citizen.js (integration: module + core/api + core/ui + DOM)', 
 
       expect(document.getElementById('citizenCaseMeta').textContent).toContain('Broken window');
       expect(document.getElementById('citizenCaseTimeline').textContent).toContain('docket_registered');
+    });
+
+    it('surfaces a persisted completed investigation in the citizen review summary', async () => {
+      document.body.innerHTML = `
+        <div class="page-head-row">
+          <div><h1>CD-2026-000123</h1></div>
+          <span id="citizenStatusBadge"></span>
+        </div>
+        <div id="citizenWorkflowRail"></div>
+        <div id="citizenProtectedReview">
+          <span id="citizenReviewStatus"></span>
+          <p id="citizenReviewSummary"></p>
+          <dl class="meta-list">
+            <dt>Submission status</dt><dd id="citizenSubmissionStatusText">REGISTERED</dd>
+            <dt>Current procedural stage</dt><dd id="citizenProceduralReviewValue">Procedural assessment</dd>
+            <dt>Procedural case</dt><dd id="citizenProceduralCaseValue">CD-2026-000123</dd>
+          </dl>
+        </div>
+        <dl id="citizenCaseMeta"></dl>
+        <ul id="citizenCaseTimeline"></ul>
+        <div id="citizenStructuredSubmission"></div>
+      `;
+      setLocation('/citizen/dockets/CD-2026-000123');
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url) => {
+          if (url === '/api/v1/citizen/dockets/CD-2026-000123') {
+            return Promise.resolve({
+              ok: true,
+              json: () => Promise.resolve({
+                case_reference: 'CD-2026-000123',
+                status: 'REGISTERED',
+                is_frozen: false,
+                location: 'Main St',
+                incident_date: '2026-01-01',
+                title: 'Broken window',
+                timeline: [],
+                investigation_status: 'COMPLETED',
+                investigation: {
+                  status: 'COMPLETED',
+                  outcome: 'VALID',
+                  final_notes: 'Evidence supports the account.',
+                  completed_at: '2026-01-02T12:00:00Z',
+                },
+                original_content: { title: 'Broken window', reporter_relationship: 'witness' },
+              }),
+            });
+          }
+          return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+        })
+      );
+
+      await hydrateCitizenDetail();
+
+      expect(document.getElementById('citizenStatusBadge').textContent).toContain('Completed');
+      expect(document.getElementById('citizenReviewSummary').textContent).toContain('Investigation complete');
+      expect(document.getElementById('citizenReviewSummary').textContent).toContain('VALID');
+      expect(document.getElementById('citizenReviewSummary').textContent).toContain('Evidence supports the account.');
     });
 
     it('runs the protected submission analysis pipeline and shows the backend review result for a submission', async () => {

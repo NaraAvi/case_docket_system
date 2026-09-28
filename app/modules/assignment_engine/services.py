@@ -21,6 +21,8 @@ class AssignmentService:
     """Shared operational assignment service for case-to-officer responsibility."""
 
     VALID_OFFICER_ROLES = {"constable", "detective"}
+    AUTO_ASSIGNMENT_RULE = "AUTO_DETECTIVE_ASSIGNMENT"
+    AUTO_ASSIGNMENT_RULE_VERSION = "v1"
 
     def __init__(self, repository=None, case_service=None, identity_registry=None, audit_service=None, freeze_service=None, app=None):
         self.app = app
@@ -166,6 +168,139 @@ class AssignmentService:
     def query_assignments_by_officer(self, officer_id):
         return self.repository.query_by_officer(officer_id)
 
+    def _detective_assignment_load(self, detective_id):
+        history = self.query_assignments_by_officer(str(detective_id))
+        active_count = 0
+        for item in history:
+            if str(item.get("status") or "").upper() == "ACTIVE":
+                active_count += 1
+        return active_count, len(history)
+
+    def _list_eligible_detectives(self, case_reference):
+        identities = self.identity_registry.list_detectives()
+        eligible = []
+        for identity in identities:
+            if not identity.get("active", True):
+                continue
+            if str(identity.get("access_state", "ACTIVE")).upper() == "REVOKED":
+                continue
+            detective_id = str(identity.get("test_id") or "").strip()
+            if not detective_id:
+                continue
+            if self.conflict_service is not None:
+                try:
+                    self.conflict_service.assert_no_conflict(
+                        case_reference,
+                        detective_id,
+                        operation="assignment",
+                        actor_id="system",
+                        actor_role="system",
+                    )
+                except ValueError:
+                    continue
+            active_count, total_count = self._detective_assignment_load(detective_id)
+            eligible.append(
+                {
+                    "test_id": detective_id,
+                    "full_name": identity.get("full_name"),
+                    "active_assignment_count": active_count,
+                    "total_assignment_count": total_count,
+                }
+            )
+        eligible.sort(key=lambda item: (item["active_assignment_count"], item["total_assignment_count"], str(item["test_id"])))
+        return eligible
+
+    def ensure_initial_detective_assignment(
+        self,
+        case_reference,
+        actor_id="system",
+        actor_role="system",
+        reason=None,
+    ):
+        """Ensure a registered case has an active detective assignment.
+
+        This is the reconciliation path for legacy already-registered cases that
+        were created before the automatic-assignment lifecycle was enforced.
+        It updates the runtime state through the same engine as new-case
+        registrations and does not overwrite an active assignment.
+        """
+        case = self._get_case(case_reference)
+        if case is None:
+            return None
+
+        current = self.get_current_assignment_for_case(case_reference)
+        if current is not None and str(current.get("status") or "").upper() == "ACTIVE":
+            if str(current.get("officer_role") or "").lower() == "detective":
+                return current
+            raise ValueError("An active assignment already exists for this case and is not a detective assignment.")
+
+        if str(case.get("status") or "").upper() != "REGISTERED":
+            return None
+
+        try:
+            return self.auto_assign_detective_for_registered_case(
+                case_reference,
+                actor_id=actor_id,
+                actor_role=actor_role,
+                reason=reason or "Reconciliating the initial detective assignment for a registered case.",
+            )
+        except ValueError:
+            return None
+
+    def auto_assign_detective_for_registered_case(
+        self,
+        case_reference,
+        actor_id="system",
+        actor_role="system",
+        reason=None,
+    ):
+        case = self._get_case(case_reference)
+        if case is None:
+            raise ValueError("Case not found.")
+        if str(case.get("status") or "").upper() != "REGISTERED":
+            raise ValueError("Automatic detective assignment requires a registered case.")
+
+        current = self.get_current_assignment_for_case(case_reference)
+        if current is not None and str(current.get("status") or "").upper() == "ACTIVE":
+            if str(current.get("officer_role") or "").lower() == "detective":
+                return current
+            raise ValueError("An active assignment already exists for this case and is not a detective assignment.")
+
+        eligible = self._list_eligible_detectives(case_reference)
+        if not eligible:
+            message = "No active detective is eligible for automatic assignment."
+            self.audit_service.log(
+                {
+                    "actor_id": actor_id,
+                    "actor_role": actor_role,
+                    "action": "automatic_assignment_unavailable",
+                    "case_reference": case_reference,
+                    "details": {"reason": message, "eligible_detective_count": 0},
+                }
+            )
+            raise ValueError(message)
+
+        selected = eligible[0]
+        selection_basis = (
+            f"Automatic detective assignment for registered docket {case_reference}: "
+            f"eligible detectives were filtered for active role/identity validity and conflict clearance; "
+            f"selected the lowest-active-workload detective, then lowest total assignment history, then stable test_id."
+        )
+        assignment = self.create_assignment(
+            case_reference=case_reference,
+            officer_id=selected["test_id"],
+            officer_role="detective",
+            assigned_by=actor_id,
+            assigned_by_role=actor_role,
+            reason=reason or "Automatic detective assignment for registered case.",
+            assignment_method="AUTOMATIC",
+            selection_rule=self.AUTO_ASSIGNMENT_RULE,
+            selection_rule_version=self.AUTO_ASSIGNMENT_RULE_VERSION,
+            selection_basis=selection_basis,
+            override_authority=True,
+        )
+        return assignment
+
     def end_assignment(self, assignment_id, ended_by=None, ended_by_role=None, reason=None):
         assignment = self.repository.get_by_id(assignment_id)
         if assignment is None:
@@ -204,6 +339,10 @@ class AssignmentService:
         assigned_by_role=None,
         reason=None,
         override_authority=False,
+        assignment_method="MANUAL",
+        selection_rule=None,
+        selection_rule_version=None,
+        selection_basis=None,
     ):
         case = self._get_case(case_reference)
         if case is None:
@@ -236,6 +375,10 @@ class AssignmentService:
                 "status": "ACTIVE",
                 "reason": reason,
                 "previous_assignment_id": None,
+                "assignment_method": str(assignment_method or "MANUAL").upper(),
+                "selection_rule": selection_rule,
+                "selection_rule_version": selection_rule_version,
+                "selection_basis": selection_basis,
             }
         )
         self.audit_service.log(
@@ -251,6 +394,9 @@ class AssignmentService:
                     "assigned_by": trusted_assigner,
                     "assigned_by_role": trusted_assigner_role,
                     "reason": reason,
+                    "assignment_method": assignment.get("assignment_method"),
+                    "selection_rule": assignment.get("selection_rule"),
+                    "selection_basis": assignment.get("selection_basis"),
                 },
             }
         )
@@ -266,6 +412,10 @@ class AssignmentService:
         previous_assignment_id=None,
         reason=None,
         override_authority=False,
+        assignment_method="MANUAL",
+        selection_rule=None,
+        selection_rule_version=None,
+        selection_basis=None,
     ):
         case = self._get_case(case_reference)
         if case is None:
@@ -276,6 +426,8 @@ class AssignmentService:
         resolved_role = self._resolve_target_officer(officer_id, officer_role)
         self._assert_assignable_status(case, resolved_role)
         current = self.get_current_assignment_for_case(case_reference)
+        if current and current.get("status") == "ACTIVE" and str(current.get("officer_id")) == str(officer_id):
+            return dict(current)
         if not (current and current.get("status") == "ACTIVE" and str(current.get("officer_id")) == str(officer_id)):
             # (Re-assigning the officer who already holds the case is rejected
             # below with the existing "already assigned" message.)
@@ -308,6 +460,10 @@ class AssignmentService:
                 "status": "ACTIVE",
                 "reason": reason,
                 "previous_assignment_id": previous_assignment_id,
+                "assignment_method": str(assignment_method or ("REASSIGNMENT" if previous_assignment_id else "MANUAL")).upper(),
+                "selection_rule": selection_rule,
+                "selection_rule_version": selection_rule_version,
+                "selection_basis": selection_basis,
             }
         )
         self.audit_service.log(
@@ -324,6 +480,9 @@ class AssignmentService:
                     "assigned_by_role": trusted_assigner_role,
                     "previous_assignment_id": previous_assignment_id,
                     "reason": reason,
+                    "assignment_method": replacement.get("assignment_method"),
+                    "selection_rule": replacement.get("selection_rule"),
+                    "selection_basis": replacement.get("selection_basis"),
                 },
             }
         )

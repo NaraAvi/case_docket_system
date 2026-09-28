@@ -28,21 +28,22 @@
               {{ nav_link('/citizen/dockets/new', 'Submit New Submission') }}
             {% elif role == 'constable' %}
               {{ nav_link('/constable', 'Dashboard') }}
-              {{ nav_link('/active-cases', 'Active Cases') }}
+              {{ nav_link('/active-cases', 'Cases') }}
               {{ nav_link('/evidence-vault', 'Evidence Vault') }}
             {% elif role == 'detective' %}
               {{ nav_link('/detective', 'Dashboard') }}
-              {{ nav_link('/active-cases', 'Active Cases') }}
+              {{ nav_link('/active-cases', 'Cases') }}
               {{ nav_link('/evidence-vault', 'Evidence Vault') }}
             {% elif role == 'station_commander' %}
               {{ nav_link('/station-commander', 'Dashboard') }}
-              {{ nav_link('/active-cases', 'Active Cases') }}
+              {{ nav_link('/active-cases', 'Cases') }}
               {{ nav_link('/evidence-vault', 'Evidence Vault') }}
             {% elif role == 'ipid' %}
               {{ nav_link('/ipid', 'Dashboard') }}
-              {{ nav_link('/active-cases', 'Active Cases') }}
+              {{ nav_link('/active-cases', 'Cases') }}
               {{ nav_link('/evidence-vault', 'Evidence Vault') }}
             {% endif %}
+            {{ nav_link('/accountability', 'Accountability') }}
           </nav>
 
           <div class="nav-footer">

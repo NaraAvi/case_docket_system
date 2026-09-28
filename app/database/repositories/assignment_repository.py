@@ -29,6 +29,8 @@ class AssignmentRepository(BaseSqlAlchemyRepository):
             payload["assignment_id"] = self._generate_assignment_id()
         if not payload.get("status"):
             payload["status"] = "ACTIVE"
+        if not payload.get("assignment_method"):
+            payload["assignment_method"] = "MANUAL"
         if not payload.get("assigned_at"):
             payload["assigned_at"] = self._utc_now()
         return super().create(payload)

@@ -81,6 +81,23 @@ class TestEvidenceFileUpload:
         assert response.status_code == 201
         assert response.get_json()["sha256_hash"] is None
 
+    def test_client_supplied_hash_is_ignored_when_no_real_file_exists(self, app_client):
+        citizen_token = _login(app_client, "citizen")
+        case_reference = _create_docket(app_client, citizen_token)
+
+        response = app_client.post(
+            f"/api/v1/citizen/dockets/{case_reference}/evidence",
+            json={
+                "evidence_type": "PHOTO",
+                "description": "No file attached.",
+                "filename": "placeholder.jpg",
+                "sha256_hash": "a" * 64,
+            },
+            headers=_auth_headers(citizen_token),
+        )
+        assert response.status_code == 201
+        assert response.get_json()["sha256_hash"] is None
+
     def test_owning_citizen_can_view_the_uploaded_file(self, app_client):
         citizen_token = _login(app_client, "citizen")
         case_reference = _create_docket(app_client, citizen_token)

@@ -21,6 +21,38 @@ def _create_registered_docket_via_service():
     return app, case
 
 
+def test_registered_case_auto_assigns_detective_when_no_assignment_exists():
+    app, case = _create_registered_docket_via_service()
+    assignment_service = app.extensions["assignment_service"]
+
+    assignment = assignment_service.auto_assign_detective_for_registered_case(case["case_reference"])
+
+    assert assignment["status"] == "ACTIVE"
+    assert assignment["case_reference"] == case["case_reference"]
+    assert assignment["officer_id"] == DETECTIVE_ID
+    assert assignment["officer_role"] == "detective"
+    assert assignment["assignment_method"] == "AUTOMATIC"
+    assert "selection_basis" in assignment and assignment["selection_basis"]
+    assert assignment_service.get_current_assignment_for_case(case["case_reference"])["assignment_id"] == assignment["assignment_id"]
+
+
+def test_reconciliation_service_assigns_registered_case_without_active_assignment():
+    app, case = _create_registered_docket_via_service()
+    assignment_service = app.extensions["assignment_service"]
+
+    assert assignment_service.get_current_assignment_for_case(case["case_reference"]) is None
+
+    assignment = assignment_service.ensure_initial_detective_assignment(case["case_reference"])
+
+    assert assignment is not None
+    assert assignment["status"] == "ACTIVE"
+    assert assignment["case_reference"] == case["case_reference"]
+    assert assignment["officer_id"] == DETECTIVE_ID
+    assert assignment["officer_role"] == "detective"
+    assert assignment["assignment_method"] == "AUTOMATIC"
+    assert assignment_service.get_current_assignment_for_case(case["case_reference"])["assignment_id"] == assignment["assignment_id"]
+
+
 def test_assignment_service_can_create_and_fetch_current_assignment():
     app, case = _create_registered_docket_via_service()
     assignment_service = app.extensions["assignment_service"]
@@ -216,6 +248,68 @@ def test_detective_investigation_requires_active_case_assignment():
 
     with pytest.raises(ValueError, match="assigned|assignment"):
         investigation_service.create_investigation(case["case_reference"], DETECTIVE_ID, {"notes": "No detective assignment exists yet."})
+
+
+def test_detective_docket_view_requires_active_case_assignment(app_client):
+    from tests.conftest import create_case_via_service, login
+
+    citizen_token = login(app_client, CITIZEN_ID)
+    constable_token = login(app_client, CONSTABLE_ID)
+    detective_token = login(app_client, DETECTIVE_ID)
+
+    case = create_case_via_service(app_client, CITIZEN_ID, "Unassigned detective docket", "Docket should not be viewable without a detective assignment.")
+    case_reference = case["case_reference"]
+
+    statement_response = app_client.post(
+        f"/api/v1/citizen/dockets/{case_reference}/statements",
+        headers={"Authorization": f"Bearer {citizen_token}"},
+        json={"statement_text": "I am submitting for the assigned detective to review."},
+    )
+    assert statement_response.status_code == 201
+
+    submit_response = app_client.post(
+        f"/api/v1/citizen/dockets/{case_reference}/submit",
+        headers={"Authorization": f"Bearer {citizen_token}"},
+    )
+    assert submit_response.status_code == 200
+
+    interview_response = app_client.post(
+        f"/api/v1/constable/dockets/{case_reference}/interview",
+        headers={"Authorization": f"Bearer {constable_token}"},
+        json={"status": "STARTED"},
+    )
+    assert interview_response.status_code == 201
+    interview_id = interview_response.get_json()["interview_id"]
+
+    app_client.post(
+        f"/api/v1/citizen/interviews/{interview_id}/recording",
+        headers={"Authorization": f"Bearer {citizen_token}"},
+        json={"recording_type": "citizen_recording", "storage_reference": "citizen-unassigned.wav", "filename": "citizen-unassigned.wav"},
+    )
+    app_client.post(
+        f"/api/v1/constable/interviews/{interview_id}/recording",
+        headers={"Authorization": f"Bearer {constable_token}"},
+        json={"recording_type": "constable_recording", "storage_reference": "constable-unassigned.wav", "filename": "constable-unassigned.wav"},
+    )
+
+    register_response = app_client.post(
+        f"/api/v1/constable/interviews/{interview_id}/register",
+        headers={"Authorization": f"Bearer {constable_token}"},
+    )
+    assert register_response.status_code == 200
+
+    current_assignment = app_client.application.extensions["assignment_service"].get_current_assignment_for_case(case_reference)
+    assert current_assignment is not None
+    assert current_assignment["officer_role"] == "detective"
+
+    response = app_client.get(
+        f"/api/v1/detective/dockets/{case_reference}",
+        headers={"Authorization": f"Bearer {detective_token}"},
+    )
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload["case_reference"] == case_reference
+    assert payload["status"] == "REGISTERED"
 
 
 def test_unknown_case_and_unknown_officer_are_rejected():

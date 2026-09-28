@@ -18,27 +18,178 @@ export async function hydrateCitizenDashboard() {
 
   try {
     const submissions = await fetchJson('/api/v1/citizen/submissions');
+    const linkedProceduralCases = await fetchJson('/api/v1/citizen/dockets').catch(() => []);
+    const linkedLookup = new Map((Array.isArray(linkedProceduralCases) ? linkedProceduralCases : [])
+      .filter((entry) => entry && (entry.source_submission_id || entry.source_submission))
+      .map((entry) => [String(entry.source_submission_id || entry.source_submission), entry]));
+
     if (!submissions.length) {
       setEmptyState(container, 'No submissions yet. Create your first protected report to begin the workflow.');
       return;
     }
 
-    container.innerHTML = submissions
-      .map((item) => `
+    const renderCard = (item, isCompleted = false) => {
+      const linkedCase = linkedLookup.get(String(item.submission_id));
+      const effectiveStatus = getCitizenEffectiveStatus(item, linkedCase);
+      const statusLabel = effectiveStatus === 'COMPLETED' ? 'Completed' : (item.status || 'RECEIVED');
+      const caseReference = linkedCase?.case_reference || 'Not yet created';
+      const investigation = linkedCase?.investigation || item?.investigation || {};
+      const outcome = String(investigation?.outcome || 'VALID').trim().toUpperCase() || 'VALID';
+      const notes = String(investigation?.final_notes || investigation?.notes || 'No final reasoning was recorded.').trim();
+      const completedAt = investigation?.completed_at || null;
+      const completedAtText = completedAt ? new Date(completedAt).toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC') : 'Not recorded';
+
+      if (isCompleted) {
+        return `
+          <article class="docket-card">
+            <div class="meta-wrap">
+              <strong>${item.submission_id}</strong>
+              <span>${item.title || 'No title provided'}</span>
+            </div>
+            <div class="stack-row">
+              <span class="${buildStatusBadge(effectiveStatus)}">${statusLabel}</span>
+              <button class="secondary-btn small-btn" type="button" data-case-link="/citizen/dockets/${item.submission_id}">Open</button>
+              <button
+                class="primary-btn small-btn"
+                type="button"
+                data-view-outcome="true"
+                data-case-reference="${caseReference}"
+                data-outcome="${outcome}"
+                data-notes="${notes.replace(/"/g, '&quot;')}"
+                data-completed-at="${completedAtText}"
+              >View Outcome</button>
+            </div>
+          </article>
+        `;
+      }
+
+      return `
         <article class="docket-card">
           <div class="meta-wrap">
             <strong>${item.submission_id}</strong>
             <span>${item.title || 'No title provided'}</span>
           </div>
           <div class="stack-row">
-            <span class="${buildStatusBadge(item.status)}">${item.status || 'RECEIVED'}</span>
+            <span class="${buildStatusBadge(effectiveStatus)}">${statusLabel}</span>
             <button class="secondary-btn small-btn" type="button" data-case-link="/citizen/dockets/${item.submission_id}">Open</button>
           </div>
         </article>
-      `)
+      `;
+    };
+
+    const activeCards = submissions
+      .filter((item) => getCitizenEffectiveStatus(item, linkedLookup.get(String(item.submission_id))) !== 'COMPLETED')
+      .map((item) => renderCard(item, false))
+      .join('');
+    const completedCards = submissions
+      .filter((item) => getCitizenEffectiveStatus(item, linkedLookup.get(String(item.submission_id))) === 'COMPLETED')
+      .map((item) => renderCard(item, true))
       .join('');
 
+    container.innerHTML = `
+      <div class="stack-list">
+        <div class="panel-head"><h3>Active / In Review</h3></div>
+        ${activeCards || '<div class="empty-state">No active submissions are currently in review.</div>'}
+      </div>
+      <div class="stack-list" style="margin-top:18px;">
+        <div class="panel-head"><h3>Completed Cases</h3></div>
+        ${completedCards || '<div class="empty-state">No completed cases have been finalized yet.</div>'}
+      </div>
+      ${completedCards ? `
+        <div class="reauth-modal hidden" id="citizenOutcomeModal" aria-hidden="true">
+          <div class="reauth-card">
+            <div class="reauth-header">
+              <span class="lock-icon">✓</span>
+              <span>Investigation completed</span>
+            </div>
+            <p class="reauth-subtitle">The linked procedural case is complete. Review the final outcome below.</p>
+            <dl class="meta-list" style="margin-top:12px;">
+              <dt>Procedural case</dt><dd id="citizenOutcomeCase">Not yet created</dd>
+              <dt>Outcome</dt><dd id="citizenOutcomeValue">VALID</dd>
+              <dt>Completed</dt><dd id="citizenOutcomeDate">Not recorded</dd>
+            </dl>
+            <p id="citizenOutcomeNotes" style="margin-top:12px;">No final reasoning was recorded.</p>
+            <div class="modal-actions">
+              <button type="button" class="secondary-btn" id="closeCitizenOutcomeModal">Close</button>
+              <button type="button" class="primary-btn" id="citizenOutcomeEscalateBtn">Escalate</button>
+            </div>
+          </div>
+        </div>
+      ` : ''}
+    `;
+
     bindCaseLinks(container);
+
+    const outcomeModal = document.getElementById('citizenOutcomeModal');
+    const closeCitizenOutcomeModal = document.getElementById('closeCitizenOutcomeModal');
+    const escalateCitizenOutcomeButton = document.getElementById('citizenOutcomeEscalateBtn');
+
+    closeCitizenOutcomeModal?.addEventListener('click', () => {
+      outcomeModal?.classList.add('hidden');
+      outcomeModal?.setAttribute('aria-hidden', 'true');
+    });
+
+    container.querySelectorAll('[data-view-outcome]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const outcome = button.dataset.outcome || 'VALID';
+        const notes = button.dataset.notes || 'No final reasoning was recorded.';
+        const caseReference = button.dataset.caseReference || 'Not yet created';
+        const completedAt = button.dataset.completedAt || 'Not recorded';
+        const caseEl = document.getElementById('citizenOutcomeCase');
+        const outcomeValueEl = document.getElementById('citizenOutcomeValue');
+        const outcomeDateEl = document.getElementById('citizenOutcomeDate');
+        const outcomeNotesEl = document.getElementById('citizenOutcomeNotes');
+
+        if (caseEl) {
+          caseEl.textContent = caseReference;
+        }
+        if (outcomeValueEl) {
+          outcomeValueEl.textContent = outcome;
+        }
+        if (outcomeDateEl) {
+          outcomeDateEl.textContent = completedAt;
+        }
+        if (outcomeNotesEl) {
+          outcomeNotesEl.textContent = notes;
+        }
+        if (escalateCitizenOutcomeButton) {
+          escalateCitizenOutcomeButton.dataset.caseReference = caseReference;
+          const canEscalate = Boolean(caseReference && caseReference !== 'Not yet created' && /^CD-/i.test(String(caseReference)));
+          escalateCitizenOutcomeButton.disabled = !canEscalate;
+          escalateCitizenOutcomeButton.textContent = canEscalate ? 'Escalate' : 'Escalate unavailable';
+        }
+        if (outcomeModal) {
+          outcomeModal.classList.remove('hidden');
+          outcomeModal.setAttribute('aria-hidden', 'false');
+        }
+      });
+    });
+
+    escalateCitizenOutcomeButton?.addEventListener('click', async () => {
+      const caseReference = (escalateCitizenOutcomeButton.dataset.caseReference || '').trim();
+      const outcome = String(document.getElementById('citizenOutcomeValue')?.textContent || 'VALID').trim();
+      const notes = String(document.getElementById('citizenOutcomeNotes')?.textContent || 'No final reasoning was recorded.').trim();
+
+      if (!caseReference || caseReference === 'Not yet created' || !/^CD-/i.test(String(caseReference))) {
+        return;
+      }
+
+      try {
+        await fetchJson(`/api/v1/citizen/dockets/${caseReference}/escalations`, {
+          method: 'POST',
+          body: {
+            category: 'OTHER',
+            description: `I am escalating the completed investigation for ${caseReference}. Outcome: ${outcome}. ${notes}`,
+          },
+        });
+        outcomeModal?.classList.add('hidden');
+        outcomeModal?.setAttribute('aria-hidden', 'true');
+        flashToast('Escalation submitted to IPID for independent review.');
+        window.location.reload();
+      } catch (error) {
+        flashToast(error.message || 'Unable to submit escalation.', { type: 'error' });
+      }
+    });
   } catch (error) {
     setEmptyState(container, error.message || 'Unable to load submissions.');
   }
@@ -208,6 +359,13 @@ function getCitizenStageLabel(reviewStatus) {
   return 'Procedural assessment';
 }
 
+function getCitizenEffectiveStatus(docket, linkedCase = null) {
+  const linkedInvestigationStatus = String(linkedCase?.investigation?.status || linkedCase?.investigation_status || '').trim().toUpperCase();
+  const investigationStatus = String(docket?.investigation?.status || docket?.investigation_status || linkedInvestigationStatus || docket?.status || 'RECEIVED').trim().toUpperCase();
+  const nonEmptyStatus = String(docket?.status || '').trim().toUpperCase();
+  return investigationStatus === 'COMPLETED' ? 'COMPLETED' : (nonEmptyStatus || investigationStatus || 'RECEIVED');
+}
+
 function sanitizeCitizenReviewExplanation(explanation) {
   const value = String(explanation || '').trim();
   if (!value) {
@@ -229,10 +387,10 @@ function bindCitizenProceduralCaseAction(caseReference, reviewResult, linkedCase
   const candidateId = reviewResult?.candidate?.candidate_id || reviewResult?.candidate_id || reviewResult?.details?.candidate_id || null;
   const reviewStatus = String(reviewResult?.control_evaluation?.result || reviewResult?.status || '').toUpperCase();
   const linkedCaseReference = linkedCase?.case_reference ? String(linkedCase.case_reference).trim() : '';
-  const hasProceduralCase = Boolean(
-    linkedCaseReference && linkedCaseReference.toUpperCase() !== 'NOT YET CREATED'
-      || (reviewResult?.case_reference && String(reviewResult.case_reference).trim() && String(reviewResult.case_reference).trim().toUpperCase() !== 'NOT YET CREATED')
-  );
+  const hasLinkedProceduralCase = Boolean(linkedCaseReference && linkedCaseReference.toUpperCase() !== 'NOT YET CREATED');
+  const reviewCaseReference = reviewResult?.case_reference ? String(reviewResult.case_reference).trim() : '';
+  const hasReviewProceduralCase = Boolean(reviewCaseReference && reviewCaseReference.toUpperCase() !== 'NOT YET CREATED');
+  const hasProceduralCase = hasLinkedProceduralCase || hasReviewProceduralCase;
 
   if (!candidateId || reviewStatus !== 'ALLOWED' || hasProceduralCase) {
     container.classList.add('hidden');
@@ -326,8 +484,11 @@ async function ensureProtectedSubmissionReview(caseReference, docket, linkedCase
     const proceduralCase = linkedCase?.case_reference || result?.case_reference || 'Not yet created';
     const explanation = sanitizeCitizenReviewExplanation(result?.relationship_summary?.explanation || result?.control_evaluation?.reason || 'The system is reviewing this protected submission.');
     const citizenStage = getCitizenStageLabel(reviewStatus);
-    const submissionStatus = docket.status || 'RECEIVED';
-    const reviewText = `Current status: Submission received. Current procedural stage: ${citizenStage}. Procedural case: ${proceduralCase}. ${explanation}`;
+    const submissionStatus = getCitizenEffectiveStatus(docket);
+    bindCitizenProceduralCaseAction(caseReference, result, linkedCase);
+    const reviewText = submissionStatus === 'COMPLETED'
+      ? `Investigation complete. Outcome: ${String(docket.investigation?.outcome || 'VALID').toUpperCase()}. ${String(docket.investigation?.final_notes || docket.investigation?.notes || 'No final reasoning was recorded.').trim()}`
+      : `Current status: Submission received. Current procedural stage: ${citizenStage}. Procedural case: ${proceduralCase}. ${explanation}`;
 
     try {
       const refreshedAssertions = await fetchJson(`/api/v1/citizen/submissions/${caseReference}/assertions`).catch(() => []);
@@ -350,7 +511,7 @@ async function ensureProtectedSubmissionReview(caseReference, docket, linkedCase
 
     if (statusEl) {
       statusEl.className = buildStatusBadge(submissionStatus);
-      statusEl.textContent = 'Current status';
+      statusEl.textContent = submissionStatus === 'COMPLETED' ? 'Completed' : 'Current status';
     }
     if (submissionStatusEl) {
       submissionStatusEl.textContent = submissionStatus;
@@ -371,6 +532,15 @@ async function ensureProtectedSubmissionReview(caseReference, docket, linkedCase
       summaryEl.textContent = reviewText;
     } else {
       panel.innerHTML = `<div class="stack-row"><span class="${buildStatusBadge(submissionStatus)}">Current status</span></div><p style="margin-top:10px;">${reviewText}</p>`;
+    }
+    if (submissionStatus === 'COMPLETED') {
+      const button = document.getElementById('citizenProceedToProceduralCase');
+      const actionContainer = document.getElementById('citizenProceduralCaseAction');
+      if (button && actionContainer) {
+        actionContainer.classList.add('hidden');
+        button.disabled = true;
+        button.textContent = 'Completed';
+      }
     }
     panel.classList.remove('hidden');
     return result;
@@ -721,11 +891,13 @@ function renderCitizenWorkflow(docket, caseReference = '') {
     return;
   }
 
+  const effectiveStatus = getCitizenEffectiveStatus(docket);
+  const isCompleted = effectiveStatus === 'COMPLETED';
   const steps = [
     { label: 'Protected submission', state: 'complete', detail: 'Submission received and recorded' },
-    { label: 'Status & review', state: 'current', detail: 'Current procedural assessment' },
-    { label: 'Information / evidence', state: 'upcoming', detail: 'Citizen facts and optional material' },
-    { label: 'History', state: 'upcoming', detail: 'Append-only timeline and provenance' },
+    { label: 'Status & review', state: isCompleted ? 'complete' : 'current', detail: isCompleted ? 'Investigation complete' : 'Current procedural assessment' },
+    { label: 'Information / evidence', state: isCompleted ? 'complete' : 'upcoming', detail: isCompleted ? 'Final review and evidence locked' : 'Citizen facts and optional material' },
+    { label: 'History', state: isCompleted ? 'complete' : 'upcoming', detail: isCompleted ? 'Completed with final reasoning recorded' : 'Append-only timeline and provenance' },
   ];
 
   renderWorkflowRail(rail, { title: 'Protected submission lifecycle', steps, locked: Boolean(docket.is_frozen) });
@@ -968,22 +1140,32 @@ export async function hydrateCitizenDetail() {
       docket.interview_id = linkedCase.interview_id || docket.interview_id || null;
     }
 
+    const effectiveStatus = getCitizenEffectiveStatus(docket, linkedCase);
+    const investigation = docket.investigation || linkedCase?.investigation || null;
+    const investigationOutcome = String(investigation?.outcome || '').trim().toUpperCase();
+    const completedAt = investigation?.completed_at ? new Date(investigation.completed_at) : null;
+    const completedAtText = completedAt && !Number.isNaN(completedAt.getTime())
+      ? completedAt.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC')
+      : 'Not recorded';
+
     renderCitizenWorkflow(docket, caseReference);
     if (meta) {
-      const statusValue = docket.status || (isSubmission ? 'RECEIVED' : 'DRAFT');
+      const statusValue = effectiveStatus;
       const proceduralCaseValue = linkedCase?.case_reference || docket.case_reference || 'Not yet created';
       meta.innerHTML = `
         <dt>Submission status</dt><dd>${statusValue}</dd>
         <dt>Location</dt><dd>${docket.location || 'Not provided'}</dd>
         <dt>Incident Date</dt><dd>${docket.incident_date || 'Not provided'}</dd>
         <dt>Submission title</dt><dd>${docket.title || 'Unspecified'}</dd>
+        <dt>Investigation outcome</dt><dd>${investigationOutcome || 'Pending'}</dd>
+        <dt>Completion timestamp</dt><dd>${completedAtText}</dd>
         <dt>Procedural review</dt><dd id="citizenProceduralReviewMetaValue">Pending</dd>
         <dt>Procedural case</dt><dd id="citizenProceduralCaseMetaValue">${proceduralCaseValue}</dd>
       `;
     }
     if (statusBadge) {
-      statusBadge.className = buildStatusBadge(docket.status || (isSubmission ? 'RECEIVED' : 'DRAFT'));
-      statusBadge.textContent = `Submission ${docket.status || (isSubmission ? 'RECEIVED' : 'DRAFT')}`;
+      statusBadge.className = buildStatusBadge(effectiveStatus);
+      statusBadge.textContent = effectiveStatus === 'COMPLETED' ? 'Completed' : `Submission ${effectiveStatus}`;
     }
     if (freezeBadge) {
       if (docket.is_frozen) {
@@ -1031,7 +1213,24 @@ export async function hydrateCitizenDetail() {
     }
     bindCitizenSubmit(caseReference);
     const reviewResult = await ensureProtectedSubmissionReview(caseReference, docket, linkedCase);
-    bindCitizenProceduralCaseAction(caseReference, reviewResult, linkedCase);
+    if (effectiveStatus === 'COMPLETED' && document.getElementById('citizenReviewSummary')) {
+      const finalNotes = String(investigation?.final_notes || investigation?.notes || 'No final reasoning was recorded.').trim();
+      const finalOutcome = investigationOutcome || 'VALID';
+      const completionSummary = `Investigation complete. Outcome: ${finalOutcome}. ${finalNotes}${completedAtText !== 'Not recorded' ? ` Completed at ${completedAtText}.` : ''}`;
+      const reviewSummary = document.getElementById('citizenReviewSummary');
+      if (reviewSummary) {
+        reviewSummary.textContent = completionSummary;
+      }
+      const reviewStatusEl = document.getElementById('citizenReviewStatus');
+      if (reviewStatusEl) {
+        reviewStatusEl.className = buildStatusBadge('COMPLETED');
+        reviewStatusEl.textContent = 'Completed';
+      }
+      const submissionStatusEl = document.getElementById('citizenSubmissionStatusText');
+      if (submissionStatusEl) {
+        submissionStatusEl.textContent = 'COMPLETED';
+      }
+    }
 
     const summaryText = document.getElementById('citizenSubmissionSummaryText');
     const submissionToggle = document.getElementById('citizenSubmissionToggle');

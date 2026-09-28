@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+
+{% block content %}
+  <section class="page-hero">
+    <div>
+      <p class="eyebrow">User Accountability</p>
+      <h1>Review your accountability record and current status.</h1>
+    </div>
+  </section>
+
+  <div class="cards-grid multi-panel">
+    <div class="panel-card">
+      <h3>Current Status</h3>
+      <div class="statement-box">
+        <div class="panel-head">
+          <h2>{{ status_label }}</h2>
+          {% if status_label == 'CLEAR' %}
+            <span class="badge badge-verified">CLEAR</span>
+          {% elif status_label in ['REVIEW REQUIRED', 'ACCOUNTABILITY REVIEW', 'FROZEN'] %}
+            <span class="badge badge-breach">{{ status_label }}</span>
+          {% else %}
+            <span class="badge badge-muted">{{ status_label }}</span>
+          {% endif %}
+        </div>
+        <p><strong>{{ user_name }}</strong> is currently operating under the live PDAS accountability model.</p>
+      </div>
+    </div>
+
+    <div class="panel-card">
+      <h3>Account Summary</h3>
+      <dl class="meta-list">
+        <dt>Accountability Number</dt>
+        <dd>{{ profile.profile_id or 'ACCT-PROFILE-PENDING' }}</dd>
+        <dt>Status</dt>
+        <dd>{{ status_label }}</dd>
+        <dt>Access State</dt>
+        <dd>{{ (profile.access_state or 'ACTIVE')|replace('_', ' ')|title }}</dd>
+        <dt>Total Demerits</dt>
+        <dd>{{ profile.total_demerits or 0 }}</dd>
+      </dl>
+    </div>
+  </div>
+
+  <section class="panel-block">
+    <div class="panel-head">
+      <h2>Accountability History</h2>
+      <span class="badge badge-muted">{{ (history|length) }} record(s)</span>
+    </div>
+
+    {% if history %}
+      <div class="stack-list">
+        {% for event in history %}
+          <div class="docket-card">
+            <div class="meta">
+              {% if event.event_type == 'DEMERIT' %}
+                <span class="badge badge-breach">{{ event.event_type }}</span>
+              {% elif event.event_type == 'CLEARANCE' %}
+                <span class="badge badge-verified">{{ event.event_type }}</span>
+              {% else %}
+                <span class="badge badge-muted">{{ event.event_type }}</span>
+              {% endif %}
+              <div class="meta-wrap">
+                <strong>{{ event.reason }}</strong>
+                <small>{{ event.created_at }}</small>
+              </div>
+            </div>
+            <div class="stack-row">
+              <span class="badge badge-muted">{{ event.total_after }} total</span>
+              <span class="badge badge-muted">{{ event.delta }} delta</span>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="empty-state">No accountability events recorded.</div>
+    {% endif %}
+  </section>
+{% endblock %}

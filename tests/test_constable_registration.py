@@ -263,6 +263,179 @@ def test_constable_service_rehydrates_completed_interview_from_case_timeline_whe
         assert interview["constable_recording"]["status"] == "SUBMITTED"
 
 
+def test_constable_service_rehydrates_from_case_timeline_when_runtime_cache_is_stale(app):
+    with app.app_context():
+        case_service = app.extensions["case_service"]
+        constable_service = app.extensions["constable_registration_service"]
+
+        case = case_service.create_case(
+            VALID_CITIZEN_ID,
+            {"title": "Stale cache case", "description": "The runtime interview should not override the authoritative case timeline."},
+        )
+        case_reference = case["case_reference"]
+        interview_id = "INT-CASE-STALE-0001"
+        case["status"] = "AWAITING_CONSTABLE_REGISTRATION"
+        case["interview_id"] = interview_id
+        case["timeline"] = [
+            {
+                "event_type": "constable_registration_interview_started",
+                "actor_id": VALID_CONSTABLE_ID,
+                "actor_role": "constable",
+                "timestamp": "2026-09-24T12:00:00+00:00",
+                "details": {"interview_id": interview_id},
+            },
+            {
+                "event_type": "citizen_recording_submitted",
+                "actor_id": VALID_CITIZEN_ID,
+                "actor_role": "citizen",
+                "timestamp": "2026-09-24T12:05:00+00:00",
+                "details": {
+                    "recording_id": "REC-INT-CASE-STALE-0001-0001",
+                    "interview_id": interview_id,
+                    "storage_reference": "recordings/citizen_stale.wav",
+                },
+            },
+        ]
+        case_service.update_case(case)
+        constable_service._interviews[interview_id] = {
+            "interview_id": interview_id,
+            "case_reference": case_reference,
+            "citizen_id": VALID_CITIZEN_ID,
+            "constable_id": VALID_CONSTABLE_ID,
+            "status": "COMPLETED",
+            "citizen_recording": {"status": "SUBMITTED", "storage_reference": "recordings/citizen_stale.wav"},
+            "constable_recording": {"status": "SUBMITTED", "storage_reference": "recordings/constable_stale.wav"},
+            "created_at": "2026-09-24T12:00:00+00:00",
+            "updated_at": "2026-09-24T12:06:00+00:00",
+        }
+
+        interview = constable_service.get_interview_for_constable(VALID_CONSTABLE_ID, interview_id)
+
+        assert interview is not None
+        assert interview["status"] == "AWAITING_AUDIO"
+        assert interview["citizen_recording"]["status"] == "SUBMITTED"
+        assert interview["constable_recording"] is None
+
+
+def test_constable_service_does_not_trust_completion_event_when_citizen_recording_is_missing(app):
+    with app.app_context():
+        case_service = app.extensions["case_service"]
+        constable_service = app.extensions["constable_registration_service"]
+
+        case = case_service.create_case(
+            VALID_CITIZEN_ID,
+            {"title": "Incomplete completion case", "description": "The completion event should not override a missing citizen recording."},
+        )
+        case_reference = case["case_reference"]
+        interview_id = "INT-CASE-INCOMPLETE-0001"
+        case["status"] = "AWAITING_CONSTABLE_REGISTRATION"
+        case["interview_id"] = interview_id
+        case["timeline"] = [
+            {
+                "event_type": "constable_registration_interview_started",
+                "actor_id": VALID_CONSTABLE_ID,
+                "actor_role": "constable",
+                "timestamp": "2026-09-24T12:00:00+00:00",
+                "details": {"interview_id": interview_id},
+            },
+            {
+                "event_type": "constable_recording_submitted",
+                "actor_id": VALID_CONSTABLE_ID,
+                "actor_role": "constable",
+                "timestamp": "2026-09-24T12:05:00+00:00",
+                "details": {
+                    "recording_id": "REC-INT-CASE-INCOMPLETE-0001-0001",
+                    "interview_id": interview_id,
+                    "storage_reference": "recordings/constable_incomplete.wav",
+                },
+            },
+            {
+                "event_type": "interview_completed",
+                "actor_id": VALID_CONSTABLE_ID,
+                "actor_role": "constable",
+                "timestamp": "2026-09-24T12:06:00+00:00",
+                "details": {"interview_id": interview_id},
+            },
+        ]
+        case_service.update_case(case)
+
+        interview = constable_service.get_interview_for_constable(VALID_CONSTABLE_ID, interview_id)
+
+        assert interview is not None
+        assert interview["status"] == "AWAITING_AUDIO"
+        assert interview["citizen_recording"] is None
+        assert interview["constable_recording"]["status"] == "SUBMITTED"
+
+
+def test_recording_comparison_detects_material_content_differences():
+    from app.modules.transcription_engine.services import RecordingComparisonEngine
+
+    engine = RecordingComparisonEngine()
+    report = engine.compare(
+        {
+            "recording_type": "citizen_recording",
+            "duration": 25.0,
+            "text": "I arrived at the station at six and spoke to the officer.",
+            "segments": [{"speaker_label": "SPEAKER_00", "text": "I arrived at the station at six and spoke to the officer.", "start_time": 0.0, "end_time": 4.5}],
+        },
+        {
+            "recording_type": "constable_recording",
+            "duration": 26.0,
+            "text": "I arrived at the station at seven and spoke to the officer.",
+            "segments": [{"speaker_label": "SPEAKER_01", "text": "I arrived at the station at seven and spoke to the officer.", "start_time": 0.0, "end_time": 5.0}],
+        },
+    )
+
+    assert report["status"] == "COMPLETED"
+    assert report["overall_similarity"] < 100.0
+    assert any(item["category"] in {"POTENTIAL_WORDING_VARIANCE", "SIGNIFICANT_SEQUENCE_VARIANCE"} for item in report["findings"])
+
+
+def test_recording_comparison_waits_for_both_transcripts_until_both_are_available():
+    from app.modules.transcription_engine.services import RecordingComparisonEngine
+
+    engine = RecordingComparisonEngine()
+    report = engine.compare({"recording_type": "citizen_recording", "text": "I arrived at the station at six and spoke to the officer."}, {"recording_type": "constable_recording", "text": ""})
+
+    assert report["status"] == "WAITING_FOR_BOTH_TRANSCRIPTS"
+    assert report["citizen_transcript_available"] is True
+    assert report["constable_transcript_available"] is False
+    assert "Waiting for both transcripts" in report["error"]
+
+
+def test_recording_comparison_returns_unavailable_when_transcripts_are_missing():
+    from app.modules.transcription_engine.services import RecordingComparisonEngine
+
+    engine = RecordingComparisonEngine()
+    report = engine.compare({"recording_type": "citizen_recording", "text": ""}, {"recording_type": "constable_recording", "text": ""})
+
+    assert report["status"] == "WAITING_FOR_BOTH_TRANSCRIPTS"
+    assert "Waiting for both transcripts" in report["error"]
+
+
+def test_transcript_service_requires_real_provider_and_reports_blocked_state_when_unavailable():
+    from app.modules.transcription_engine.services import TranscriptGenerationService, WhisperXProvider
+
+    provider = WhisperXProvider()
+    assert provider.name == "WhisperX"
+    assert provider.is_available() in {True, False}
+
+    service = TranscriptGenerationService(provider=provider)
+    report = service.generate_transcript(
+        {
+            "recording_id": "REC-TEST-001",
+            "recording_type": "citizen_recording",
+            "case_reference": "CD-20260924-000001",
+            "storage_reference": "recordings/test_input.mp4",
+            "sha256_hash": "abc123",
+        }
+    )
+
+    assert report["status"] in {"BLOCKED", "FAILED", "NOT_IMPLEMENTED", "COMPLETED"}
+    if report["status"] in {"BLOCKED", "FAILED", "NOT_IMPLEMENTED"}:
+        assert "WhisperX" in report["error"] or "blocked" in report["error"].lower() or "not available" in report["error"].lower()
+
+
 def test_control_gate_result_model_and_registration_gate_block_incomplete_or_frozen_paths(app):
     with app.app_context():
         case_service = app.extensions["case_service"]

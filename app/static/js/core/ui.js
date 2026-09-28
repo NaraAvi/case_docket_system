@@ -68,6 +68,9 @@ export function buildStatusBadge(status) {
   if (value.includes('BREACHED')) {
     return 'badge badge-breach';
   }
+  if (value.includes('COMPLETED') || value.includes('CLOSED') || value.includes('RESOLVED')) {
+    return 'badge badge-verified';
+  }
   if (value.includes('REGISTERED') || value.includes('VERIFIED') || value.includes('ACTIVE')) {
     return 'badge badge-verified';
   }
@@ -438,6 +441,21 @@ export function renderSlaMeter(container, sla) {
     if (container) {
       container.innerHTML = '<div class="field-hint">SLA tracking is unavailable for this docket.</div>';
     }
+    return null;
+  }
+
+  const isCompleted = String(sla.status || '').toUpperCase().includes('COMPLETED') || Boolean(sla.completed_at);
+  if (isCompleted) {
+    const completedAt = sla.completed_at ? new Date(sla.completed_at) : null;
+    const completedText = completedAt && !Number.isNaN(completedAt.getTime())
+      ? completedAt.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC')
+      : 'the investigation completion timestamp';
+    container.innerHTML = `
+      <div class="sla-meter">
+        <div class="sla-meter-track"><div class="sla-meter-fill" style="width:100%"></div></div>
+        <span class="sla-meter-label">Investigation completed — SLA frozen at ${completedText}</span>
+      </div>
+    `;
     return null;
   }
 

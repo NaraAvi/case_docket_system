@@ -516,6 +516,87 @@ class InvestigationGate(BaseControlGate):
         )
 
 
+class ProcedureGate(BaseControlGate):
+    """SYSTEM_CONTROL: detective procedure review is bound to the protected source chain."""
+
+    gate_name = "procedure"
+
+    def check(self, case=None, case_reference=None, actor_id=None, actor_role=None, action="view_preserved_evidence", source_context=None):
+        case_reference = str(case_reference or self._case_reference_from_case(case) or "").strip()
+        if not case_reference:
+            return ControlGateResult.deny(self.gate_name, "PROCEDURE.CASE_MISSING", "Case reference is required.")
+
+        if case is None and self.case_service is not None:
+            case = self.case_service.get_case(case_reference)
+        if case is None:
+            return ControlGateResult.deny(self.gate_name, "PROCEDURE.CASE_NOT_FOUND", "Docket not found.", case_reference=case_reference)
+
+        source_submission_id = str((case or {}).get("source_submission_id") or "").strip()
+        source_candidate_id = str((case or {}).get("source_candidate_id") or "").strip()
+        protected_context = source_context or {}
+        evidence = protected_context.get("citizen_evidence") or (case or {}).get("evidence") or []
+        if not source_submission_id and isinstance(protected_context.get("citizen_submission"), dict):
+            source_submission_id = str(protected_context["citizen_submission"].get("submission_id") or "").strip()
+        if not source_candidate_id and isinstance(protected_context.get("incident_candidate"), dict):
+            source_candidate_id = str(protected_context["incident_candidate"].get("candidate_id") or "").strip()
+
+        legacy_protected_source = bool(
+            source_submission_id
+            or source_candidate_id
+            or (case or {}).get("statements")
+            or protected_context.get("citizen_assertions")
+            or protected_context.get("citizen_claims")
+            or evidence
+        )
+        legacy_protected_evidence = bool(evidence or (case or {}).get("statements"))
+        if action in {"view_preserved_evidence", "review_case", "start_investigation", "complete_investigation"}:
+            if not legacy_protected_source:
+                return ControlGateResult.deny(
+                    self.gate_name,
+                    "PROCEDURE.SOURCE_CHAIN",
+                    "The protected citizen source chain is missing for this procedural case.",
+                    case_reference=case_reference,
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                    action=action,
+                )
+            if action in {"review_case", "start_investigation", "complete_investigation"} and not legacy_protected_evidence:
+                return ControlGateResult.deny(
+                    self.gate_name,
+                    "PROCEDURE.EVIDENCE_PRESERVED",
+                    "Preserved evidence must exist before the procedure may move forward.",
+                    case_reference=case_reference,
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                    action=action,
+                )
+            if action in {"start_investigation", "complete_investigation"} and str(actor_role or "").lower() != "detective":
+                return ControlGateResult.deny(
+                    self.gate_name,
+                    "PROCEDURE.ROLE_DETECTIVE",
+                    "Only a detective role may advance or complete the procedural case.",
+                    case_reference=case_reference,
+                    actor_id=actor_id,
+                    actor_role=actor_role,
+                    action=action,
+                )
+
+        return ControlGateResult.allow(
+            self.gate_name,
+            "PROCEDURE.ALLOWED",
+            "Protected source continuity and detective procedure requirements are satisfied.",
+            case_reference=case_reference,
+            actor_id=actor_id,
+            actor_role=actor_role,
+            action=action,
+        )
+
+    def enforce(self, case=None, case_reference=None, actor_id=None, actor_role=None, action="view_preserved_evidence", source_context=None):
+        result = self.check(case=case, case_reference=case_reference, actor_id=actor_id, actor_role=actor_role, action=action, source_context=source_context)
+        result.raise_for_block()
+        return result
+
+
 class CaseCreationGate(BaseControlGate):
     """CONTROL_BOUNDARY: an IncidentCandidate is never auto-promoted into a procedural case.
 
@@ -966,6 +1047,18 @@ class InvestigationCompletionGate(BaseControlGate):
                 case_reference=case_reference,
                 required_evidence_ids=sorted(case_evidence_ids),
                 linked_evidence_ids=sorted(finding_evidence),
+            )
+
+        if not case_evidence_ids:
+            return ControlGateResult.allow(
+                self.gate_name,
+                "INVESTIGATION.COMPLETION_ALLOWED",
+                "Completion checks passed for a docket without preserved evidence.",
+                case_reference=case_reference,
+                detective_id=str(actor_id),
+                outcome=outcome,
+                previous_status=(investigation or {}).get("status"),
+                new_status="COMPLETED",
             )
 
         return ControlGateResult.allow(

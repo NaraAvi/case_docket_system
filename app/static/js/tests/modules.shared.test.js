@@ -24,6 +24,30 @@ describe('modules/shared.js (integration: cross-role pages, no role gating)', ()
     expect(container.querySelectorAll('.docket-card').length).toBe(6);
   });
 
+  it('hydrateActiveCases keeps completed dockets visible in their own section', async () => {
+    document.body.dataset.role = 'station_commander';
+    document.body.innerHTML = '<div id="activeCaseList"></div>';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve([
+            { case_reference: 'CD-1', title: 'Active case', status: 'REGISTERED', investigation_status: null },
+            { case_reference: 'CD-2', title: 'Closed case', status: 'REGISTERED', investigation_status: 'COMPLETED' },
+          ]),
+      })
+    );
+
+    await hydrateActiveCases();
+
+    const container = document.getElementById('activeCaseList');
+    expect(container.textContent).toContain('Active Cases');
+    expect(container.textContent).toContain('Completed Cases');
+    expect(container.textContent).toContain('CD-1');
+    expect(container.textContent).toContain('CD-2');
+  });
+
   it('hydrateEvidenceVault flattens evidence across dockets and caps at 6', async () => {
     document.body.innerHTML = '<div id="evidenceVaultList"></div>';
     vi.stubGlobal(

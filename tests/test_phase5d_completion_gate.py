@@ -144,3 +144,70 @@ def test_completion_audit_records_previous_and_new_state(app_client, citizen_tok
     event = next(event for event in audit_events if event.get("action") == "detective_investigation_completed")
     assert event.get("previous_state") in {"OPEN", "IN_PROGRESS"}
     assert event.get("new_state") == "COMPLETED"
+
+
+def test_completed_investigation_reconciles_procedure_state(app_client, citizen_token, constable_token, detective_token):
+    case_reference = register_case(app_client, citizen_token, constable_token, "Procedure completion case")
+    investigation_id = app_client.post(
+        f"/api/v1/detective/dockets/{case_reference}/investigation",
+        headers={"Authorization": f"Bearer {detective_token}"},
+        json={"notes": "Initial investigation opened."},
+    ).get_json()["investigation_id"]
+
+    case_service = app_client.application.extensions["case_service"]
+    case = case_service.get_case(case_reference)
+    case.setdefault("evidence", []).append({
+        "evidence_id": "EVD-CASE-PROCEDURE-1",
+        "evidence_type": "PHOTO",
+        "description": "Evidence supporting the final finding.",
+        "source": "citizen",
+        "status": "SUBMITTED",
+    })
+    case_service.update_case(case)
+
+    service = app_client.application.extensions["investigation_service"]
+    for action_type in [
+        "INTERVIEW",
+        "EVIDENCE_REVIEW",
+        "EVIDENCE_COLLECTION",
+        "RECORD_REQUEST",
+        "WITNESS_CONTACT",
+        "SCENE_REVIEW",
+    ]:
+        service.create_action(
+            investigation_id,
+            VALID_DETECTIVE_ID,
+            {
+                "action_type": action_type,
+                "purpose": f"Required step: {action_type}",
+                "description": f"Completed the {action_type.lower().replace('_', ' ')} step.",
+                "result": "Recorded.",
+            },
+        )
+
+    service.create_finding(
+        investigation_id,
+        VALID_DETECTIVE_ID,
+        {
+            "finding_type": "VALID",
+            "notes": "The evidence and required actions support the finding.",
+            "evidence_ids": ["EVD-CASE-PROCEDURE-1"],
+        },
+    )
+
+    complete_response = app_client.post(
+        f"/api/v1/detective/investigations/{investigation_id}/complete",
+        headers={"Authorization": f"Bearer {detective_token}"},
+        json={"outcome": "VALID", "final_notes": "The evidence supports the account."},
+    )
+    assert complete_response.status_code == 200
+
+    procedure_state = app_client.get(
+        f"/api/v1/detective/dockets/{case_reference}/procedure-state",
+        headers={"Authorization": f"Bearer {detective_token}"},
+    )
+    assert procedure_state.status_code == 200
+    payload = procedure_state.get_json()
+    assert payload["current_stage"] == "INVESTIGATION_COMPLETE"
+    assert payload["current_action"] == "complete_investigation"
+    assert payload["next_permitted_action"] not in {"Start investigation", "start_investigation"}

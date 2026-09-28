@@ -266,6 +266,124 @@ class CaseDocket(db.Model):
     updated_at = db.Column(db.DateTime, default=_utc_now, onupdate=_utc_now)
 
 
+class SourceRegister(db.Model):
+    __tablename__ = "source_registers"
+
+    id = db.Column(db.Integer, primary_key=True)
+    source_id = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    source_identifier = db.Column(db.String(80), nullable=True, index=True)
+    case_reference = db.Column(db.String(50), nullable=False, index=True)
+    source_type = db.Column(db.String(50), nullable=False, default="CITIZEN_SUBMISSION", index=True)
+    source_submission_id = db.Column(db.String(50), nullable=True, index=True)
+    source_candidate_id = db.Column(db.String(50), nullable=True, index=True)
+    source_evidence_ids = db.Column(db.JSON, default=list, nullable=False)
+    source_assertion_ids = db.Column(db.JSON, default=list, nullable=False)
+    source_claim_ids = db.Column(db.JSON, default=list, nullable=False)
+    provenance = db.Column(db.JSON, default=dict, nullable=False)
+    register_status = db.Column(db.String(50), nullable=False, default="REGISTERED", index=True)
+    authority = db.Column(db.String(100), nullable=True, index=True)
+    verification_status = db.Column(db.String(40), nullable=False, default="VERIFIED", index=True)
+    source_version = db.Column(db.String(30), nullable=False, default="v1", index=True)
+    version = db.Column(db.Integer, nullable=False, default=1)
+    effective_from = db.Column(db.String(50), nullable=True)
+    effective_to = db.Column(db.String(50), nullable=True)
+    is_current = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    created_by = db.Column(db.String(100), nullable=True, index=True)
+    created_at = db.Column(db.String(50), nullable=False)
+    updated_at = db.Column(db.String(50), nullable=True)
+
+
+class ProcedureRule(db.Model):
+    __tablename__ = "procedure_rules"
+
+    id = db.Column(db.Integer, primary_key=True)
+    rule_id = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    rule_code = db.Column(db.String(150), nullable=False, index=True)
+    version = db.Column(db.String(30), nullable=False, default="v1", index=True)
+    title = db.Column(db.String(200), nullable=False)
+    category = db.Column(db.String(80), nullable=False, default="SOURCE_CONTINUITY", index=True)
+    description = db.Column(db.Text, nullable=False)
+    legal_basis = db.Column(db.Text, nullable=True)
+    applicability = db.Column(db.JSON, default=dict, nullable=False)
+    required_records = db.Column(db.JSON, default=list, nullable=False)
+    required_action = db.Column(db.String(100), nullable=True, index=True)
+    source_reference = db.Column(db.String(200), nullable=True, index=True)
+    rule_classification = db.Column(db.String(60), nullable=False, default="SYSTEM_CONTROL", index=True)
+    trigger = db.Column(db.String(200), nullable=True, index=True)
+    ruleset_version = db.Column(db.String(30), nullable=True, index=True)
+    severity = db.Column(db.String(30), nullable=False, default="HIGH")
+    active = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    created_at = db.Column(db.String(50), nullable=False)
+
+
+class ProcedureProfile(db.Model):
+    __tablename__ = "procedure_profiles"
+
+    id = db.Column(db.Integer, primary_key=True)
+    profile_id = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    profile_name = db.Column(db.String(100), nullable=False, index=True)
+    case_type = db.Column(db.String(50), nullable=False, default="PROCEDURAL_CASE", index=True)
+    description = db.Column(db.Text, nullable=True)
+    rule_codes = db.Column(db.JSON, default=list, nullable=False)
+    default_transition = db.Column(db.String(100), nullable=True)
+    version = db.Column(db.String(30), nullable=False, default="v1", index=True)
+    active = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    created_at = db.Column(db.String(50), nullable=False)
+
+
+class CaseProcedureState(db.Model):
+    __tablename__ = "case_procedure_states"
+
+    id = db.Column(db.Integer, primary_key=True)
+    state_id = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    case_reference = db.Column(db.String(50), nullable=False, index=True)
+    source_id = db.Column(db.String(80), nullable=True, index=True)
+    source_identifier = db.Column(db.String(80), nullable=True, index=True)
+    source_version = db.Column(db.String(30), nullable=True, index=True)
+    rule_id = db.Column(db.String(100), nullable=True, index=True)
+    rule_version = db.Column(db.String(30), nullable=True, index=True)
+    ruleset_version = db.Column(db.String(30), nullable=True, index=True)
+    procedure_version = db.Column(db.String(30), nullable=True, index=True)
+    profile_name = db.Column(db.String(100), nullable=False, default="DEFAULT", index=True)
+    status = db.Column(db.String(40), nullable=False, default="ACTIVE", index=True)
+    gate = db.Column(db.String(50), nullable=False, default="procedure", index=True)
+    current_action = db.Column(db.String(100), nullable=True)
+    next_permitted_action = db.Column(db.String(200), nullable=True)
+    requirement_summary = db.Column(db.JSON, default=dict, nullable=False)
+    rule_results = db.Column(db.JSON, default=list, nullable=False)
+    source_submission_id = db.Column(db.String(50), nullable=True, index=True)
+    source_candidate_id = db.Column(db.String(50), nullable=True, index=True)
+    created_by = db.Column(db.String(100), nullable=True, index=True)
+    created_at = db.Column(db.String(50), nullable=False)
+    updated_at = db.Column(db.String(50), nullable=True)
+
+
+class ProcedureRequirement(db.Model):
+    __tablename__ = "procedure_requirements"
+
+    id = db.Column(db.Integer, primary_key=True)
+    requirement_id = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    state_id = db.Column(db.String(100), nullable=False, index=True)
+    case_reference = db.Column(db.String(50), nullable=False, index=True)
+    rule_code = db.Column(db.String(150), nullable=False, index=True)
+    rule_version = db.Column(db.String(30), nullable=True, index=True)
+    requirement_type = db.Column(db.String(80), nullable=False, default="SOURCE_CHAIN", index=True)
+    description = db.Column(db.Text, nullable=False)
+    required_action = db.Column(db.String(100), nullable=True, index=True)
+    required_record = db.Column(db.String(100), nullable=True)
+    state = db.Column(db.String(40), nullable=False, default="NOT_STARTED", index=True)
+    expected_status = db.Column(db.String(50), nullable=True)
+    satisfied = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    reason = db.Column(db.Text, nullable=True)
+    evidence_reference = db.Column(db.String(200), nullable=True)
+    actor_id = db.Column(db.String(100), nullable=True, index=True)
+    actor_role = db.Column(db.String(50), nullable=True, index=True)
+    history = db.Column(db.JSON, default=list, nullable=False)
+    version = db.Column(db.String(30), nullable=False, default="v1", index=True)
+    created_at = db.Column(db.String(50), nullable=False)
+    updated_at = db.Column(db.String(50), nullable=True)
+
+
 class Assignment(db.Model):
     __tablename__ = "assignments"
 
@@ -280,6 +398,10 @@ class Assignment(db.Model):
     status = db.Column(db.String(20), default="ACTIVE", nullable=False)
     reason = db.Column(db.Text)
     previous_assignment_id = db.Column(db.String(50))
+    assignment_method = db.Column(db.String(30), default="MANUAL", nullable=False)
+    selection_rule = db.Column(db.String(100), nullable=True)
+    selection_rule_version = db.Column(db.String(30), nullable=True)
+    selection_basis = db.Column(db.Text, nullable=True)
     ended_at = db.Column(db.String(50))
     ended_by = db.Column(db.String(100))
     ended_by_role = db.Column(db.String(50))
@@ -311,6 +433,43 @@ class Freeze(db.Model):
     released_by_role = db.Column(db.String(50))
     release_reason = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=_utc_now)
+
+
+class AccountabilityProfile(db.Model):
+    __tablename__ = "accountability_profiles"
+
+    id = db.Column(db.Integer, primary_key=True)
+    profile_id = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    subject_id = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    subject_role = db.Column(db.String(50), nullable=False, default="constable")
+    total_demerits = db.Column(db.Integer, default=0, nullable=False)
+    status = db.Column(db.String(50), default="NORMAL", nullable=False, index=True)
+    access_state = db.Column(db.String(50), default="ACTIVE", nullable=False, index=True)
+    threshold_reached = db.Column(db.Boolean, default=False, nullable=False)
+    review_required = db.Column(db.Boolean, default=False, nullable=False)
+    last_event_id = db.Column(db.String(80), nullable=True)
+    last_triggered_at = db.Column(db.String(50), nullable=True)
+    created_at = db.Column(db.String(50), nullable=False)
+    updated_at = db.Column(db.String(50), nullable=False)
+
+
+class AccountabilityEvent(db.Model):
+    __tablename__ = "accountability_events"
+
+    id = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    subject_id = db.Column(db.String(100), nullable=False, index=True)
+    subject_role = db.Column(db.String(50), nullable=False, default="constable")
+    actor_id = db.Column(db.String(100), nullable=False, index=True)
+    actor_role = db.Column(db.String(50), nullable=False)
+    event_type = db.Column(db.String(50), nullable=False, default="DEMERIT", index=True)
+    delta = db.Column(db.Integer, nullable=False, default=0)
+    total_after = db.Column(db.Integer, nullable=False, default=0)
+    reason = db.Column(db.Text, nullable=False)
+    idempotency_key = db.Column(db.String(200), unique=True, nullable=True, index=True)
+    source = db.Column(db.String(50), nullable=False, default="MANUAL")
+    metadata_json = db.Column("metadata", db.JSON, default=dict, nullable=False)
+    created_at = db.Column(db.String(50), nullable=False)
 
 
 class Flag(db.Model):
@@ -356,6 +515,7 @@ class Investigation(db.Model):
     updated_at = db.Column(db.String(50))
     outcome = db.Column(db.String(50))
     final_notes = db.Column(db.Text)
+    referenced_finding_ids = db.Column(db.JSON, default=list, nullable=False)
     completed_at = db.Column(db.String(50))
     timeline = db.Column(db.JSON, default=list, nullable=False)
 
@@ -372,6 +532,8 @@ class InvestigationFinding(db.Model):
     notes = db.Column(db.Text)
     reasoning = db.Column(db.Text)
     evidence_ids = db.Column(db.JSON, default=list, nullable=False)
+    action_ids = db.Column(db.JSON, default=list, nullable=False)
+    referenced_finding_ids = db.Column(db.JSON, default=list, nullable=False)
     claim_ids = db.Column(db.JSON, default=list, nullable=False)
     supporting_material = db.Column(db.JSON, default=list, nullable=False)
     contradicting_material = db.Column(db.JSON, default=list, nullable=False)
@@ -393,6 +555,26 @@ class InvestigationNote(db.Model):
     evidence_reference = db.Column(db.String(50))
     note_text = db.Column(db.Text, nullable=False)
     created_at = db.Column(db.String(50))
+
+
+class InvestigationAction(db.Model):
+    __tablename__ = "investigation_actions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    action_id = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    investigation_id = db.Column(db.String(50), nullable=False, index=True)
+    case_reference = db.Column(db.String(50), nullable=False)
+    detective_id = db.Column(db.String(100), nullable=False)
+    action_type = db.Column(db.String(50), nullable=False)
+    purpose = db.Column(db.Text, nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    result = db.Column(db.Text, nullable=False)
+    record_data = db.Column(db.JSON, default=dict, nullable=False)
+    evidence_id = db.Column(db.String(100))
+    provenance = db.Column(db.JSON, default=dict, nullable=False)
+    performed_at = db.Column(db.String(50))
+    created_at = db.Column(db.String(50))
+    updated_at = db.Column(db.String(50))
 
 
 class Escalation(db.Model):

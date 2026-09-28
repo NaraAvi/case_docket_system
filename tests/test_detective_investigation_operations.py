@@ -1,3 +1,6 @@
+import hashlib
+import io
+
 import pytest
 
 VALID_CITIZEN_ID = "2200223333111"
@@ -156,6 +159,55 @@ def test_detective_can_view_case_evidence_and_redacts_storage_details(app_client
     assert payload[0]["evidence_type"] == "PHOTO"
     assert payload[0]["source"] == "citizen"
     assert "storage_root" not in payload[0]
+
+
+def test_detective_case_view_exposes_real_evidence_file_and_hash(app_client, citizen_token, constable_token, detective_token):
+    from tests.conftest import create_case_via_service, assign_detective_to_case
+
+    case = create_case_via_service(
+        app_client,
+        VALID_CITIZEN_ID,
+        "Evidence file case",
+        "Evidence review for the detective workspace.",
+        status="REGISTERED",
+        location="Main Street",
+        incident_date="2026-01-01",
+    )
+    case_reference = case["case_reference"]
+    assign_detective_to_case(app_client, case_reference, VALID_DETECTIVE_ID)
+
+    content = b"real-evidence-bytes-for-detective-review"
+    evidence_response = app_client.post(
+        f"/api/v1/citizen/dockets/{case_reference}/evidence",
+        data={
+            "file": (io.BytesIO(content), "photo.png"),
+            "evidence_type": "PHOTO",
+            "description": "Photo of the incident area.",
+        },
+        content_type="multipart/form-data",
+        headers={"Authorization": f"Bearer {citizen_token}"},
+    )
+    assert evidence_response.status_code == 201
+    uploaded = evidence_response.get_json()
+    expected_hash = hashlib.sha256(content).hexdigest()
+
+    response = app_client.get(
+        f"/api/v1/detective/dockets/{case_reference}",
+        headers={"Authorization": f"Bearer {detective_token}"},
+    )
+    assert response.status_code == 200
+    evidence_item = response.get_json()["citizen_evidence"][0]
+    assert evidence_item["sha256_hash"] == expected_hash
+    assert evidence_item["storage_reference"] == uploaded["storage_reference"]
+    assert evidence_item["filename"] == "photo.png"
+
+    stored_filename = uploaded["storage_reference"].split("/", 1)[1]
+    media_response = app_client.get(
+        f"/api/v1/media/evidence/{stored_filename}",
+        headers={"Authorization": f"Bearer {detective_token}"},
+    )
+    assert media_response.status_code == 200
+    assert media_response.data == content
 
 
 def test_detective_can_view_constable_flags_and_related_cases(app_client, citizen_token, constable_token, detective_token):
