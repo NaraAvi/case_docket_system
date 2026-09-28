@@ -73,6 +73,52 @@ def test_authenticated_citizen_can_create_protected_submission(app_client, citiz
     assert len(case_service.get_all_cases()) == 0
 
 
+def test_citizen_list_dockets_exposes_completed_investigation_details(app_client, citizen_token):
+    case_service = app_client.application.extensions["case_service"]
+    case = case_service.create_case(
+        VALID_CITIZEN_ID,
+        {
+            "title": "Completed citizen case",
+            "description": "Evidence supports the citizen's account.",
+            "status": "REGISTERED",
+        },
+    )
+    case_reference = case["case_reference"]
+
+    investigation_service = app_client.application.extensions["investigation_service"]
+    investigation_service.repository.create(
+        {
+            "investigation_id": "INV-CIT-000001",
+            "case_reference": case_reference,
+            "detective_id": "2200223333115",
+            "status": "COMPLETED",
+            "notes": "Investigation notes recorded.",
+            "outcome": "VALID",
+            "final_notes": "Evidence supports the citizen's account.",
+            "referenced_finding_ids": [],
+            "completed_at": "2026-09-28T12:00:00Z",
+            "created_at": "2026-09-28T09:00:00Z",
+            "updated_at": "2026-09-28T12:00:00Z",
+            "timeline": [],
+        }
+    )
+
+    response = app_client.get(
+        "/api/v1/citizen/dockets",
+        headers={"Authorization": f"Bearer {citizen_token}"},
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    item = next(entry for entry in payload if entry["case_reference"] == case_reference)
+    assert item["status"] == "REGISTERED"
+    assert item["investigation_status"] == "COMPLETED"
+    assert item["investigation"]["status"] == "COMPLETED"
+    assert item["outcome"] == "VALID"
+    assert item["final_notes"] == "Evidence supports the citizen's account."
+    assert item["completed_at"] == "2026-09-28T12:00:00Z"
+
+
 def test_submission_history_is_append_only_and_preserves_original_content(app_client, citizen_token):
     create_response = app_client.post(
         "/api/v1/citizen/submissions",

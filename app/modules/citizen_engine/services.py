@@ -743,11 +743,53 @@ class CitizenDocketService:
     def create_docket(self, citizen_id, payload):
         raise ValueError("Citizen docket creation is retired. Use the protected submission workflow instead.")
 
+    def _latest_investigation_for_case(self, case_reference):
+        if not case_reference:
+            return None
+        investigation_service = None
+        if self.app is not None and hasattr(self.app, "extensions"):
+            investigation_service = self.app.extensions.get("investigation_service")
+        if investigation_service is None:
+            return None
+        repository = getattr(investigation_service, "repository", None)
+        if repository is None or not hasattr(repository, "list_for_case"):
+            return None
+        investigations = repository.list_for_case(case_reference) or []
+        if not investigations:
+            return None
+        active = next((item for item in investigations if str(item.get("status") or "").upper() in {"OPEN", "IN_PROGRESS"}), None)
+        latest = active or investigations[-1]
+        if latest is None:
+            return None
+        return dict(latest)
+
+    def _enrich_docket(self, case_data):
+        if case_data is None:
+            return None
+        docket = dict(case_data)
+        investigation = self._latest_investigation_for_case(docket.get("case_reference"))
+        if investigation is None:
+            docket["investigation"] = None
+            docket["investigation_status"] = None
+            docket["outcome"] = None
+            docket["final_notes"] = None
+            docket["completed_at"] = None
+            return docket
+
+        docket["investigation"] = investigation
+        docket["investigation_status"] = investigation.get("status")
+        docket["outcome"] = investigation.get("outcome")
+        docket["final_notes"] = investigation.get("final_notes")
+        docket["completed_at"] = investigation.get("completed_at")
+        return docket
+
     def list_dockets(self, citizen_id):
-        return self.docket_manager.list_dockets_for_citizen(citizen_id)
+        dockets = self.docket_manager.list_dockets_for_citizen(citizen_id) or []
+        return [self._enrich_docket(case_data) for case_data in dockets]
 
     def get_docket(self, citizen_id, case_reference):
-        return self.docket_manager.get_docket_for_citizen(citizen_id, case_reference)
+        docket = self.docket_manager.get_docket_for_citizen(citizen_id, case_reference)
+        return self._enrich_docket(docket)
 
     def get_docket_with_freeze_status(self, citizen_id, case_reference):
         """Read-only enrichment for the citizen docket-detail endpoint --
