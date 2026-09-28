@@ -1,5 +1,5 @@
 {% extends 'base.html' %}
-{% from 'components/_statutory_badge.html' import statutory_badge %}
+{% from 'components/_statutory_badge.html' import statutory_badge, law_note %}
 
 {% block content %}
   <section class="detail-shell">
@@ -15,7 +15,7 @@
 
     <div class="detail-grid">
       <div class="detail-card">
-        <h3>Case Context {{ statutory_badge('IPID Act §28', 'Disciplinary cases are opened when an escalation is upheld under Section 28.') }}</h3>
+        <h3>Case Context {{ law_note('ipid_s28') }}</h3>
         <dl class="meta-list" id="disciplinaryCaseMeta">
           <dt>Source Docket</dt><dd>Loading…</dd>
           <dt>Escalation</dt><dd>Loading…</dd>
@@ -37,7 +37,8 @@
       </div>
 
       <div class="detail-card">
-        <h3>Automated Determination {{ statutory_badge('SAPS Discipline Regs 2016', 'Tier and mandatory sanction are computed deterministically by the decision engine from the codified misconduct schedule and sanction matrix.') }}</h3>
+        <h3>Automated Determination {{ law_note('saps_discipline_regs') }}</h3>
+        <p class="field-hint">Tier and mandatory sanction are computed deterministically by the decision engine from the codified misconduct schedule and sanction matrix.</p>
         <dl class="meta-list" id="disciplinaryDeterminationMeta">
           <dt>Misconduct Tier</dt><dd>Loading…</dd>
         </dl>
@@ -45,6 +46,7 @@
 
       <div class="detail-card" id="disciplinaryClosePanel" hidden>
         <h3>Record Hearing Outcome</h3>
+        <div class="law-notes">{{ law_note('paja_s3') }}{{ law_note('saps_discipline_regs') }}</div>
         <form id="disciplinaryCloseForm">
           <label for="disciplinaryFinalSanction">Final sanction</label>
           <select id="disciplinaryFinalSanction" class="input">

@@ -4,7 +4,8 @@
  */
 
 import { bindLoginForm, bindLogoutButton } from './core/auth.js';
-import { refreshUserBadge, bindReauthModal, showFlashedToast } from './core/ui.js';
+import { refreshUserBadge, bindCollapsibles, bindNavToggle, bindReauthModal, bindSectionNav, showFlashedToast } from './core/ui.js';
+import { bindLawNotePopovers, hydrateLawNotes } from './core/law_notes.js';
 
 export const ROLE_MODULE_LOADERS = {
   citizen: () => import('./modules/citizen.js'),
@@ -17,6 +18,11 @@ export const ROLE_MODULE_LOADERS = {
 export async function init({ loadShared = () => import('./modules/shared.js') } = {}) {
   bindLoginForm(document.getElementById('loginForm'), document.getElementById('loginError'));
   bindLogoutButton(document.getElementById('logoutButton'));
+  bindNavToggle();
+  hydrateLawNotes(document);
+  bindLawNotePopovers();
+  bindCollapsibles(document);
+  document.querySelectorAll('[data-section-nav]').forEach((nav) => bindSectionNav(nav));
 
   const role = document.body.dataset.role;
   const loadRoleModule = ROLE_MODULE_LOADERS[role];

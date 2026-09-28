@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% from 'components/_timeline.html' import timeline_skeleton %}
-{% from 'components/_statutory_badge.html' import statutory_badge %}
+{% from 'components/_statutory_badge.html' import statutory_badge, law_note %}
 
 {% block content %}
   <section class="detail-shell">
@@ -29,13 +29,14 @@
             <dt>Freeze Status</dt><dd>Loading…</dd>
           </dl>
           <div style="margin-top:14px;">
-            <div class="mini-title">72-Hour SLA {{ statutory_badge('NI 3/2011', 'National Instruction 3/2011: 72-hour docket registration and investigation window.') }}</div>
+            <div class="mini-title">72-Hour SLA {{ law_note('saps_ni_3_2011') }}</div>
             <div id="stationCommanderSlaMeter">Loading SLA status…</div>
           </div>
         </div>
 
         <div class="detail-card">
           <h3>Reassignment</h3>
+          <div class="law-notes">{{ law_note('paja_s3') }}</div>
           <p class="field-hint" id="reassignmentBlockedNotice"></p>
           <div class="wizard-row">
             <label>Current Officer</label>
@@ -59,15 +60,20 @@
       </div>
 
       <div class="cards-grid" style="margin-top:18px;">
-        <div class="panel-card">
-          <h3>Audit Trail</h3>
-          {{ timeline_skeleton('stationCommanderAuditList', 'Loading audit trail') }}
+        <div class="panel-card" data-collapsible>
+          <div class="card-head" data-collapsible-head><h3>Audit Trail</h3></div>
+          <div data-collapsible-body>
+            <div class="law-notes">{{ law_note('saps_act') }}</div>
+            {{ timeline_skeleton('stationCommanderAuditList', 'Loading audit trail') }}
+          </div>
         </div>
 
-        <div class="panel-card">
-          <h3>Investigation Information</h3>
-          <div class="statement-box" id="stationCommanderInvestigationInfo">
-            <p>Loading investigation status…</p>
+        <div class="panel-card" data-collapsible>
+          <div class="card-head" data-collapsible-head><h3>Investigation Information</h3></div>
+          <div data-collapsible-body>
+            <div class="statement-box" id="stationCommanderInvestigationInfo">
+              <p>Loading investigation status…</p>
+            </div>
           </div>
         </div>
       </div>

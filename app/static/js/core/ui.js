@@ -333,18 +333,368 @@ export function renderStatementList(container, statements) {
 }
 
 /**
+ * Event names treated as milestones in audit trails / timelines. Everything
+ * else stays in the DOM but is hidden behind a "Show full trail" toggle.
+ */
+export const TIMELINE_MILESTONES = new Set([
+  'submission_created',
+  'submitted',
+  'docket_submitted',
+  'docket_created',
+  'incident_candidate_case_created',
+  'docket_registered',
+  'interview_completed',
+  'investigation_opened',
+  'detective_investigation_completed',
+  'statutory_ipid_referral',
+  'case_frozen',
+  'case_unfrozen',
+  'withdrawal_requested',
+  'correction_logged',
+  'escalation_created',
+  'ipid_escalation_upheld',
+  'ipid_escalation_dismissed',
+  'assignment_created',
+  'station_commander_force_reassigned_docket',
+  'disciplinary_case_created',
+  'disciplinary_case_closed',
+]);
+
+// Trails this short (or with no recognised milestones) are shown in full.
+const TIMELINE_FULL_TRAIL_THRESHOLD = 5;
+
+export function isTimelineMilestone(value) {
+  return TIMELINE_MILESTONES.has(String(value || '').trim().toLowerCase());
+}
+
+/**
  * Render a chronological event list (audit trail, case timeline) into a
  * `<ul class="timeline-list">` container, matching the structure produced by
- * components/_timeline.html.
+ * components/_timeline.html. Longer trails show milestones only by default,
+ * with a "Show full trail (N)" toggle; `formatDetail(event)` optionally
+ * replaces the plain `detailKey` lookup for the small detail line.
  */
-export function renderTimelineList(container, items, { titleKey = 'event_type', detailKey = 'timestamp', fallbackTitle = 'Event', fallbackDetail = 'No timestamp' } = {}) {
+export function renderTimelineList(container, items, { titleKey = 'event_type', detailKey = 'timestamp', fallbackTitle = 'Event', fallbackDetail = 'No timestamp', formatDetail = null, milestonesOnly = true } = {}) {
   if (!container) {
     return;
   }
   const rows = Array.isArray(items) && items.length ? items : [{}];
-  container.innerHTML = rows
-    .map((event) => `<li><span class="timeline-dot"></span><div><strong>${event[titleKey] || fallbackTitle}</strong><small>${event[detailKey] || fallbackDetail}</small></div></li>`)
+  const renderRow = (event, className = '') => {
+    const detail = formatDetail ? formatDetail(event) : (event[detailKey] || fallbackDetail);
+    return `<li${className ? ` class="${className}"` : ''}><span class="timeline-dot"></span><div><strong>${event[titleKey] || fallbackTitle}</strong><small>${detail}</small></div></li>`;
+  };
+  const milestoneCount = rows.filter((event) => isTimelineMilestone(event[titleKey])).length;
+  const showEverything = !milestonesOnly
+    || rows.length <= TIMELINE_FULL_TRAIL_THRESHOLD
+    || milestoneCount === 0
+    || milestoneCount === rows.length;
+
+  if (showEverything) {
+    container.innerHTML = rows.map((event) => renderRow(event)).join('');
+    return;
+  }
+
+  const fullLabel = `Show full trail (${rows.length})`;
+  const milestoneLabel = `Show milestones only (${milestoneCount})`;
+  container.innerHTML = `${rows
+    .map((event) => (isTimelineMilestone(event[titleKey]) ? renderRow(event, 'timeline-milestone') : renderRow(event, 'timeline-minor hidden')))
+    .join('')}<li class="timeline-toggle-row"><button type="button" class="link-btn timeline-toggle" aria-expanded="false"${container.id ? ` aria-controls="${container.id}"` : ''}>${fullLabel}</button></li>`;
+
+  const toggle = container.querySelector('.timeline-toggle');
+  toggle.addEventListener('click', () => {
+    const expanded = toggle.getAttribute('aria-expanded') !== 'true';
+    container.querySelectorAll('li.timeline-minor').forEach((row) => row.classList.toggle('hidden', !expanded));
+    toggle.setAttribute('aria-expanded', String(expanded));
+    toggle.textContent = expanded ? milestoneLabel : fullLabel;
+  });
+}
+
+const NAV_COLLAPSED_STORAGE_KEY = 'pdasNavCollapsed';
+
+/**
+ * Sidebar collapse toggle (base.html #navToggle). The collapsed state is a
+ * `nav-collapsed` class on <html>, remembered in localStorage; base.html
+ * applies the stored value before first paint.
+ */
+export function bindNavToggle(button = document.getElementById('navToggle')) {
+  if (!button || button.dataset.navToggleBound === 'true') {
+    return;
+  }
+  button.dataset.navToggleBound = 'true';
+  const root = document.documentElement;
+  try {
+    if (localStorage.getItem(NAV_COLLAPSED_STORAGE_KEY) === '1') {
+      root.classList.add('nav-collapsed');
+    }
+  } catch (error) {
+    // localStorage unavailable -- the sidebar simply starts expanded.
+  }
+  const sync = () => {
+    const collapsed = root.classList.contains('nav-collapsed');
+    const label = collapsed ? 'Expand navigation' : 'Collapse navigation';
+    button.setAttribute('aria-expanded', String(!collapsed));
+    button.setAttribute('aria-label', label);
+    button.title = label;
+  };
+  sync();
+  button.addEventListener('click', () => {
+    const collapsed = root.classList.toggle('nav-collapsed');
+    try {
+      localStorage.setItem(NAV_COLLAPSED_STORAGE_KEY, collapsed ? '1' : '0');
+    } catch (error) {
+      // Not persisted; the toggle still works for this page view.
+    }
+    sync();
+  });
+}
+
+const collapsibleSetters = new WeakMap();
+let collapsibleCounter = 0;
+
+function headingText(heading) {
+  if (!heading) {
+    return 'section';
+  }
+  const ownText = Array.from(heading.childNodes)
+    .filter((node) => node.nodeType === 3)
+    .map((node) => node.textContent)
+    .join('')
+    .trim();
+  return ownText || heading.textContent.trim() || 'section';
+}
+
+function bindCollapsible(card) {
+  if (collapsibleSetters.has(card)) {
+    return collapsibleSetters.get(card);
+  }
+  const children = Array.from(card.children);
+  const body = children.find((child) => child.hasAttribute('data-collapsible-body'));
+  if (!body) {
+    return null;
+  }
+  let head = children.find((child) => child.hasAttribute('data-collapsible-head'));
+  if (!head) {
+    const heading = children.find((child) => /^H[2-4]$/.test(child.tagName));
+    head = document.createElement('div');
+    head.className = 'card-head';
+    head.setAttribute('data-collapsible-head', '');
+    card.insertBefore(head, heading || body);
+    if (heading) {
+      head.appendChild(heading);
+    }
+  }
+  const title = card.dataset.collapsibleLabel || headingText(head.querySelector('h2, h3, h4'));
+  if (!body.id) {
+    collapsibleCounter += 1;
+    body.id = `pdasCollapsible${collapsibleCounter}`;
+  }
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'collapse-toggle';
+  button.setAttribute('aria-controls', body.id);
+  head.appendChild(button);
+
+  const setExpanded = (expanded) => {
+    body.classList.toggle('hidden', !expanded);
+    card.classList.toggle('is-collapsed', !expanded);
+    button.setAttribute('aria-expanded', String(expanded));
+    button.setAttribute('aria-label', `${expanded ? 'Collapse' : 'Expand'} ${title}`);
+    button.innerHTML = `<span class="chevron" aria-hidden="true">▾</span>${expanded ? 'Hide' : 'Show'}`;
+  };
+  setExpanded(card.dataset.collapsed !== 'true');
+  button.addEventListener('click', () => setExpanded(button.getAttribute('aria-expanded') !== 'true'));
+  collapsibleSetters.set(card, setExpanded);
+  return setExpanded;
+}
+
+/**
+ * Generic collapsible cards, following the #citizenSubmissionToggle pattern
+ * (button, aria-expanded, `.hidden`). Markup:
+ *   <div class="panel-card" data-collapsible [data-collapsed="true"]>
+ *     <div class="card-head" data-collapsible-head><h3>Title</h3></div>
+ *     <div data-collapsible-body> …content that JS may re-render… </div>
+ *   </div>
+ * Only the outer body wrapper is toggled, so modules that re-render or
+ * hide the inner containers keep working. A card without an explicit head
+ * gets its first heading wrapped automatically.
+ */
+export function bindCollapsibles(root = document) {
+  if (!root || !root.querySelectorAll) {
+    return;
+  }
+  root.querySelectorAll('[data-collapsible]').forEach((card) => bindCollapsible(card));
+}
+
+/**
+ * Programmatically expand/collapse one [data-collapsible] card (binding it
+ * first if needed), e.g. to collapse cards for a completed investigation.
+ */
+export function setCollapsibleExpanded(card, expanded) {
+  if (!card) {
+    return;
+  }
+  const setExpanded = bindCollapsible(card);
+  if (setExpanded) {
+    setExpanded(Boolean(expanded));
+  }
+}
+
+/**
+ * Sticky, collapsible in-page section navigation:
+ *   <aside class="section-nav" data-section-nav>
+ *     <button data-section-nav-toggle>…</button>
+ *     <ol data-section-nav-list><li><a href="#cardId">…</a></li>…</ol>
+ *   </aside>
+ * Links whose target card is hidden (e.g. no interview yet) are hidden too.
+ */
+export function bindSectionNav(nav) {
+  if (!nav || nav.dataset.sectionNavBound === 'true') {
+    return;
+  }
+  nav.dataset.sectionNavBound = 'true';
+  const toggle = nav.querySelector('[data-section-nav-toggle]');
+  const list = nav.querySelector('[data-section-nav-list]');
+  const layout = nav.closest('.with-section-nav');
+  const links = Array.from(nav.querySelectorAll('a[href^="#"]'));
+  const targets = links.map((link) => document.getElementById(link.getAttribute('href').slice(1)));
+
+  const syncVisibility = () => {
+    links.forEach((link, index) => {
+      const target = targets[index];
+      link.parentElement.classList.toggle('hidden', !target || target.classList.contains('hidden'));
+    });
+  };
+  syncVisibility();
+  if (typeof MutationObserver !== 'undefined') {
+    const observer = new MutationObserver(syncVisibility);
+    targets.filter(Boolean).forEach((target) => observer.observe(target, { attributes: true, attributeFilter: ['class'] }));
+  }
+
+  const setExpanded = (expanded) => {
+    if (list) {
+      list.classList.toggle('hidden', !expanded);
+    }
+    if (toggle) {
+      toggle.setAttribute('aria-expanded', String(expanded));
+    }
+    if (layout) {
+      layout.classList.toggle('section-nav-collapsed', !expanded);
+    }
+  };
+  const startsNarrow = typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 1100px)').matches;
+  setExpanded(!startsNarrow);
+  toggle?.addEventListener('click', () => setExpanded(toggle.getAttribute('aria-expanded') !== 'true'));
+
+  let frame = null;
+  const markActive = () => {
+    frame = null;
+    let activeIndex = -1;
+    targets.forEach((target, index) => {
+      if (target && !target.classList.contains('hidden') && target.getBoundingClientRect().top <= 140) {
+        activeIndex = index;
+      }
+    });
+    links.forEach((link, index) => link.classList.toggle('is-active', index === activeIndex));
+  };
+  window.addEventListener('scroll', () => {
+    if (frame === null) {
+      frame = requestAnimationFrame(markActive);
+    }
+  }, { passive: true });
+  markActive();
+}
+
+/**
+ * Format one preserved citizen-source value for read-only display.
+ */
+export function formatProtectedSourceValue(value) {
+  if (value === undefined || value === null || value === '') {
+    return 'Not provided';
+  }
+  if (Array.isArray(value)) {
+    return value.filter((item) => item !== undefined && item !== null && item !== '').map((item) => String(item)).join(', ') || 'Not provided';
+  }
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+  return String(value);
+}
+
+// Display order of the protected-source groups.
+const PROTECTED_SOURCE_GROUPS = [
+  ['reporter', 'Reporter'],
+  ['incident', 'Incident'],
+  ['harm', 'Harm & injury'],
+  ['people', 'People'],
+  ['evidence', 'Evidence & prior reports'],
+  ['contact', 'Contact'],
+  ['safety', 'Safety'],
+  ['other', 'Other'],
+];
+
+// Matching order matters (e.g. "contact_*" before the broader incident rules).
+const PROTECTED_SOURCE_GROUP_RULES = [
+  ['contact', (key) => key === 'can_contact' || key.includes('contact')],
+  ['reporter', (key) => /^(legacy_)?reporter_/.test(key)],
+  ['safety', (key) => /^current_(safety|risk)/.test(key)],
+  ['evidence', (key) => /^(evidence_|previous_report_)/.test(key)],
+  ['harm', (key) => /^(was_anyone_|harm_|injury_|injuries|medical_|property_)/.test(key)],
+  ['people', (key) => /^(other_people|people_|person|victim|witness)/.test(key)],
+  ['incident', (key) => ['title', 'description', 'date_certainty', 'date_unknown_reason'].includes(key) || /^(incident_|approximate_|location|police_|narrative_)/.test(key)],
+];
+
+function protectedSourceGroupFor(key) {
+  const normalized = String(key).toLowerCase();
+  const match = PROTECTED_SOURCE_GROUP_RULES.find(([, test]) => test(normalized));
+  return match ? match[0] : 'other';
+}
+
+/**
+ * Render a preserved (read-only) citizen submission as expandable groups
+ * (reporter, incident, harm & injury, people, evidence, contact, safety,
+ * other). Every non-empty key/value is kept; groups start collapsed.
+ * Shared by the constable review and detective workspace.
+ */
+export function renderProtectedSourceGroups(container, originalContent, { title = 'Protected citizen source (read-only)', badge = 'immutable', emptyMessage = 'No preserved citizen source details are available for this docket.' } = {}) {
+  if (!container) {
+    return;
+  }
+  const content = originalContent && typeof originalContent === 'object' ? originalContent : {};
+  const rows = Object.entries(content).filter(([, value]) => value !== undefined && value !== null && value !== '');
+  if (!rows.length) {
+    container.innerHTML = `<div class="empty-state">${emptyMessage}</div>`;
+    return;
+  }
+
+  const grouped = new Map(PROTECTED_SOURCE_GROUPS.map(([key]) => [key, []]));
+  rows.forEach(([key, value]) => grouped.get(protectedSourceGroupFor(key)).push([key, value]));
+
+  const groupsMarkup = PROTECTED_SOURCE_GROUPS
+    .filter(([key]) => grouped.get(key).length)
+    .map(([key, label]) => {
+      const entries = grouped.get(key);
+      const renderedRows = entries
+        .map(([entryKey, value]) => `<dt>${String(entryKey).replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())}</dt><dd>${formatProtectedSourceValue(value)}</dd>`)
+        .join('');
+      return `
+        <details class="source-group" data-source-group="${key}">
+          <summary>${label}<span class="source-group-count">${entries.length} field${entries.length === 1 ? '' : 's'}</span></summary>
+          <dl class="meta-list compact">${renderedRows}</dl>
+        </details>
+      `;
+    })
     .join('');
+
+  container.innerHTML = `
+    <article class="mini-case-card">
+      <div class="stack-row" style="justify-content:space-between; align-items:center;">
+        <strong>${title}</strong>
+        <span class="badge badge-muted">${badge}</span>
+      </div>
+      <div class="source-groups">${groupsMarkup}</div>
+    </article>
+  `;
 }
 
 /**

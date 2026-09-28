@@ -3,7 +3,7 @@
  */
 
 import { fetchJson, postForm } from '../core/api.js';
-import { bindCaseLinks, bindFilePreview, bindMediaViewButtons, buildStatusBadge, flashToast, renderEvidenceTable, renderMediaViewButton, renderStatementList, renderWorkflowRail, setEmptyState, showToast } from '../core/ui.js';
+import { bindCaseLinks, bindFilePreview, bindMediaViewButtons, buildStatusBadge, flashToast, renderEvidenceTable, renderMediaViewButton, renderStatementList, renderTimelineList, renderWorkflowRail, setEmptyState, showToast } from '../core/ui.js';
 
 export function getCitizenCaseReference() {
   const match = window.location.pathname.match(/^\/citizen\/(?:dockets|submissions)\/(?!new(?:\/)?$)([^/]+)/);
@@ -1181,9 +1181,11 @@ export async function hydrateCitizenDetail() {
         : Array.isArray(docket.event_history) && docket.event_history.length
           ? docket.event_history
           : [{ event_type: isSubmission ? 'submission_received' : 'docket_recorded', timestamp: 'Pending', details: {} }];
-      timeline.innerHTML = items
-        .map((event) => `<li><span class="timeline-dot"></span><div><strong>${event.event_type || (isSubmission ? 'Submission Event' : 'Case Event')}</strong><small>${event.timestamp || 'No timestamp'}${event.details && event.details.status ? ` • ${event.details.status}` : ''}</small></div></li>`)
-        .join('');
+      renderTimelineList(timeline, items, {
+        titleKey: 'event_type',
+        fallbackTitle: isSubmission ? 'Submission Event' : 'Case Event',
+        formatDetail: (event) => `${event.timestamp || 'No timestamp'}${event.details && event.details.status ? ` • ${event.details.status}` : ''}`,
+      });
     }
 
     const statements = Array.isArray(docket.statements) ? docket.statements : [];
@@ -1277,6 +1279,67 @@ export async function hydrateCitizenDetail() {
 function getValueOrEmpty(elementId) {
   const element = document.getElementById(elementId);
   return element ? (element.value || '').trim() : '';
+}
+
+// Phone and email are entered in two parts on the form but still travel in
+// the single existing contact_phone / contact_email payload keys.
+function combineContactPhone(countryCode, number) {
+  if (!number) {
+    return '';
+  }
+  if (!countryCode || number.startsWith('+')) {
+    return number;
+  }
+  return `${countryCode} ${number}`;
+}
+
+function combineContactEmail(localPart, domain) {
+  if (!localPart) {
+    return '';
+  }
+  if (!domain || localPart.includes('@')) {
+    return localPart;
+  }
+  return `${localPart}@${domain.replace(/^@+/, '')}`;
+}
+
+function getContactPhoneValue() {
+  return combineContactPhone(getValueOrEmpty('contactPhoneCountry'), getValueOrEmpty('contactPhone'));
+}
+
+function getContactEmailValue() {
+  return combineContactEmail(getValueOrEmpty('contactEmail'), getValueOrEmpty('contactEmailDomain'));
+}
+
+function isCitizenFieldShown(element, section) {
+  for (let node = element; node && node !== section; node = node.parentElement) {
+    if (node.classList.contains('hidden')) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Read-only completion check for the numbered form sections: a section turns
+ * green once every visible [data-required] field has a value, every visible
+ * [data-required-group] has a checked box, and every visible
+ * [data-required-any] has at least one filled text box. Never gates submit.
+ */
+function evaluateCitizenFormSections() {
+  document.querySelectorAll('#citizenSubmissionForm [data-form-section]').forEach((section) => {
+    const shown = (element) => isCitizenFieldShown(element, section);
+    const fieldsFilled = Array.from(section.querySelectorAll('[data-required]'))
+      .filter(shown)
+      .every((field) => String(field.value || '').trim() !== '');
+    const groupsChecked = Array.from(section.querySelectorAll('[data-required-group]'))
+      .filter(shown)
+      .every((group) => Boolean(group.querySelector('input:checked')));
+    const anyFilled = Array.from(section.querySelectorAll('[data-required-any]'))
+      .filter(shown)
+      .every((group) => Array.from(group.querySelectorAll('input')).some((input) => String(input.value || '').trim() !== ''));
+    section.classList.toggle('is-complete', fieldsFilled && groupsChecked && anyFilled);
+  });
 }
 
 function getCheckedValues(name) {
@@ -1401,7 +1464,10 @@ function renderCitizenReview() {
   const previousReport = getValueOrEmpty('previousReportReference');
   const currentSafetySummary = getValueOrEmpty('currentSafetySummary');
 
-  const contactSummary = canContact === 'Yes' ? `${contactMethod || 'No preference'} contact recorded` : 'No contact requested';
+  const contactDetails = [getContactPhoneValue(), getContactEmailValue(), getValueOrEmpty('contactSms')].filter(Boolean).join(', ');
+  const contactSummary = canContact === 'Yes'
+    ? `${contactMethod || 'No preference'} contact recorded${contactDetails ? ` (${contactDetails})` : ''}`
+    : 'No contact requested';
   const incidentSummary = [
     reporterRelationship ? `Reporter relationship: ${reporterRelationship === 'other' ? reporterRelationshipOther || 'Other' : reporterRelationship}` : '',
     title ? `Title: ${title}` : '',
@@ -1460,24 +1526,43 @@ function bindConditionalCitizenForm() {
 
   const canContact = document.getElementById('canContact');
   const contactFields = document.getElementById('contactFields');
+  const contactMethodField = document.getElementById('contactMethod');
+  const contactLines = document.getElementById('contactLines');
+  // "No preference" keeps the default order; otherwise the chosen method's box moves first.
+  const syncContactOrder = () => {
+    if (!contactLines) {
+      return;
+    }
+    const method = contactMethodField ? contactMethodField.value : '';
+    if (method && method !== 'No preference') {
+      contactLines.dataset.contactFirst = method;
+    } else {
+      delete contactLines.dataset.contactFirst;
+    }
+  };
   if (canContact && contactFields) {
     const syncContact = () => {
       const show = canContact.value === 'Yes';
       contactFields.classList.toggle('hidden', !show);
       if (!show) {
-        const contactMethod = document.getElementById('contactMethod');
         const contactPhone = document.getElementById('contactPhone');
+        const contactPhoneCountry = document.getElementById('contactPhoneCountry');
         const contactEmail = document.getElementById('contactEmail');
+        const contactEmailDomain = document.getElementById('contactEmailDomain');
         const contactSms = document.getElementById('contactSms');
-        if (contactMethod) contactMethod.value = 'No preference';
+        if (contactMethodField) contactMethodField.value = 'No preference';
         if (contactPhone) contactPhone.value = '';
+        if (contactPhoneCountry) contactPhoneCountry.value = '+27';
         if (contactEmail) contactEmail.value = '';
+        if (contactEmailDomain) contactEmailDomain.value = '';
         if (contactSms) contactSms.value = '';
       }
+      syncContactOrder();
     };
     canContact.addEventListener('change', syncContact);
     syncContact();
   }
+  contactMethodField?.addEventListener('change', syncContactOrder);
 
   const incidentType = document.getElementById('incidentType');
   const incidentTypeOther = document.getElementById('incidentTypeOther');
@@ -1489,6 +1574,9 @@ function bindConditionalCitizenForm() {
       if (!show && incidentTypeOther) {
         incidentTypeOther.value = '';
       }
+      document.querySelectorAll('[data-incident-law]').forEach((notes) => {
+        notes.classList.toggle('hidden', notes.dataset.incidentLaw !== incidentType.value);
+      });
     };
     incidentType.addEventListener('change', syncIncidentTypeOther);
     syncIncidentTypeOther();
@@ -1558,6 +1646,14 @@ function bindConditionalCitizenForm() {
         });
         const harmImpact = document.getElementById('harmImpact');
         if (harmImpact) harmImpact.value = '';
+      }
+      // "Was anyone injured?" is no longer asked separately: it follows this
+      // answer, so the injury options appear for "Yes" and are cleared otherwise.
+      const injuredField = document.getElementById('wasAnyoneInjured');
+      const injuredValue = show ? 'Yes' : '';
+      if (injuredField && injuredField.value !== injuredValue) {
+        injuredField.value = injuredValue;
+        injuredField.dispatchEvent(new Event('change', { bubbles: true }));
       }
     };
     harmQuestion.addEventListener('change', syncHarm);
@@ -1694,6 +1790,14 @@ function bindConditionalCitizenForm() {
     document.getElementById('peopleRecords').addEventListener('input', renderCitizenReview);
     document.getElementById('peopleRecords').addEventListener('change', renderCitizenReview);
   }
+
+  const form = document.getElementById('citizenSubmissionForm');
+  if (form && form.dataset.completionBound !== 'true') {
+    form.addEventListener('input', evaluateCitizenFormSections);
+    form.addEventListener('change', evaluateCitizenFormSections);
+    form.dataset.completionBound = 'true';
+  }
+  evaluateCitizenFormSections();
 }
 
 function buildStructuredSubmissionPayload() {
@@ -1705,8 +1809,8 @@ function buildStructuredSubmissionPayload() {
   const reporterRelationshipOther = getValueOrEmpty('reporterRelationshipOther');
   const canContact = getValueOrEmpty('canContact');
   const contactMethod = getValueOrEmpty('contactMethod');
-  const phone = getValueOrEmpty('contactPhone');
-  const email = getValueOrEmpty('contactEmail');
+  const phone = getContactPhoneValue();
+  const email = getContactEmailValue();
   const sms = getValueOrEmpty('contactSms');
   const dateCertainty = getValueOrEmpty('dateCertainty');
   const incidentType = getValueOrEmpty('incidentType');

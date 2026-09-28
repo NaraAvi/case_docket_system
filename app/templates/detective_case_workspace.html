@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% from 'components/_timeline.html' import timeline_skeleton %}
 {% from 'components/_evidence_table.html' import evidence_table_skeleton %}
-{% from 'components/_statutory_badge.html' import statutory_badge %}
+{% from 'components/_statutory_badge.html' import statutory_badge, law_note %}
 
 {% block content %}
   <section class="detail-shell">
@@ -46,55 +46,139 @@
       </div>
     </div>
 
-    <div id="detectiveDocketContent">
+    <div id="detectiveDocketContent" class="stack-cards">
+      <div class="detail-grid">
+        <div class="panel-card">
+          <h3>Case / Docket Details</h3>
+          <div class="law-notes">{{ law_note('saps_act') }}</div>
+          <dl class="meta-list" id="detectiveCaseMeta">
+            <dt>Incident Location</dt><dd>Loading…</dd>
+            <dt>Incident Date</dt><dd>Loading…</dd>
+            <dt>Assigned Detective</dt><dd>Loading…</dd>
+            <dt>Status</dt><dd>Loading…</dd>
+          </dl>
+        </div>
+
+        <div class="panel-card" id="detectiveOriginalSubmissionCard" data-collapsible data-collapsed="true">
+          <div class="card-head" data-collapsible-head><h3>Original Protected Citizen Submission</h3></div>
+          <div data-collapsible-body>
+            <div class="law-notes">{{ law_note('constitution_s14') }}</div>
+            <div class="stack-list" id="detectiveProtectedSubmission">
+              <p>Loading protected submission…</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="detail-grid">
+        <div class="detail-card" data-collapsible>
+          <div class="card-head" data-collapsible-head><h3>Initial Deposition / Constable Interview</h3></div>
+          <div data-collapsible-body>
+            <div class="statement-box" id="detectiveDeposition">
+              <p>Loading docket description and witness information…</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="detail-card" data-collapsible>
+          <div class="card-head" data-collapsible-head><h3>Protected Evidence</h3></div>
+          <div data-collapsible-body>
+            <div class="law-notes">{{ law_note('cpa_s212') }}{{ law_note('ecta_s15') }}</div>
+            {{ evidence_table_skeleton('detectiveCaseEvidence') }}
+          </div>
+        </div>
+      </div>
+
+      <div class="cards-grid">
+        <div class="panel-card" data-collapsible>
+          <div class="card-head" data-collapsible-head><h3>Recordings / Statements</h3></div>
+          <div data-collapsible-body>
+            <div class="stack-list" id="detectiveStatementsList">
+              <p>Loading statements…</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel-card" data-collapsible>
+          <div class="card-head" data-collapsible-head><h3>Procedural / Audit History</h3></div>
+          <div data-collapsible-body>
+            <p class="timeline-caption">Milestones are shown first; open the full trail for every recorded event.</p>
+            {{ timeline_skeleton('detectiveCaseTimeline', 'Loading audit timeline') }}
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-card wide-card" id="caseFactsVerificationPanel" data-collapsible>
+        <div class="stack-row" data-collapsible-head style="justify-content:space-between; align-items:flex-start;">
+          <div>
+            <p class="eyebrow">Detective case facts</p>
+            <h3>Case Facts Verification</h3>
+          </div>
+          <span class="badge badge-muted" id="caseFactsStatusBadge">Pending</span>
+        </div>
+
+        <div data-collapsible-body>
+          <div class="detail-grid" style="margin-top:12px;">
+            <div class="detail-card">
+              <label class="input-label">Incident date</label>
+              <input class="field-input" id="caseFactsIncidentDate" type="date" />
+
+              <label class="input-label" style="margin-top:12px; display:block;">Incident time</label>
+              <input class="field-input" id="caseFactsIncidentTime" type="time" />
+
+              <label class="input-label" style="margin-top:12px; display:block;">Incident location</label>
+              <input class="field-input" id="caseFactsLocation" type="text" placeholder="Describe the location" />
+
+              <label class="input-label" style="margin-top:12px; display:block;">People involved</label>
+              <input class="field-input" id="caseFactsPeopleInvolved" type="text" placeholder="Comma-separated names" />
+            </div>
+
+            <div class="detail-card">
+              <label class="input-label">Witnesses</label>
+              <input class="field-input" id="caseFactsWitnesses" type="text" placeholder="Comma-separated witnesses" />
+
+              <label class="input-label" style="margin-top:12px; display:block;">Harm types</label>
+              <input class="field-input" id="caseFactsHarmTypes" type="text" placeholder="Comma-separated harm types" />
+
+              <label class="input-label" style="margin-top:12px; display:block;">Injury types</label>
+              <input class="field-input" id="caseFactsInjuryTypes" type="text" placeholder="Comma-separated injury types" />
+
+              <label class="input-label" style="margin-top:12px; display:block;">Police / official involvement</label>
+              <select class="field-select" id="caseFactsPoliceInvolvement">
+                <option value="">Select</option>
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
+            </div>
+          </div>
+
+          <label class="input-label" style="margin-top:12px; display:block;">Relevant factual circumstances</label>
+          <textarea rows="4" id="caseFactsCircumstances" placeholder="Document the factual circumstances as observed by the detective."></textarea>
+
+          <label class="input-label" style="margin-top:12px; display:block;">Discrepancy status</label>
+          <select class="field-select" id="caseFactsDiscrepancyStatus">
+            <option value="OPEN">Open</option>
+            <option value="ADDRESSED">Addressed</option>
+            <option value="UNRESOLVED">Unresolved</option>
+          </select>
+
+          <label class="input-label" style="margin-top:12px; display:block;">Discrepancy basis / explanation</label>
+          <textarea rows="3" id="caseFactsDiscrepancyBasis" placeholder="If a preserved fact conflicts with the detective record, document the investigative basis or explanation."></textarea>
+
+          <div style="margin-top:16px;">
+            <p class="eyebrow">Case facts verification result</p>
+            <div id="caseFactsComparisonResults" class="stack-list" style="margin-top:8px;"></div>
+          </div>
+
+          <div id="caseFactsDiscrepancies" class="stack-list" style="margin-top:12px;"></div>
+
+          <div class="stack-row" style="margin-top:12px; justify-content:flex-end;">
+            <button class="primary-btn" type="button" id="submitCaseFactsVerification">Record Case Facts</button>
+          </div>
+        </div>
+      </div>
+
       <div class="panel-card wide-card">
-        <h3>Case / Docket Details</h3>
-        <dl class="meta-list" id="detectiveCaseMeta">
-          <dt>Incident Location</dt><dd>Loading…</dd>
-          <dt>Incident Date</dt><dd>Loading…</dd>
-          <dt>Assigned Detective</dt><dd>Loading…</dd>
-          <dt>Status</dt><dd>Loading…</dd>
-        </dl>
-      </div>
-
-      <div class="detail-grid" style="margin-top:18px;">
-        <div class="panel-card wide-card">
-          <h3>Original Protected Citizen Submission</h3>
-          <div class="stack-list" id="detectiveProtectedSubmission">
-            <p>Loading protected submission…</p>
-          </div>
-        </div>
-      </div>
-
-      <div class="detail-grid" style="margin-top:18px;">
-        <div class="detail-card">
-          <h3>Initial Deposition / Constable Interview</h3>
-          <div class="statement-box" id="detectiveDeposition">
-            <p>Loading docket description and witness information…</p>
-          </div>
-        </div>
-
-        <div class="detail-card">
-          <h3>Protected Evidence</h3>
-          {{ evidence_table_skeleton('detectiveCaseEvidence') }}
-        </div>
-      </div>
-
-      <div class="cards-grid" style="margin-top:18px;">
-        <div class="panel-card">
-          <h3>Recordings / Statements</h3>
-          <div class="stack-list" id="detectiveStatementsList">
-            <p>Loading statements…</p>
-          </div>
-        </div>
-
-        <div class="panel-card">
-          <h3>Procedural / Audit History</h3>
-          {{ timeline_skeleton('detectiveCaseTimeline', 'Loading audit timeline') }}
-        </div>
-      </div>
-
-      <div class="panel-card wide-card" style="margin-top:18px;">
         <h3>Investigation</h3>
         <p id="detectiveInvestigationStateText">Investigation has not started.</p>
         <div id="detectiveInvestigationTimer" class="stack-list" style="margin-top:12px;"></div>
@@ -103,33 +187,38 @@
         </div>
       </div>
 
-      <div class="panel-card wide-card hidden" id="detectiveInvestigationActions" style="margin-top:18px;">
-        <div class="stack-row" style="justify-content:space-between; align-items:flex-start;">
+      <div class="panel-card wide-card hidden" id="detectiveInvestigationActions" data-collapsible>
+        <div class="stack-row" data-collapsible-head style="justify-content:space-between; align-items:flex-start;">
           <div>
             <p class="eyebrow">Active Investigation</p>
             <h3>Investigation Order</h3>
           </div>
         </div>
-        <p class="eyebrow" style="margin-top:8px;">Required Investigative Actions</p>
-        <div class="hidden" aria-hidden="true">Complete Interview Complete Evidence Review Complete Evidence Collection Complete Record Request Complete Witness Contact Complete Scene Review</div>
-        <div class="stack-list" id="detectiveInvestigationOrder" style="margin-top:8px;"></div>
-        <div class="stack-list" id="detectiveActionList" style="margin-top:12px;"></div>
+        <div data-collapsible-body>
+          <p class="eyebrow" style="margin-top:8px;">Required Investigative Actions</p>
+          <div class="hidden" aria-hidden="true">Complete Interview Complete Evidence Review Complete Evidence Collection Complete Record Request Complete Witness Contact Complete Scene Review</div>
+          <div class="stack-list" id="detectiveInvestigationOrder" style="margin-top:8px;"></div>
+          <div class="stack-list" id="detectiveActionList" style="margin-top:12px;"></div>
+        </div>
       </div>
 
-      <div class="panel-card wide-card" style="margin-top:18px;">
-        <div class="stack-row" style="justify-content:space-between; align-items:flex-start;">
+      <div class="panel-card wide-card" id="detectiveFindingsPanel" data-collapsible>
+        <div class="stack-row" data-collapsible-head style="justify-content:space-between; align-items:flex-start;">
           <div>
             <p class="eyebrow">Detective findings</p>
             <h3>Investigation Findings</h3>
           </div>
           <button class="primary-btn" type="button" id="openFindingModal" hidden>Record Finding</button>
         </div>
-        <div class="stack-list" id="detectiveFindingsList" style="margin-top:12px;">
-          <p>Loading findings…</p>
+        <div data-collapsible-body>
+          <div class="law-notes" style="margin-top:10px;">{{ law_note('precca_s34') }}</div>
+          <div class="stack-list" id="detectiveFindingsList" style="margin-top:12px;">
+            <p>Loading findings…</p>
+          </div>
         </div>
       </div>
 
-      <div class="panel-card wide-card" style="margin-top:18px;">
+      <div class="panel-card wide-card" id="detectiveFinalReasoningPanel">
         <div class="stack-row" style="justify-content:space-between; align-items:flex-start;">
           <div>
             <p class="eyebrow">Final review</p>
@@ -137,76 +226,9 @@
           </div>
           <button class="primary-btn" type="button" id="openCompleteInvestigationModal" hidden>Complete Investigation</button>
         </div>
+        <div class="law-notes" style="margin-top:10px;">{{ law_note('paja_s3') }}{{ law_note('ipid_s29') }}</div>
         <div class="stack-list" id="detectiveNoteEntriesList" style="margin-top:12px;">
           <p>Loading investigation notes…</p>
-        </div>
-      </div>
-
-      <div class="panel-card wide-card" id="caseFactsVerificationPanel" style="margin-top:18px;">
-        <div class="stack-row" style="justify-content:space-between; align-items:flex-start;">
-          <div>
-            <p class="eyebrow">Detective case facts</p>
-            <h3>Case Facts Verification</h3>
-          </div>
-          <span class="badge badge-muted" id="caseFactsStatusBadge">Pending</span>
-        </div>
-
-        <div class="detail-grid" style="margin-top:12px;">
-          <div class="detail-card">
-            <label class="input-label">Incident date</label>
-            <input class="field-input" id="caseFactsIncidentDate" type="date" />
-
-            <label class="input-label" style="margin-top:12px; display:block;">Incident time</label>
-            <input class="field-input" id="caseFactsIncidentTime" type="time" />
-
-            <label class="input-label" style="margin-top:12px; display:block;">Incident location</label>
-            <input class="field-input" id="caseFactsLocation" type="text" placeholder="Describe the location" />
-
-            <label class="input-label" style="margin-top:12px; display:block;">People involved</label>
-            <input class="field-input" id="caseFactsPeopleInvolved" type="text" placeholder="Comma-separated names" />
-          </div>
-
-          <div class="detail-card">
-            <label class="input-label">Witnesses</label>
-            <input class="field-input" id="caseFactsWitnesses" type="text" placeholder="Comma-separated witnesses" />
-
-            <label class="input-label" style="margin-top:12px; display:block;">Harm types</label>
-            <input class="field-input" id="caseFactsHarmTypes" type="text" placeholder="Comma-separated harm types" />
-
-            <label class="input-label" style="margin-top:12px; display:block;">Injury types</label>
-            <input class="field-input" id="caseFactsInjuryTypes" type="text" placeholder="Comma-separated injury types" />
-
-            <label class="input-label" style="margin-top:12px; display:block;">Police / official involvement</label>
-            <select class="field-select" id="caseFactsPoliceInvolvement">
-              <option value="">Select</option>
-              <option value="true">Yes</option>
-              <option value="false">No</option>
-            </select>
-          </div>
-        </div>
-
-        <label class="input-label" style="margin-top:12px; display:block;">Relevant factual circumstances</label>
-        <textarea rows="4" id="caseFactsCircumstances" placeholder="Document the factual circumstances as observed by the detective."></textarea>
-
-        <label class="input-label" style="margin-top:12px; display:block;">Discrepancy status</label>
-        <select class="field-select" id="caseFactsDiscrepancyStatus">
-          <option value="OPEN">Open</option>
-          <option value="ADDRESSED">Addressed</option>
-          <option value="UNRESOLVED">Unresolved</option>
-        </select>
-
-        <label class="input-label" style="margin-top:12px; display:block;">Discrepancy basis / explanation</label>
-        <textarea rows="3" id="caseFactsDiscrepancyBasis" placeholder="If a preserved fact conflicts with the detective record, document the investigative basis or explanation."></textarea>
-
-        <div style="margin-top:16px;">
-          <p class="eyebrow">Case facts verification result</p>
-          <div id="caseFactsComparisonResults" class="stack-list" style="margin-top:8px;"></div>
-        </div>
-
-        <div id="caseFactsDiscrepancies" class="stack-list" style="margin-top:12px;"></div>
-
-        <div class="stack-row" style="margin-top:12px; justify-content:flex-end;">
-          <button class="primary-btn" type="button" id="submitCaseFactsVerification">Record Case Facts</button>
         </div>
       </div>
 
