@@ -3,7 +3,8 @@
  */
 
 import { fetchJson, fetchMediaBlobUrl } from '../core/api.js';
-import { buildStatusBadge, flashToast, populateSelect, renderDocketCardList, renderEvidenceTable, renderStatementList, renderTimelineList, renderWorkflowRail, setEmptyState, showToast } from '../core/ui.js';
+import { lawNoteHtml } from '../core/law_notes.js';
+import { MILESTONE_EVENT_TYPES, buildStatusBadge, flashToast, populateSelect, renderDocketCardList, renderEvidenceTable, renderProtectedSource, renderStatementList, renderTimelineList, renderWorkflowRail, setEmptyState, showToast } from '../core/ui.js';
 
 const DETECTIVE_EVIDENCE_TYPES = ['PHOTO', 'VIDEO', 'DOCUMENT', 'AUDIO', 'WITNESS_STATEMENT', 'OTHER'];
 
@@ -28,35 +29,6 @@ function renderReadOnlyFlags(container, flags) {
       `
     )
     .join('');
-}
-
-function renderProtectedSubmission(container, docket) {
-  if (!container) {
-    return;
-  }
-  const originalContent = docket?.citizen_submission?.original_content && typeof docket.citizen_submission.original_content === 'object'
-    ? docket.citizen_submission.original_content
-    : {};
-  const flattenedEntries = Object.entries(originalContent).filter(([, value]) => value !== undefined && value !== null && value !== '');
-
-  if (!flattenedEntries.length) {
-    container.innerHTML = '<div class="empty-state">No original protected citizen submission is available for this docket.</div>';
-    return;
-  }
-
-  const entries = flattenedEntries
-    .map(([key, value]) => `<dt>${String(key).replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase())}</dt><dd>${String(Array.isArray(value) ? value.join(', ') : value)}</dd>`)
-    .join('');
-
-  container.innerHTML = `
-    <article class="mini-case-card">
-      <div class="stack-row" style="justify-content:space-between; align-items:center;">
-        <strong>Original protected citizen submission</strong>
-        <span class="badge badge-muted">read-only</span>
-      </div>
-      <dl class="meta-list compact">${entries}</dl>
-    </article>
-  `;
 }
 
 function resolveTranscriptText(recording) {
@@ -209,7 +181,11 @@ async function renderDetectiveInterviewDetails(container, docket, interview, com
     const comparisonBox = document.createElement('div');
     comparisonBox.className = 'mini-case-card';
     renderRecordingComparison(comparisonBox, comparisonReport);
-    sectionWrap.appendChild(comparisonBox);
+    const comparisonDetails = document.createElement('details');
+    comparisonDetails.className = 'protected-group';
+    comparisonDetails.innerHTML = `<summary>Recording comparison</summary><div class="field-hint" style="padding:8px 12px 0;">${lawNoteHtml('recording_comparison')}</div>`;
+    comparisonDetails.appendChild(comparisonBox);
+    sectionWrap.appendChild(comparisonDetails);
   }
 
   const statementsWrap = document.createElement('div');
@@ -699,6 +675,7 @@ function bindEvidenceCollectionControls(form) {
     const container = form.querySelector('[data-evidence-collection-container]');
     if (container) {
       container.insertAdjacentHTML('beforeend', renderEvidenceCollectionItemMarkup(nextIndex));
+      enhanceActionForm(form, 'EVIDENCE_COLLECTION');
       return;
     }
 
@@ -726,6 +703,103 @@ function populateActionFormOptions(actionType, evidenceItems = [], form = docume
   }
 }
 
+// Action-form presentation: subheadings, required markers and conditional
+// reveals are applied to the rendered fields; field names and values are untouched.
+const ACTION_FORM_GROUPS = {
+  WITNESS_CONTACT: [['Witness', 'witness_name'], ['Contact', 'contact_date'], ['Outcome', 'result']],
+  INTERVIEW: [['Person interviewed', 'person_name'], ['When and how', 'interview_date'], ['Attachments', 'recordings'], ['What was learned', 'information_obtained'], ['Follow-up and outcome', 'follow_up_lead']],
+  EVIDENCE_REVIEW: [['Evidence', 'selected_evidence_ids'], ['Assessment', 'observation']],
+  RECORD_REQUEST: [['Record', 'record_type'], ['Relevance and dates', 'date_range_from'], ['Request', 'date_requested'], ['Response', 'response']],
+  SCENE_REVIEW: [['Scene', 'location'], ['Observations', 'scene_condition'], ['Conditions', 'visibility']],
+};
+
+const ACTION_REQUIRED_FIELDS = {
+  WITNESS_CONTACT: ['witness_name', 'contact_date', 'contact_time', 'contact_method', 'result', 'information_obtained'],
+  INTERVIEW: ['person_name', 'role', 'interview_date', 'interview_time', 'location_method', 'interview_type', 'information_obtained', 'contradictions', 'outcome'],
+  EVIDENCE_REVIEW: ['selected_evidence_ids', 'observation', 'interpretation', 'unknown_limitation', 'consistency'],
+  EVIDENCE_COLLECTION: ['evidence_type', 'description', 'source', 'date_time_obtained', 'provider', 'collection_method', 'result'],
+  RECORD_REQUEST: ['record_type', 'record_holder', 'specific_record_requested', 'date_range_from', 'date_range_to', 'reason_relevant', 'date_requested', 'request_reference', 'request_method', 'response'],
+  SCENE_REVIEW: ['location', 'scene_date', 'scene_time', 'persons_present', 'scene_condition', 'observations', 'consistent_with_incident', 'differed', 'not_established', 'visibility', 'lighting', 'access_points', 'distances', 'obstructions', 'limitations'],
+};
+
+// [field to reveal, field that controls it, reveal test] -- mirrors validateActionModalPayload.
+const ACTION_CONDITIONAL_FIELDS = {
+  WITNESS_CONTACT: [['lead_description', 'lead_generated', (value) => value === 'true']],
+  INTERVIEW: [
+    ['contradiction_explanation', 'contradictions', (value) => value === 'IDENTIFIED'],
+    ['lead_description', 'follow_up_lead', (value) => value === 'true'],
+    ['outcome_explanation', 'outcome', (value) => ['NO_MATERIAL_INFORMATION', 'PERSON_DISPUTED_ALLEGATION', 'INTERVIEW_UNSUCCESSFUL', 'OTHER'].includes(value)],
+  ],
+  EVIDENCE_COLLECTION: [['explanation', 'result', (value) => ['PARTIALLY_OBTAINED', 'REQUESTED_BUT_UNAVAILABLE', 'REFUSED', 'NO_LONGER_AVAILABLE', 'OTHER'].includes(value)]],
+  RECORD_REQUEST: [['response_explanation', 'response', (value) => ['NO_RESPONSE', 'REFUSED', 'UNAVAILABLE'].includes(value)]],
+};
+
+function syncActionConditionals(form, actionType) {
+  (ACTION_CONDITIONAL_FIELDS[actionType] || []).forEach(([field, trigger, test]) => {
+    form.querySelectorAll(`[data-action-field="${field}"]`).forEach((control) => {
+      const scope = control.closest('[data-evidence-collection-item]') || form;
+      const source = scope.querySelector(`[data-action-field="${trigger}"]`);
+      const show = test(source ? source.value : '');
+      control.classList.toggle('hidden', !show);
+      const label = control.previousElementSibling;
+      if (label && label.tagName === 'LABEL') {
+        label.classList.toggle('hidden', !show);
+      }
+    });
+  });
+}
+
+function enhanceActionForm(form, actionType) {
+  if (!form) {
+    return;
+  }
+  const labelFor = (control) => (control.previousElementSibling && control.previousElementSibling.tagName === 'LABEL' ? control.previousElementSibling : null);
+
+  if (!form.querySelector('.form-group')) {
+    const starts = (ACTION_FORM_GROUPS[actionType] || [])
+      .map(([title, key]) => {
+        const control = form.querySelector(`[data-action-field="${key}"]`);
+        return control ? { title, node: labelFor(control) || control } : null;
+      })
+      .filter(Boolean);
+    starts.forEach(({ title, node }, index) => {
+      const members = [];
+      for (let next = node; next && (index + 1 >= starts.length || next !== starts[index + 1].node); next = next.nextElementSibling) {
+        members.push(next);
+      }
+      const section = document.createElement('section');
+      section.className = 'form-group';
+      section.innerHTML = `<h4 class="form-group-title">${title}</h4>`;
+      node.before(section);
+      members.forEach((member) => section.appendChild(member));
+    });
+  }
+
+  (ACTION_REQUIRED_FIELDS[actionType] || []).forEach((key) => {
+    form.querySelectorAll(`[data-action-field="${key}"]`).forEach((control) => {
+      const label = labelFor(control);
+      if (label && !label.querySelector('.req-mark')) {
+        label.insertAdjacentHTML('beforeend', '<span class="req-mark" aria-hidden="true">*</span>');
+      }
+    });
+  });
+  if (actionType === 'RECORD_REQUEST' && !form.querySelector('[data-date-hint]')) {
+    const dateTo = form.querySelector('[data-action-field="date_range_to"]');
+    if (dateTo) {
+      dateTo.insertAdjacentHTML('afterend', '<p class="field-hint" data-date-hint>Provide a relevant date or a date range.</p>');
+    }
+  }
+
+  if (form.dataset.conditionalBound !== 'true') {
+    form.dataset.conditionalBound = 'true';
+    form.addEventListener('change', () => {
+      const modal = document.getElementById('actionModal');
+      syncActionConditionals(form, modal ? modal.dataset.requiredActionType : '');
+    });
+  }
+  syncActionConditionals(form, actionType);
+}
+
 function renderActionFormForType(actionType, actions = []) {
   const header = renderActionHeader(actionType, actions);
   switch (actionType) {
@@ -735,7 +809,15 @@ function renderActionFormForType(actionType, actions = []) {
         <label class="input-label" style="margin-top:12px; display:block;">Witness</label>
         <input class="field-input" data-action-field="witness_name" type="text" placeholder="Witness name or identifier" />
         <label class="input-label" style="margin-top:12px; display:block;">Relationship to incident</label>
-        <input class="field-input" data-action-field="relationship_to_incident" type="text" placeholder="Relationship" />
+        <select class="field-select" data-action-field="relationship_to_incident">
+          <option value="">Select relationship</option>
+          <option value="Eyewitness">Eyewitness</option>
+          <option value="Victim">Victim</option>
+          <option value="Family member">Family member</option>
+          <option value="Bystander">Bystander</option>
+          <option value="Colleague">Colleague</option>
+          <option value="Other">Other</option>
+        </select>
         <label class="input-label" style="margin-top:12px; display:block;">Known contact information</label>
         <input class="field-input" data-action-field="known_contact_information" type="text" placeholder="Phone, email, address, or known contact details" />
         <label class="input-label" style="margin-top:12px; display:block;">How witness was identified</label>
@@ -1282,7 +1364,7 @@ function renderInvestigationOrder(container, actions = [], evidenceItems = []) {
         : `${isCompleted ? 'Add another' : 'Complete'} ${actionLabel}`;
       const buttonClass = 'primary-btn';
       return `
-        <article class="mini-case-card">
+        <article class="mini-case-card${isCompleted ? ' is-complete' : ''}">
           <div class="stack-row" style="justify-content:space-between; align-items:center;">
             <strong>${escapeHtml(actionLabel)}</strong>
             <span class="${badgeClass}">${escapeHtml(statusText)}</span>
@@ -1316,6 +1398,7 @@ function renderInvestigationOrder(container, actions = [], evidenceItems = []) {
           bindEvidenceCollectionControls(fields);
         }
         populateActionFormOptions(actionType, evidenceItems, fields);
+        enhanceActionForm(fields, actionType);
       }
       modal.dataset.viewMode = 'edit';
       if (modalContext) {
@@ -1741,6 +1824,7 @@ function bindActionModal(investigationId, evidenceItems = [], { onSaved, actions
         bindEvidenceCollectionControls(actionFields);
       }
       populateActionFormOptions(selectedActionType, evidenceItems, actionFields);
+      enhanceActionForm(actionFields, selectedActionType);
     }
     if (modalContext) {
       const actionLabel = formatRequiredActionLabel(selectedActionType);
@@ -1903,12 +1987,8 @@ function bindCompleteInvestigationModal(investigationId, { onCompleted, findings
         body: { outcome: outcomeSelect ? outcomeSelect.value : 'VALID', final_notes: finalNotes, finding_ids: selectedFindingIds },
       });
       modal.classList.add('hidden');
-      flashToast('Investigation completed.');
-      if (onCompleted) {
-        await onCompleted();
-      } else {
-        window.location.reload();
-      }
+      flashToast('Your findings and conclusions have been recorded. The investigation is now complete and this case has been finalised. Thank you.');
+      window.location.href = '/detective';
     } catch (error) {
       errorEl.textContent = error.message || 'Unable to complete investigation.';
       errorEl.classList.remove('hidden');
@@ -2276,7 +2356,7 @@ export async function hydrateDetectiveCase() {
   try {
     const docket = await fetchJson(`/api/v1/detective/dockets/${caseReference}`);
     const investigation = docket.investigation;
-    renderProtectedSubmission(document.getElementById('detectiveProtectedSubmission'), docket);
+    renderProtectedSource(document.getElementById('detectiveProtectedSubmission'), docket);
     let procedureState = {};
     try {
       procedureState = await fetchJson(`/api/v1/detective/dockets/${caseReference}/procedure-state`);
@@ -2380,7 +2460,7 @@ export async function hydrateDetectiveCase() {
     bindStatementModal(caseReference, {
       onSaved: refreshStatements,
     });
-    renderTimelineList(timeline, docket.timeline, { titleKey: 'event_type', fallbackTitle: 'Case Event' });
+    renderTimelineList(timeline, docket.timeline, { titleKey: 'event_type', fallbackTitle: 'Case Event', milestoneTypes: MILESTONE_EVENT_TYPES });
     const evidenceItems = Array.isArray(docket.citizen_evidence) && docket.citizen_evidence.length
       ? docket.citizen_evidence
       : Array.isArray(docket.evidence)
@@ -2439,6 +2519,7 @@ export async function hydrateDetectiveCase() {
     if (caseFactsPanel) {
       const isCaseFactsStage = String((procedureState.current_stage || 'CASE_REVIEW')).toUpperCase() === 'CASE_FACTS_VERIFICATION';
       caseFactsPanel.classList.toggle('hidden', !investigation && !isCaseFactsStage);
+      caseFactsPanel.classList.toggle('is-complete', Boolean(factsRecord.verified));
       if (caseFactsStatusBadge) {
         caseFactsStatusBadge.textContent = isCaseFactsStage ? 'Pending' : (factsRecord.verified ? 'Verified' : 'Open');
       }
@@ -2511,12 +2592,10 @@ export async function hydrateDetectiveCase() {
 
     const submitCaseFactsVerification = document.getElementById('submitCaseFactsVerification');
     if (submitCaseFactsVerification) {
-      submitCaseFactsVerification.disabled = !investigation;
+      // Case facts must be verified BEFORE an investigation can be started
+      // (stage CASE_FACTS_VERIFICATION), so do not require an open investigation.
+      submitCaseFactsVerification.disabled = Boolean(investigation && investigation.status === 'COMPLETED');
       submitCaseFactsVerification.addEventListener('click', async () => {
-        if (!investigation) {
-          showToast('Open an investigation before recording case facts.', { type: 'error' });
-          return;
-        }
 
         const parseCommaSeparated = (value) => String(value || '')
           .split(',')
@@ -2642,6 +2721,7 @@ export async function hydrateDetectiveCase() {
         const findings = await fetchJson(`/api/v1/detective/investigations/${investigation.investigation_id}/findings`);
         findingsSnapshot = findings;
         renderFindings(findingsList, findings);
+        document.getElementById('detectiveFindingsCard')?.classList.toggle('is-complete', Array.isArray(findings) && findings.length > 0);
         if (investigation) {
           investigation.findings = findings;
         }
@@ -2657,8 +2737,8 @@ export async function hydrateDetectiveCase() {
     bindFindingModal(mutableInvestigationId, { onSaved: refreshFindings, actions: actionsSnapshot || [] });
     findingsSnapshot = await refreshFindings();
 
+    document.getElementById('detectiveFinalReasoningCard')?.classList.toggle('is-complete', String(investigation?.status || '').toUpperCase() === 'COMPLETED');
     bindCompleteInvestigationModal(mutableInvestigationId, {
-      onCompleted: () => window.location.reload(),
       findings: findingsSnapshot || [],
       actions: actionsSnapshot || [],
     });

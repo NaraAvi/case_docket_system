@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% from 'components/_evidence_table.html' import evidence_table_skeleton %}
+{% from 'components/_statutory_badge.html' import law_note %}
 
 {% block content %}
   <section class="detail-shell">
@@ -22,154 +23,187 @@
       <div id="citizenWorkflowRail" class="workflow-rail" aria-label="Protected submission workflow"></div>
     </div>
 
-    <div class="detail-card" id="citizenProtectedReview" style="margin-top:18px;">
-      <div class="panel-head" style="margin-bottom:10px;">
-        <h3>Current status</h3>
-        <span class="badge badge-muted" id="citizenReviewStatus">Review pending</span>
-      </div>
-      <p class="field-hint">The original submission remains protected while the system reviews the report and records any follow-up steps.</p>
-      <dl class="meta-list" style="margin-top:12px;">
-        <dt>Submission status</dt><dd id="citizenSubmissionStatusText">RECEIVED</dd>
-        <dt>Current procedural stage</dt><dd id="citizenProceduralReviewValue">Procedural assessment</dd>
-        <dt>Procedural case</dt><dd id="citizenProceduralCaseValue">Not yet created</dd>
-      </dl>
-      <div class="stack-row hidden" id="citizenProceduralCaseAction" style="justify-content:flex-end; margin-top:12px;">
-        <button class="primary-btn" type="button" id="citizenProceedToProceduralCase">Proceed to procedural case</button>
-      </div>
-      <p id="citizenReviewSummary" style="margin-top:10px;">Waiting for the protected submission review to run.</p>
-    </div>
-
-    <div class="detail-grid">
-      <div class="detail-card">
-        <h3>Submission Information</h3>
-        <dl class="meta-list" id="citizenCaseMeta">
-          <dt>Submission status</dt><dd>Loading…</dd>
-          <dt>Location</dt><dd>Loading…</dd>
-          <dt>Incident Date</dt><dd>Loading…</dd>
-        </dl>
-      </div>
-
-      <div class="detail-card">
-        <h3>Timeline / History</h3>
-        <ul class="timeline-list" id="citizenCaseTimeline">
-          <li><span class="timeline-dot"></span><div><strong>Loading submission timeline</strong><small>Please wait…</small></div></li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="detail-card" style="margin-top:18px;">
-      <div class="panel-head" style="margin-bottom:10px;">
-        <h3>Submitted Information</h3>
-        <button class="secondary-btn small-btn" type="button" id="citizenSubmissionToggle">View submitted information</button>
-      </div>
-      <div class="statement-box" id="citizenSubmissionSummaryText">Loading submission summary…</div>
-      <div id="citizenStructuredSubmission" class="stack-list hidden" aria-expanded="false"></div>
-    </div>
-
-    <div class="detail-card hidden" id="citizenInterviewPanel" style="margin-top:18px;">
-      <h3>Interview Recording</h3>
-      <div class="statement-box" id="citizenInterviewStatus">
-        <p>Loading interview status…</p>
-      </div>
-      <div class="file-input-row" style="margin-top:14px;">
-        <label class="input-label">Recording File</label>
-        <input type="file" id="citizenRecordingFile" accept="audio/*,video/*" />
-        <p class="file-name-preview hidden" id="citizenRecordingFilePreview"></p>
-      </div>
-      <div class="stack-row" style="justify-content:flex-end; margin-top:10px;">
-        <button class="secondary-btn" type="button" id="submitCitizenRecording">Submit My Recording</button>
-      </div>
-      <p class="inline-error hidden" id="citizenRecordingError"></p>
-      <div class="statement-box" style="margin-top:16px;" id="citizenRecordingComparison">
-        <p>Loading recording comparison…</p>
-      </div>
-    </div>
-
-    <div class="cards-grid" style="margin-top:18px;">
-      <div class="panel-card">
-        <h3>Additional Information</h3>
-        <p class="field-hint">Add information to this protected submission without overwriting the original report. The system keeps the original record and appends the new citizen-authored context as a separate assertion.</p>
-        <textarea rows="5" placeholder="Add additional facts, context, or updates for this protected submission..." id="citizenStatementText"></textarea>
-        <div class="stack-row" style="margin-top:10px; justify-content:flex-end;">
-          <button class="secondary-btn" type="button" id="saveCitizenStatement">Add Information</button>
+    <div class="docket-layout" id="citizenDocketLayout">
+      <div class="docket-main">
+        <div class="detail-card" id="citizenProtectedReview">
+          <div class="panel-head" style="margin-bottom:10px;">
+            <h3>Current status</h3>
+            <span class="badge badge-muted" id="citizenReviewStatus">Review pending</span>
+          </div>
+          <p class="field-hint">The original submission remains protected while the system reviews the report and records any follow-up steps.</p>
+          <dl class="meta-list" style="margin-top:12px;">
+            <dt>Submission status</dt><dd id="citizenSubmissionStatusText">RECEIVED</dd>
+            <dt>Current procedural stage</dt><dd id="citizenProceduralReviewValue">Procedural assessment</dd>
+            <dt>Procedural case</dt><dd id="citizenProceduralCaseValue">Not yet created</dd>
+          </dl>
+          <div class="stack-row hidden" id="citizenProceduralCaseAction" style="justify-content:flex-end; margin-top:12px;">
+            <button class="primary-btn" type="button" id="citizenProceedToProceduralCase">Proceed to procedural case</button>
+          </div>
+          <p id="citizenReviewSummary" style="margin-top:10px;">Waiting for the protected submission review to run.</p>
         </div>
-        <p class="inline-error hidden" id="citizenStatementError"></p>
-        <label class="input-label" style="margin-top:14px; display:block;">Submission Assertions</label>
-        <div class="stack-list" id="citizenStatementsList">
-          <p>Loading protected submission history…</p>
-        </div>
-      </div>
 
-      <div class="panel-card">
-        <h3>Evidence or Supporting Material</h3>
-        <p class="field-hint">Evidence is optional additional material attached to the protected submission. It does not create a case or overwrite the original report.</p>
-        {{ evidence_table_skeleton('citizenCaseEvidence') }}
-        <div class="wizard-row" style="margin-top:14px;">
-          <label>Type</label>
-          <select class="field-select" id="citizenEvidenceType">
-            <option value="PHOTO">Photo</option>
-            <option value="VIDEO">Video</option>
-            <option value="DOCUMENT">Document</option>
-            <option value="AUDIO">Audio</option>
-            <option value="WITNESS_STATEMENT">Witness statement</option>
-            <option value="OTHER">Other</option>
-          </select>
+        <div class="detail-grid">
+          <div class="detail-card" id="sec-submission-info">
+            <h3>Submission Information</h3>
+            <dl class="meta-list" id="citizenCaseMeta">
+              <dt>Submission status</dt><dd>Loading…</dd>
+              <dt>Location</dt><dd>Loading…</dd>
+              <dt>Incident Date</dt><dd>Loading…</dd>
+            </dl>
+          </div>
+
+          <div class="detail-card" id="sec-timeline">
+            <h3>Timeline / History</h3>
+            <ul class="timeline-list" id="citizenCaseTimeline">
+              <li><span class="timeline-dot"></span><div><strong>Loading submission timeline</strong><small>Please wait…</small></div></li>
+            </ul>
+          </div>
         </div>
-        <div class="file-input-row">
-          <label class="input-label">File</label>
-          <input type="file" id="citizenEvidenceFile" />
-          <p class="file-name-preview hidden" id="citizenEvidenceFilePreview"></p>
+
+        <div class="detail-card" id="sec-submitted-information">
+          <div class="panel-head" style="margin-bottom:10px;">
+            <h3>Submitted Information</h3>
+            <button class="secondary-btn small-btn" type="button" id="citizenSubmissionToggle">View submitted information</button>
+          </div>
+          <div class="statement-box" id="citizenSubmissionSummaryText">Loading submission summary…</div>
+          <div id="citizenStructuredSubmission" class="stack-list hidden" aria-expanded="false"></div>
         </div>
-        <div class="wizard-row">
-          <label>Description</label>
-          <textarea rows="2" id="citizenEvidenceDescription" placeholder="Describe what this material shows or adds."></textarea>
+
+        <div class="detail-card hidden recording-card" id="citizenInterviewPanel">
+          <h3>Interview Recording</h3>
+          <div class="field-hint">{{ law_note('popia_voice') }}</div>
+          <div class="statement-box" id="citizenInterviewStatus" style="margin-top:10px;">
+            <p>Loading interview status…</p>
+          </div>
+          <div class="field-hint" style="margin-top:8px;">{{ law_note('ecta_s15') }}<br />{{ law_note('transcript') }}</div>
+          <div class="file-input-row" style="margin-top:14px;">
+            <label class="input-label">Recording File</label>
+            <input type="file" id="citizenRecordingFile" accept="audio/*,video/*" />
+            <p class="file-name-preview hidden" id="citizenRecordingFilePreview"></p>
+          </div>
+          <div class="stack-row" style="justify-content:flex-end; margin-top:10px;">
+            <button class="secondary-btn" type="button" id="submitCitizenRecording">Submit My Recording</button>
+          </div>
+          <p class="inline-error hidden" id="citizenRecordingError"></p>
+          <div class="comparison-block" data-collapsible="collapsed">
+            <div class="collapsible-head">
+              <button type="button" class="link-btn collapsible-toggle" data-collapsible-toggle aria-expanded="false">Recording comparison</button>
+            </div>
+            <div data-collapsible-body class="hidden">
+              <div class="field-hint">{{ law_note('recording_comparison') }}</div>
+              <div class="statement-box" style="margin-top:8px;" id="citizenRecordingComparison">
+                <p>Loading recording comparison…</p>
+              </div>
+            </div>
+          </div>
         </div>
+
+        <div class="panel-card" id="sec-evidence">
+          <h3>Evidence or Supporting Material</h3>
+          <p class="field-hint">Evidence is optional additional material attached to the protected submission. It does not create a case or overwrite the original report.</p>
+          {{ evidence_table_skeleton('citizenCaseEvidence') }}
+          <div class="wizard-row" style="margin-top:14px;">
+            <label>Type</label>
+            <select class="field-select" id="citizenEvidenceType">
+              <option value="PHOTO">Photo</option>
+              <option value="VIDEO">Video</option>
+              <option value="DOCUMENT">Document</option>
+              <option value="AUDIO">Audio</option>
+              <option value="WITNESS_STATEMENT">Witness statement</option>
+              <option value="OTHER">Other</option>
+            </select>
+          </div>
+          <div class="file-input-row">
+            <label class="input-label">File</label>
+            <input type="file" id="citizenEvidenceFile" />
+            <p class="file-name-preview hidden" id="citizenEvidenceFilePreview"></p>
+          </div>
+          <div class="wizard-row">
+            <label>Description</label>
+            <textarea rows="2" id="citizenEvidenceDescription" placeholder="Describe what this material shows or adds."></textarea>
+          </div>
+          <div class="stack-row" style="justify-content:flex-end;">
+            <button class="secondary-btn" type="button" id="addCitizenEvidence">Add Evidence or Supporting Material</button>
+          </div>
+          <p class="field-hint">Every uploaded file is hashed with SHA-256 for chain-of-custody (CPA §212) when it's saved. The server remains authoritative for provenance, submitter, and storage metadata.</p>
+          <div class="field-hint">{{ law_note('cpa_s212') }}</div>
+          <p class="inline-error hidden" id="citizenEvidenceError"></p>
+        </div>
+
+        <div class="panel-card" id="sec-additional-information">
+          <h3>Additional Information</h3>
+          <p class="field-hint">Add information to this protected submission without overwriting the original report. The system keeps the original record and appends the new citizen-authored context as a separate assertion.</p>
+          <textarea rows="5" placeholder="Add additional facts, context, or updates for this protected submission..." id="citizenStatementText"></textarea>
+          <div class="stack-row" style="margin-top:10px; justify-content:flex-end;">
+            <button class="secondary-btn" type="button" id="saveCitizenStatement">Add Information</button>
+          </div>
+          <p class="inline-error hidden" id="citizenStatementError"></p>
+          <label class="input-label" style="margin-top:14px; display:block;">Submission Assertions</label>
+          <div class="stack-list" id="citizenStatementsList">
+            <p>Loading protected submission history…</p>
+          </div>
+        </div>
+
+        <div class="cards-grid">
+          <div class="panel-card" id="sec-correction">
+            <h3>Correction Request</h3>
+            <p class="field-hint">This creates a correction event/request and preserves the original assertion. The original submission history is not silently overwritten.</p>
+            <div class="field-hint">{{ law_note('popia_correction') }}</div>
+            <label class="input-label">Assertion to correct</label>
+            <select class="field-select" id="citizenCorrectionAssertion">
+              <option value="">No assertions available</option>
+            </select>
+            <label class="input-label" style="margin-top:12px; display:block;">Corrected wording</label>
+            <textarea rows="3" id="citizenCorrectionText" placeholder="Provide the corrected text for the original assertion."></textarea>
+            <label class="input-label" style="margin-top:12px; display:block;">Reason</label>
+            <textarea rows="2" id="citizenCorrectionReason" placeholder="Why is this correction needed?"></textarea>
+            <div class="stack-row" style="margin-top:10px; justify-content:flex-end;">
+              <button class="secondary-btn" type="button" id="submitCitizenCorrection">Request Correction</button>
+            </div>
+            <p class="inline-error hidden" id="citizenCorrectionError"></p>
+          </div>
+
+          <div class="panel-card" id="sec-withdrawal">
+            <h3>Withdrawal Request</h3>
+            <p class="field-hint">A withdrawal is an event and request, not deletion. The original submission, evidence, claims, and audit history remain preserved.</p>
+            <div class="field-hint">{{ law_note('popia_withdrawal') }}</div>
+            <textarea rows="3" id="citizenWithdrawalReason" placeholder="Explain why you are requesting withdrawal."></textarea>
+            <div class="stack-row" style="margin-top:10px; justify-content:flex-end;">
+              <button class="secondary-btn" type="button" id="requestCitizenWithdrawal">Request Withdrawal</button>
+            </div>
+            <p class="inline-error hidden" id="citizenWithdrawalError"></p>
+          </div>
+        </div>
+
+        <div class="panel-card" id="sec-escalations">
+          <h3>My Escalations</h3>
+          <div class="stack-list" id="citizenEscalationsList">
+            <div class="empty-state">Loading your escalations…</div>
+          </div>
+        </div>
+
         <div class="stack-row" style="justify-content:flex-end;">
-          <button class="secondary-btn" type="button" id="addCitizenEvidence">Add Evidence or Supporting Material</button>
+          <button class="primary-btn" type="button" id="submitCitizenDocketForReview" disabled>Submit Submission for Review</button>
         </div>
-        <p class="field-hint">Every uploaded file is hashed with SHA-256 for chain-of-custody (CPA §212) when it's saved. The server remains authoritative for provenance, submitter, and storage metadata.</p>
-        <p class="inline-error hidden" id="citizenEvidenceError"></p>
+        <p class="field-hint" id="submitDocketHint" style="text-align:right;"></p>
       </div>
 
-      <div class="panel-card">
-        <h3>Correction Request</h3>
-        <p class="field-hint">This creates a correction event/request and preserves the original assertion. The original submission history is not silently overwritten.</p>
-        <label class="input-label">Assertion to correct</label>
-        <select class="field-select" id="citizenCorrectionAssertion">
-          <option value="">No assertions available</option>
-        </select>
-        <label class="input-label" style="margin-top:12px; display:block;">Corrected wording</label>
-        <textarea rows="3" id="citizenCorrectionText" placeholder="Provide the corrected text for the original assertion."></textarea>
-        <label class="input-label" style="margin-top:12px; display:block;">Reason</label>
-        <textarea rows="2" id="citizenCorrectionReason" placeholder="Why is this correction needed?"></textarea>
-        <div class="stack-row" style="margin-top:10px; justify-content:flex-end;">
-          <button class="secondary-btn" type="button" id="submitCitizenCorrection">Request Correction</button>
-        </div>
-        <p class="inline-error hidden" id="citizenCorrectionError"></p>
-      </div>
-
-      <div class="panel-card">
-        <h3>Withdrawal Request</h3>
-        <p class="field-hint">A withdrawal is an event and request, not deletion. The original submission, evidence, claims, and audit history remain preserved.</p>
-        <textarea rows="3" id="citizenWithdrawalReason" placeholder="Explain why you are requesting withdrawal."></textarea>
-        <div class="stack-row" style="margin-top:10px; justify-content:flex-end;">
-          <button class="secondary-btn" type="button" id="requestCitizenWithdrawal">Request Withdrawal</button>
-        </div>
-        <p class="inline-error hidden" id="citizenWithdrawalError"></p>
-      </div>
-
-      <div class="panel-card">
-        <h3>My Escalations</h3>
-        <div class="stack-list" id="citizenEscalationsList">
-          <div class="empty-state">Loading your escalations…</div>
-        </div>
-      </div>
+      <aside class="section-nav" id="citizenSectionNav" data-section-nav aria-label="Sections on this page">
+        <button class="section-nav-toggle" type="button" data-section-nav-toggle aria-expanded="true" aria-controls="citizenSectionNavList">On this page <span class="chevron" aria-hidden="true">&#9662;</span></button>
+        <ol id="citizenSectionNavList" data-section-nav-list>
+          <li><a href="#citizenProtectedReview">Current status</a></li>
+          <li><a href="#sec-submission-info">Submission info</a></li>
+          <li><a href="#sec-timeline">Timeline</a></li>
+          <li><a href="#sec-submitted-information">Submitted info</a></li>
+          <li><a href="#citizenInterviewPanel">Interview recording</a></li>
+          <li><a href="#sec-evidence">Evidence</a></li>
+          <li><a href="#sec-additional-information">Additional info</a></li>
+          <li><a href="#sec-correction">Correction</a></li>
+          <li><a href="#sec-withdrawal">Withdrawal</a></li>
+          <li><a href="#sec-escalations">Escalations</a></li>
+        </ol>
+      </aside>
     </div>
-
-    <div class="stack-row" style="margin-top:18px; justify-content:flex-end;">
-      <button class="primary-btn" type="button" id="submitCitizenDocketForReview" disabled>Submit Submission for Review</button>
-    </div>
-    <p class="field-hint" id="submitDocketHint" style="text-align:right;"></p>
   </section>
 
   <div class="reauth-modal hidden" id="escalateModal" aria-hidden="true">
@@ -179,6 +213,7 @@
         <span>Escalate to IPID</span>
       </div>
       <p class="reauth-subtitle">Use this if the docket process itself was mishandled — refused registration, unlawful delay, officer conduct, or suspected malpractice.</p>
+      <div class="field-hint">{{ law_note('ipid_s28') }}</div>
 
       <label class="input-label">Category</label>
       <select class="field-select" id="escalateCategory">

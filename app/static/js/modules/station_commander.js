@@ -3,7 +3,7 @@
  */
 
 import { fetchJson } from '../core/api.js';
-import { bindCaseLinks, buildStatusBadge, flashToast, populateSelect, renderDocketCardList, renderSlaMeter, renderTimelineList, setEmptyState, showToast } from '../core/ui.js';
+import { MILESTONE_EVENT_TYPES, bindCaseLinks, buildStatusBadge, flashToast, populateSelect, renderDocketCardList, renderSlaMeter, renderTimelineList, setEmptyState, showToast } from '../core/ui.js';
 
 export function getStationCommanderCaseReference() {
   const match = window.location.pathname.match(/\/station-commander\/dockets\/([^/]+)/);
@@ -281,7 +281,7 @@ export async function hydrateStationCommanderDetail() {
 
   try {
     const auditEntries = await fetchJson(`/api/v1/station-commander/dockets/${caseReference}/audit`);
-    renderTimelineList(timeline, auditEntries, { titleKey: 'action', detailKey: 'timestamp', fallbackTitle: 'Audit Event' });
+    renderTimelineList(timeline, auditEntries, { titleKey: 'action', detailKey: 'timestamp', fallbackTitle: 'Audit Event', milestoneTypes: MILESTONE_EVENT_TYPES });
   } catch (error) {
     setEmptyState(timeline, error.message || 'Unable to load audit trail.');
   }

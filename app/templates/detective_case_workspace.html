@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% from 'components/_timeline.html' import timeline_skeleton %}
 {% from 'components/_evidence_table.html' import evidence_table_skeleton %}
-{% from 'components/_statutory_badge.html' import statutory_badge %}
+{% from 'components/_statutory_badge.html' import statutory_badge, law_note %}
 
 {% block content %}
   <section class="detail-shell">
@@ -46,8 +46,26 @@
       </div>
     </div>
 
-    <div id="detectiveDocketContent">
-      <div class="panel-card wide-card">
+    <aside class="section-nav" id="detectiveSectionNav" data-section-nav aria-label="Sections on this page">
+      <button class="section-nav-toggle" type="button" data-section-nav-toggle aria-expanded="true" aria-controls="detectiveSectionNavList">On this page <span class="chevron" aria-hidden="true">&#9662;</span></button>
+      <ol id="detectiveSectionNavList" data-section-nav-list>
+        <li><a href="#detectiveProcedureBoard">Control board</a></li>
+        <li><a href="#detectiveCaseDetailsCard">Case details</a></li>
+        <li><a href="#detectiveOriginalSubmissionCard">Original submission</a></li>
+        <li><a href="#detectiveDepositionCard">Deposition</a></li>
+        <li><a href="#detectiveEvidenceCard">Protected evidence</a></li>
+        <li><a href="#detectiveRecordingsCard">Recordings / statements</a></li>
+        <li><a href="#detectiveAuditCard">Audit history</a></li>
+        <li><a href="#caseFactsVerificationPanel">Case facts</a></li>
+        <li><a href="#detectiveInvestigationCard">Investigation</a></li>
+        <li><a href="#detectiveInvestigationActions">Investigation order</a></li>
+        <li><a href="#detectiveFindingsCard">Findings</a></li>
+        <li><a href="#detectiveFinalReasoningCard">Final reasoning</a></li>
+      </ol>
+    </aside>
+
+    <div id="detectiveDocketContent" class="card-stack">
+      <div class="panel-card wide-card" id="detectiveCaseDetailsCard">
         <h3>Case / Docket Details</h3>
         <dl class="meta-list" id="detectiveCaseMeta">
           <dt>Incident Location</dt><dd>Loading…</dd>
@@ -57,92 +75,54 @@
         </dl>
       </div>
 
-      <div class="detail-grid" style="margin-top:18px;">
-        <div class="panel-card wide-card">
+      <div class="panel-card wide-card" id="detectiveOriginalSubmissionCard" data-collapsible="collapsed">
+        <div class="collapsible-head">
           <h3>Original Protected Citizen Submission</h3>
+          <button type="button" class="secondary-btn small-btn collapsible-toggle" data-collapsible-toggle aria-expanded="false">Details</button>
+        </div>
+        <div data-collapsible-body class="hidden">
           <div class="stack-list" id="detectiveProtectedSubmission">
             <p>Loading protected submission…</p>
           </div>
         </div>
       </div>
 
-      <div class="detail-grid" style="margin-top:18px;">
-        <div class="detail-card">
+      <div class="detail-grid">
+        <div class="detail-card" id="detectiveDepositionCard">
           <h3>Initial Deposition / Constable Interview</h3>
           <div class="statement-box" id="detectiveDeposition">
             <p>Loading docket description and witness information…</p>
           </div>
         </div>
 
-        <div class="detail-card">
+        <div class="detail-card" id="detectiveEvidenceCard">
           <h3>Protected Evidence</h3>
           {{ evidence_table_skeleton('detectiveCaseEvidence') }}
+          <div class="field-hint">{{ law_note('cpa_s212') }}</div>
         </div>
       </div>
 
-      <div class="cards-grid" style="margin-top:18px;">
-        <div class="panel-card">
-          <h3>Recordings / Statements</h3>
-          <div class="stack-list" id="detectiveStatementsList">
-            <p>Loading statements…</p>
+      <div class="cards-grid">
+        <div class="panel-card recording-card" id="detectiveRecordingsCard" data-collapsible="open">
+          <div class="collapsible-head">
+            <h3>Recordings / Statements</h3>
+            <button type="button" class="secondary-btn small-btn collapsible-toggle" data-collapsible-toggle aria-expanded="true">Details</button>
+          </div>
+          <div data-collapsible-body>
+            <div class="field-hint">{{ law_note('ecta_s15') }}<br />{{ law_note('transcript') }}</div>
+            <div class="stack-list" id="detectiveStatementsList" style="margin-top:10px;">
+              <p>Loading statements…</p>
+            </div>
           </div>
         </div>
 
-        <div class="panel-card">
+        <div class="panel-card" id="detectiveAuditCard">
           <h3>Procedural / Audit History</h3>
           {{ timeline_skeleton('detectiveCaseTimeline', 'Loading audit timeline') }}
         </div>
       </div>
 
-      <div class="panel-card wide-card" style="margin-top:18px;">
-        <h3>Investigation</h3>
-        <p id="detectiveInvestigationStateText">Investigation has not started.</p>
-        <div id="detectiveInvestigationTimer" class="stack-list" style="margin-top:12px;"></div>
-        <div class="stack-row" style="margin-top:12px; justify-content:flex-end;">
-          <button class="primary-btn" type="button" id="startInvestigation" hidden>Start Investigation</button>
-        </div>
-      </div>
-
-      <div class="panel-card wide-card hidden" id="detectiveInvestigationActions" style="margin-top:18px;">
-        <div class="stack-row" style="justify-content:space-between; align-items:flex-start;">
-          <div>
-            <p class="eyebrow">Active Investigation</p>
-            <h3>Investigation Order</h3>
-          </div>
-        </div>
-        <p class="eyebrow" style="margin-top:8px;">Required Investigative Actions</p>
-        <div class="hidden" aria-hidden="true">Complete Interview Complete Evidence Review Complete Evidence Collection Complete Record Request Complete Witness Contact Complete Scene Review</div>
-        <div class="stack-list" id="detectiveInvestigationOrder" style="margin-top:8px;"></div>
-        <div class="stack-list" id="detectiveActionList" style="margin-top:12px;"></div>
-      </div>
-
-      <div class="panel-card wide-card" style="margin-top:18px;">
-        <div class="stack-row" style="justify-content:space-between; align-items:flex-start;">
-          <div>
-            <p class="eyebrow">Detective findings</p>
-            <h3>Investigation Findings</h3>
-          </div>
-          <button class="primary-btn" type="button" id="openFindingModal" hidden>Record Finding</button>
-        </div>
-        <div class="stack-list" id="detectiveFindingsList" style="margin-top:12px;">
-          <p>Loading findings…</p>
-        </div>
-      </div>
-
-      <div class="panel-card wide-card" style="margin-top:18px;">
-        <div class="stack-row" style="justify-content:space-between; align-items:flex-start;">
-          <div>
-            <p class="eyebrow">Final review</p>
-            <h3>Final Reasoning and Completion</h3>
-          </div>
-          <button class="primary-btn" type="button" id="openCompleteInvestigationModal" hidden>Complete Investigation</button>
-        </div>
-        <div class="stack-list" id="detectiveNoteEntriesList" style="margin-top:12px;">
-          <p>Loading investigation notes…</p>
-        </div>
-      </div>
-
-      <div class="panel-card wide-card" id="caseFactsVerificationPanel" style="margin-top:18px;">
+      <div class="panel-card wide-card" id="caseFactsVerificationPanel">
         <div class="stack-row" style="justify-content:space-between; align-items:flex-start;">
           <div>
             <p class="eyebrow">Detective case facts</p>
@@ -210,6 +190,54 @@
         </div>
       </div>
 
+      <div class="panel-card wide-card" id="detectiveInvestigationCard">
+        <h3>Investigation</h3>
+        <p id="detectiveInvestigationStateText">Investigation has not started.</p>
+        <div id="detectiveInvestigationTimer" class="stack-list" style="margin-top:12px;"></div>
+        <div class="stack-row" style="margin-top:12px; justify-content:flex-end;">
+          <button class="primary-btn" type="button" id="startInvestigation" hidden>Start Investigation</button>
+        </div>
+      </div>
+
+      <div class="panel-card wide-card hidden" id="detectiveInvestigationActions">
+        <div class="stack-row" style="justify-content:space-between; align-items:flex-start;">
+          <div>
+            <p class="eyebrow">Active Investigation</p>
+            <h3>Investigation Order</h3>
+          </div>
+        </div>
+        <p class="eyebrow" style="margin-top:8px;">Required Investigative Actions</p>
+        <div class="hidden" aria-hidden="true">Complete Interview Complete Evidence Review Complete Evidence Collection Complete Record Request Complete Witness Contact Complete Scene Review</div>
+        <div class="stack-list" id="detectiveInvestigationOrder" style="margin-top:8px;"></div>
+        <div class="stack-list" id="detectiveActionList" style="margin-top:12px;"></div>
+      </div>
+
+      <div class="panel-card wide-card" id="detectiveFindingsCard">
+        <div class="stack-row" style="justify-content:space-between; align-items:flex-start;">
+          <div>
+            <p class="eyebrow">Detective findings</p>
+            <h3>Investigation Findings</h3>
+          </div>
+          <button class="primary-btn" type="button" id="openFindingModal" hidden>Record Finding</button>
+        </div>
+        <div class="field-hint">{{ law_note('paja_findings') }}</div>
+        <div class="stack-list" id="detectiveFindingsList" style="margin-top:12px;">
+          <p>Loading findings…</p>
+        </div>
+      </div>
+
+      <div class="panel-card wide-card" id="detectiveFinalReasoningCard">
+        <div class="stack-row" style="justify-content:space-between; align-items:flex-start;">
+          <div>
+            <p class="eyebrow">Final review</p>
+            <h3>Final Reasoning and Completion</h3>
+          </div>
+          <button class="primary-btn" type="button" id="openCompleteInvestigationModal" hidden>Complete Investigation</button>
+        </div>
+        <div class="stack-list" id="detectiveNoteEntriesList" style="margin-top:12px;">
+          <p>Loading investigation notes…</p>
+        </div>
+      </div>
     </div>
   </section>
 

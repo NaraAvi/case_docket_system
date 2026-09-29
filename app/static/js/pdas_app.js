@@ -4,7 +4,9 @@
  */
 
 import { bindLoginForm, bindLogoutButton } from './core/auth.js';
-import { refreshUserBadge, bindReauthModal, showFlashedToast } from './core/ui.js';
+import { refreshUserBadge, bindReauthModal, showFlashedToast, bindCollapsibles, bindSectionNav } from './core/ui.js';
+import { initNav } from './core/nav.js';
+import { initLawNotes } from './core/law_notes.js';
 
 export const ROLE_MODULE_LOADERS = {
   citizen: () => import('./modules/citizen.js'),
@@ -29,6 +31,10 @@ export async function init({ loadShared = () => import('./modules/shared.js') } 
   sharedModule.init();
 
   refreshUserBadge();
+  initNav();
+  initLawNotes();
+  bindCollapsibles(document);
+  document.querySelectorAll('[data-section-nav]').forEach((nav) => bindSectionNav(nav));
   bindReauthModal();
   showFlashedToast();
 }

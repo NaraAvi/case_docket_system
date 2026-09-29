@@ -9,3 +9,16 @@
 {% macro statutory_badge(citation, label=None) %}
   <span class="badge badge-statute"{% if label %} title="{{ label }}"{% endif %}>{{ citation }}</span>
 {% endmacro %}
+
+{#
+  South African law note: a small inline note plus an info button that opens
+  a popover with a fuller plain-language description. All wording lives in one
+  lookup table (static/js/core/law_notes.js); this macro only emits a
+  placeholder that bindLawNotes() fills in on page load. JS-rendered markup
+  uses lawNoteHtml(key) from the same module.
+  Usage: {% from 'components/_statutory_badge.html' import law_note %}
+         {{ law_note('popia_consent') }}
+#}
+{% macro law_note(key) %}
+  <span class="law-note-slot" data-law-note="{{ key }}"></span>
+{% endmacro %}

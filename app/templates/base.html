@@ -1,3 +1,4 @@
+{% from 'components/_statutory_badge.html' import law_note %}
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -7,8 +8,8 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/pdas.css') }}" />
   </head>
   <body data-role="{{ role or '' }}" data-page="{{ page_title or '' }}">
-    {% macro nav_link(href, label) %}
-      <a class="nav-item{{ ' active' if request.path == href or (href != '/' and request.path.startswith(href ~ '/')) else '' }}" href="{{ href }}">{{ label }}</a>
+    {% macro nav_link(href, label, icon) %}
+      <a class="nav-item{{ ' active' if request.path == href or (href != '/' and request.path.startswith(href ~ '/')) else '' }}" href="{{ href }}" title="{{ label }}"><span class="nav-icon" aria-hidden="true">{{ icon }}</span><span class="nav-label">{{ label }}</span></a>
     {% endmacro %}
 
     {% if role %}
@@ -20,30 +21,31 @@
               <strong>PDAS Admin</strong>
               <span>Accountability Portal</span>
             </div>
+            <button type="button" class="nav-toggle" id="navToggle" aria-label="Collapse navigation" aria-expanded="true" title="Collapse navigation">&#9776;</button>
           </div>
 
           <nav class="nav-list">
             {% if role == 'citizen' %}
-              {{ nav_link('/citizen', 'Dashboard') }}
-              {{ nav_link('/citizen/dockets/new', 'Submit New Submission') }}
+              {{ nav_link('/citizen', 'Dashboard', 'D') }}
+              {{ nav_link('/citizen/dockets/new', 'Submit New Submission', '+') }}
             {% elif role == 'constable' %}
-              {{ nav_link('/constable', 'Dashboard') }}
-              {{ nav_link('/active-cases', 'Cases') }}
-              {{ nav_link('/evidence-vault', 'Evidence Vault') }}
+              {{ nav_link('/constable', 'Dashboard', 'D') }}
+              {{ nav_link('/active-cases', 'Cases', 'C') }}
+              {{ nav_link('/evidence-vault', 'Evidence Vault', 'E') }}
             {% elif role == 'detective' %}
-              {{ nav_link('/detective', 'Dashboard') }}
-              {{ nav_link('/active-cases', 'Cases') }}
-              {{ nav_link('/evidence-vault', 'Evidence Vault') }}
+              {{ nav_link('/detective', 'Dashboard', 'D') }}
+              {{ nav_link('/active-cases', 'Cases', 'C') }}
+              {{ nav_link('/evidence-vault', 'Evidence Vault', 'E') }}
             {% elif role == 'station_commander' %}
-              {{ nav_link('/station-commander', 'Dashboard') }}
-              {{ nav_link('/active-cases', 'Cases') }}
-              {{ nav_link('/evidence-vault', 'Evidence Vault') }}
+              {{ nav_link('/station-commander', 'Dashboard', 'D') }}
+              {{ nav_link('/active-cases', 'Cases', 'C') }}
+              {{ nav_link('/evidence-vault', 'Evidence Vault', 'E') }}
             {% elif role == 'ipid' %}
-              {{ nav_link('/ipid', 'Dashboard') }}
-              {{ nav_link('/active-cases', 'Cases') }}
-              {{ nav_link('/evidence-vault', 'Evidence Vault') }}
+              {{ nav_link('/ipid', 'Dashboard', 'D') }}
+              {{ nav_link('/active-cases', 'Cases', 'C') }}
+              {{ nav_link('/evidence-vault', 'Evidence Vault', 'E') }}
             {% endif %}
-            {{ nav_link('/accountability', 'Accountability') }}
+            {{ nav_link('/accountability', 'Accountability', 'A') }}
           </nav>
 
           <div class="nav-footer">
@@ -69,8 +71,10 @@
 
           <footer class="pdas-footer">
             <div class="footer-brand">PDAS SECURE ACCOUNTABILITY SYSTEM</div>
+            <div class="footer-disclaimer">Informational only, not legal advice.</div>
             <div class="footer-links">
               <a href="#">Privacy Policy</a>
+              {{ law_note('popia_act') }}
               <a href="#">Audit Protocols</a>
               <a href="#">Help Desk</a>
             </div>

@@ -1,4 +1,5 @@
 {% extends 'base.html' %}
+{% from 'components/_statutory_badge.html' import law_note %}
 
 {% block content %}
   <section class="file-step-shell">
@@ -9,7 +10,7 @@
     </div>
 
     <div class="wizard-card" id="citizenSubmissionForm">
-      <div class="section-block">
+      <div class="section-block" id="citizenCardAbout">
         <h3>1. About You</h3>
         <div class="wizard-row">
           <label for="reporterRelationship">Your relationship to the matter</label>
@@ -36,6 +37,7 @@
             <option value="Not sure">Not sure</option>
           </select>
         </div>
+        <div class="field-hint">{{ law_note('popia_consent') }}</div>
         <div class="wizard-row hidden" id="contactFields">
           <label for="contactMethod">Preferred contact method</label>
           <select id="contactMethod">
@@ -44,15 +46,38 @@
             <option value="Email">Email</option>
             <option value="SMS">SMS</option>
           </select>
-          <div class="stack-row">
-            <input id="contactPhone" type="tel" placeholder="Phone number" />
-            <input id="contactEmail" type="email" placeholder="Email address" />
-            <input id="contactSms" type="text" placeholder="SMS / messaging" />
+          <div class="stack-list" id="contactInputs">
+            <div class="contact-input-row" id="contactPhoneRow">
+              <select id="contactCountryCode" class="field-select" aria-label="Country code">
+                <option value="+27" selected>+27 South Africa</option>
+                <option value="+264">+264 Namibia</option>
+                <option value="+267">+267 Botswana</option>
+                <option value="+258">+258 Mozambique</option>
+                <option value="+263">+263 Zimbabwe</option>
+                <option value="+260">+260 Zambia</option>
+                <option value="+266">+266 Lesotho</option>
+                <option value="+268">+268 Eswatini</option>
+                <option value="+234">+234 Nigeria</option>
+                <option value="+254">+254 Kenya</option>
+                <option value="+44">+44 United Kingdom</option>
+                <option value="+1">+1 USA / Canada</option>
+                <option value="+91">+91 India</option>
+              </select>
+              <input id="contactPhone" type="tel" placeholder="Phone number, without the leading 0" />
+            </div>
+            <div class="email-input-row" id="contactEmailRow">
+              <input id="contactEmail" type="text" inputmode="email" placeholder="name" aria-label="Email name" />
+              <span aria-hidden="true">@</span>
+              <input id="contactEmailDomain" type="text" placeholder="example.com" aria-label="Email domain" />
+            </div>
+            <div id="contactSmsRow">
+              <input id="contactSms" type="text" placeholder="SMS / messaging" />
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="section-block">
+      <div class="section-block" id="citizenCardIncident">
         <h3>2. Incident Details</h3>
         <div class="wizard-row">
           <label for="crimeType">Submission title</label>
@@ -71,6 +96,7 @@
             <option value="other">Other</option>
           </select>
         </div>
+        <div class="field-hint">{{ law_note('harassment') }}</div>
         <div class="wizard-row hidden" id="incidentTypeOtherWrap">
           <label for="incidentTypeOther">Describe the incident type</label>
           <input id="incidentTypeOther" type="text" placeholder="e.g. unsafe detention environment" />
@@ -127,7 +153,7 @@
         </div>
       </div>
 
-      <div class="section-block">
+      <div class="section-block" id="citizenCardPeople">
         <h3>3. People Involved</h3>
         <div class="wizard-row">
           <label for="otherPeopleInvolved">Were other people involved?</label>
@@ -152,7 +178,7 @@
         </div>
       </div>
 
-      <div class="section-block">
+      <div class="section-block" id="citizenCardHarm">
         <h3>4. Harm, Injury and Impact</h3>
         <div class="wizard-row">
           <label for="wasAnyoneHarmed">Was anyone harmed or at risk?</label>
@@ -178,7 +204,7 @@
           <label for="harmImpact">Describe the harm or risk</label>
           <textarea id="harmImpact" rows="3" placeholder="Describe injury, distress, loss, danger or other impact."></textarea>
         </div>
-        <div class="wizard-row">
+        <div class="wizard-row hidden" id="wasAnyoneInjuredRow">
           <label for="wasAnyoneInjured">Was anyone injured?</label>
           <select id="wasAnyoneInjured">
             <option value="">Select</option>
@@ -261,7 +287,7 @@
         </div>
       </div>
 
-      <div class="section-block">
+      <div class="section-block" id="citizenCardEvidence">
         <h3>5. Evidence and Prior Reports</h3>
         <div class="wizard-row">
           <label for="evidenceAvailable">Do you have evidence?</label>

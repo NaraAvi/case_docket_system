@@ -1574,7 +1574,8 @@ describe('modules/detective.js (integration)', () => {
     );
     const [, options] = fetchMock.mock.calls.find(([url]) => url.endsWith('/complete'));
     expect(JSON.parse(options.body)).toEqual({ outcome: 'VALID', final_notes: 'Evidence and testimony are conclusive.', finding_ids: ['FND-000001'] });
-    await vi.waitFor(() => expect(sessionStorage.getItem('pdasFlashMessage')).toContain('Investigation completed'));
+    await vi.waitFor(() => expect(sessionStorage.getItem('pdasFlashMessage')).toContain('findings and conclusions have been recorded'));
+    await vi.waitFor(() => expect(window.location.href).toBe('/detective'));
   });
 
   it('the Complete Investigation modal requires final reasoning before submitting', async () => {

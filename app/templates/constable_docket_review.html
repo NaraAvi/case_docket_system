@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% from 'components/_timeline.html' import timeline_skeleton %}
 {% from 'components/_evidence_table.html' import evidence_table_skeleton %}
-{% from 'components/_statutory_badge.html' import statutory_badge %}
+{% from 'components/_statutory_badge.html' import statutory_badge, law_note %}
 
 {% block content %}
   <section class="detail-shell">
@@ -22,7 +22,7 @@
       <p id="constableFrozenReason">This docket has been frozen by IPID while under independent review. Case content is not viewable until the freeze is released.</p>
     </div>
 
-    <div class="workflow-rail-shell">
+    <div class="workflow-rail-shell" id="constableWorkflowSection">
       <div class="workflow-rail-header">
         <h3>Workflow Progress</h3>
         <span class="workflow-rail-subtitle">Current stage</span>
@@ -35,9 +35,21 @@
       </div>
     </div>
 
-    <div id="constableDocketContent">
-      <div class="detail-grid">
-        <div class="detail-card">
+    <aside class="section-nav" id="constableSectionNav" data-section-nav aria-label="Sections on this page">
+      <button class="section-nav-toggle" type="button" data-section-nav-toggle aria-expanded="true" aria-controls="constableSectionNavList">On this page <span class="chevron" aria-hidden="true">&#9662;</span></button>
+      <ol id="constableSectionNavList" data-section-nav-list>
+        <li><a href="#constableWorkflowSection">Workflow progress</a></li>
+        <li><a href="#constableSubmissionCard">Citizen submission</a></li>
+        <li><a href="#constableFlagsCard">Invalidity flags</a></li>
+        <li><a href="#constableEvidenceCard">Evidence</a></li>
+        <li><a href="#constableRelatedCard">Related cases</a></li>
+        <li><a href="#constableInterviewPanel">Interview &amp; recording</a></li>
+      </ol>
+    </aside>
+
+    <div id="constableDocketContent" class="card-stack">
+      <div class="stack-list">
+        <div class="detail-card" id="constableSubmissionCard">
           <h3>Citizen Submission</h3>
           <dl class="meta-list" id="constableCaseMeta">
             <dt>Title</dt><dd>Loading…</dd>
@@ -56,7 +68,7 @@
           </div>
         </div>
 
-        <div class="detail-card">
+        <div class="detail-card" id="constableFlagsCard">
           <h3>Potential Invalidity Flags {{ statutory_badge('PAJA §3', 'Every administrative status change requires a recorded justification.') }}</h3>
           <div class="stack-list" id="constableFlagList">
             <div class="empty-state">Loading flags…</div>
@@ -70,13 +82,14 @@
         </div>
       </div>
 
-      <div class="cards-grid" style="margin-top:18px;">
-        <div class="panel-card">
+      <div class="cards-grid">
+        <div class="panel-card" id="constableEvidenceCard">
           <h3>Evidence</h3>
           {{ evidence_table_skeleton('constableCaseEvidence') }}
+          <div class="field-hint">{{ law_note('cpa_s212') }}</div>
         </div>
 
-        <div class="panel-card">
+        <div class="panel-card" id="constableRelatedCard">
           <h3>Related Cases</h3>
           <div class="statement-box" id="constableRelatedCases">
             <p>Loading related case links…</p>
@@ -88,9 +101,10 @@
           <button class="secondary-btn" type="button" id="addRelatedCaseBtn" style="margin-top:8px;">Link Case</button>
         </div>
 
-        <div class="panel-card wide-card hidden" id="constableInterviewPanel">
+        <div class="panel-card wide-card wide-card-full hidden recording-card" id="constableInterviewPanel">
           <h3>Interview & Recording</h3>
-          <div class="statement-box" id="constableInterviewStatus">
+          <div class="field-hint">{{ law_note('ecta_s15') }}<br />{{ law_note('transcript') }}</div>
+          <div class="statement-box" id="constableInterviewStatus" style="margin-top:10px;">
             <p>Loading interview status…</p>
           </div>
           <div class="file-input-row" style="margin-top:14px;">
@@ -102,10 +116,19 @@
             <button class="secondary-btn" type="button" id="submitConstableRecording">Submit My Recording</button>
           </div>
           <p class="inline-error hidden" id="constableRecordingError"></p>
-          <div class="statement-box" style="margin-top:16px;" id="constableRecordingComparison">
-            <p>Loading recording comparison…</p>
+          <div class="comparison-block" data-collapsible="collapsed">
+            <div class="collapsible-head">
+              <button type="button" class="link-btn collapsible-toggle" data-collapsible-toggle aria-expanded="false">Recording comparison</button>
+            </div>
+            <div data-collapsible-body class="hidden">
+              <div class="field-hint">{{ law_note('recording_comparison') }}</div>
+              <div class="statement-box" style="margin-top:8px;" id="constableRecordingComparison">
+                <p>Loading recording comparison…</p>
+              </div>
+            </div>
           </div>
-          <div class="stack-row" style="margin-top:16px; justify-content:flex-end;">
+          <div class="field-hint recording-tail" style="margin-top:16px;">{{ law_note('ni_3_2011') }}</div>
+          <div class="stack-row recording-tail" style="margin-top:8px; justify-content:flex-end;">
             <button class="primary-btn" type="button" id="registerDocketBtn" disabled>Register Docket</button>
           </div>
         </div>

@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% from 'components/_timeline.html' import timeline_skeleton %}
-{% from 'components/_statutory_badge.html' import statutory_badge %}
+{% from 'components/_statutory_badge.html' import statutory_badge, law_note %}
 
 {% block content %}
   <section class="detail-shell">
@@ -31,6 +31,7 @@
           <div style="margin-top:14px;">
             <div class="mini-title">72-Hour SLA {{ statutory_badge('NI 3/2011', 'National Instruction 3/2011: 72-hour docket registration and investigation window.') }}</div>
             <div id="stationCommanderSlaMeter">Loading SLA status…</div>
+            <div class="field-hint">{{ law_note('ni_3_2011') }}</div>
           </div>
         </div>
 

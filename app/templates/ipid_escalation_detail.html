@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% from 'components/_timeline.html' import timeline_skeleton %}
 {% from 'components/_evidence_table.html' import evidence_table_skeleton %}
-{% from 'components/_statutory_badge.html' import statutory_badge %}
+{% from 'components/_statutory_badge.html' import statutory_badge, law_note %}
 
 {% block content %}
   <section class="detail-shell">
@@ -51,6 +51,7 @@
       <div class="panel-card">
         <h3>Evidence</h3>
         {{ evidence_table_skeleton('ipidCaseEvidence') }}
+        <div class="field-hint">{{ law_note('cpa_s212') }}</div>
       </div>
 
       <div class="panel-card">
@@ -82,6 +83,9 @@
           <button class="primary-btn full-width" type="button" id="upholdEscalationBtn" data-open-reauth>Uphold Escalation</button>
         </div>
         <p class="field-hint" id="ipidDecisionNotice"></p>
+        <div class="field-hint">{{ law_note('ipid_s28') }}</div>
+        <div class="field-hint">{{ law_note('saps_discipline') }}</div>
+        <div class="field-hint">{{ law_note('paja_s3') }}</div>
       </div>
     </div>
   </section>

@@ -3,7 +3,7 @@
  */
 
 import { fetchJson } from '../core/api.js';
-import { buildStatusBadge, configureReauthModal, flashToast, renderDocketCardList, renderEvidenceTable, renderStatementList, renderTimelineList, setEmptyState, showToast } from '../core/ui.js';
+import { MILESTONE_EVENT_TYPES, buildStatusBadge, configureReauthModal, flashToast, renderDocketCardList, renderEvidenceTable, renderStatementList, renderTimelineList, setEmptyState, showToast } from '../core/ui.js';
 
 const STATUTORY_SOURCE = 'IPID_STATUTORY_MANDATE';
 
@@ -363,10 +363,10 @@ export async function hydrateIpidDetail() {
       },
     });
     renderEvidenceTable(evidenceBody, caseContext.evidence);
-    renderTimelineList(caseTimeline, caseContext.timeline, { titleKey: 'event_type', fallbackTitle: 'Case Event' });
+    renderTimelineList(caseTimeline, caseContext.timeline, { titleKey: 'event_type', fallbackTitle: 'Case Event', milestoneTypes: MILESTONE_EVENT_TYPES });
     renderTimelineList(notes, workspace.review_notes, { titleKey: 'author_role', detailKey: 'note_text', fallbackTitle: 'Reviewer', fallbackDetail: 'No details supplied.' });
     renderFindings(findings, workspace.review_findings || []);
-    renderTimelineList(audit, workspace.audit_history, { titleKey: 'action', detailKey: 'timestamp', fallbackTitle: 'Audit Event' });
+    renderTimelineList(audit, workspace.audit_history, { titleKey: 'action', detailKey: 'timestamp', fallbackTitle: 'Audit Event', milestoneTypes: MILESTONE_EVENT_TYPES });
 
     escalation = { ...escalation, status: workspace.status };
     bindDecisionButtons(escalationId, escalation);
