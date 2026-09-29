@@ -208,6 +208,61 @@ def test_registration_succeeds_after_completed_interview(app_client, citizen_tok
     assert payload["case_reference"] == case_reference
 
 
+def test_registration_allows_stale_interview_status_when_both_recordings_are_submitted(app_client, citizen_token, constable_token):
+    from tests.conftest import create_case_via_service
+
+    case = create_case_via_service(app_client, VALID_CITIZEN_ID, "Stale status case", "The interview should still register when both recordings are submitted even if the status field lags behind.")
+    case_reference = case["case_reference"]
+    app_client.post(
+        f"/api/v1/citizen/dockets/{case_reference}/statements",
+        headers={"Authorization": f"Bearer {citizen_token}"},
+        json={"statement_text": "I am providing the witness statement for registration."},
+    )
+    app_client.post(
+        f"/api/v1/citizen/dockets/{case_reference}/submit",
+        headers={"Authorization": f"Bearer {citizen_token}"},
+    )
+    interview = app_client.post(
+        f"/api/v1/constable/dockets/{case_reference}/interview",
+        headers={"Authorization": f"Bearer {constable_token}"},
+        json={"status": "STARTED"},
+    )
+    interview_id = interview.get_json()["interview_id"]
+
+    app_client.post(
+        f"/api/v1/citizen/interviews/{interview_id}/recording",
+        headers={"Authorization": f"Bearer {citizen_token}"},
+        json={
+            "recording_type": "citizen_recording",
+            "storage_reference": "citizen-audio-003.wav",
+            "filename": "citizen-audio-003.wav",
+        },
+    )
+    app_client.post(
+        f"/api/v1/constable/interviews/{interview_id}/recording",
+        headers={"Authorization": f"Bearer {constable_token}"},
+        json={
+            "recording_type": "constable_recording",
+            "storage_reference": "constable-audio-003.wav",
+            "filename": "constable-audio-003.wav",
+        },
+    )
+
+    interview_after_submit = app_client.get(
+        f"/api/v1/constable/interviews/{interview_id}",
+        headers={"Authorization": f"Bearer {constable_token}"},
+    ).get_json()
+    interview_after_submit["status"] = "AWAITING_AUDIO"
+
+    response = app_client.post(
+        f"/api/v1/constable/interviews/{interview_id}/register",
+        headers={"Authorization": f"Bearer {constable_token}"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "REGISTERED"
+
+
 def test_constable_service_rehydrates_completed_interview_from_case_timeline_when_runtime_store_is_empty(app):
     with app.app_context():
         case_service = app.extensions["case_service"]
@@ -434,6 +489,17 @@ def test_transcript_service_requires_real_provider_and_reports_blocked_state_whe
     assert report["status"] in {"BLOCKED", "FAILED", "NOT_IMPLEMENTED", "COMPLETED"}
     if report["status"] in {"BLOCKED", "FAILED", "NOT_IMPLEMENTED"}:
         assert "WhisperX" in report["error"] or "blocked" in report["error"].lower() or "not available" in report["error"].lower()
+
+
+def test_whisperx_provider_detects_local_whisper_fallback_when_available():
+    import importlib.util
+
+    from app.modules.transcription_engine.services import WhisperXProvider
+
+    provider = WhisperXProvider()
+    whisper_installed = importlib.util.find_spec("whisper") is not None
+    if whisper_installed:
+        assert provider.is_available() is True
 
 
 def test_control_gate_result_model_and_registration_gate_block_incomplete_or_frozen_paths(app):

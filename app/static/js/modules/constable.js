@@ -2,7 +2,7 @@
  * Constable triage queue and individual docket review workspace.
  */
 
-import { fetchJson, postForm } from '../core/api.js';
+import { fetchJson, postForm, fetchMediaBlobUrl } from '../core/api.js';
 import { bindFilePreview, bindMediaViewButtons, buildStatusBadge, flashToast, renderDocketCardList, renderEvidenceTable, renderMediaViewButton, renderStatementList, renderWorkflowRail, setEmptyState, showToast } from '../core/ui.js';
 
 export function getConstableCaseReference() {
@@ -213,15 +213,25 @@ function renderProceduralAssessment(container, docket) {
   `;
 }
 
+function isInterviewComplete(interview) {
+  if (!interview) {
+    return false;
+  }
+  const citizenDone = Boolean(interview.citizen_recording && interview.citizen_recording.status === 'SUBMITTED');
+  const constableDone = Boolean(interview.constable_recording && interview.constable_recording.status === 'SUBMITTED');
+  return interview.status === 'COMPLETED' || (citizenDone && constableDone);
+}
+
 function renderInterviewStatus(container, interview) {
   if (!container) {
     return;
   }
   const citizenDone = Boolean(interview.citizen_recording && interview.citizen_recording.status === 'SUBMITTED');
   const constableDone = Boolean(interview.constable_recording && interview.constable_recording.status === 'SUBMITTED');
+  const isComplete = isInterviewComplete(interview);
 
   let summary;
-  if (interview.status === 'COMPLETED') {
+  if (isComplete) {
     summary = '✓ Both recordings submitted. You can now register the docket below.';
   } else if (constableDone && !citizenDone) {
     summary = '✓ Your recording is submitted. Waiting on the citizen to submit theirs before you can register this docket.';
@@ -233,7 +243,7 @@ function renderInterviewStatus(container, interview) {
 
   container.innerHTML = `
     <p>${summary}</p>
-    <p><strong>Interview status:</strong> ${interview.status}</p>
+    <p><strong>Interview status:</strong> ${isComplete ? 'COMPLETED' : interview.status || 'STARTED'}</p>
     <p>Citizen recording: ${citizenDone ? 'Submitted' : 'Awaiting citizen'} ${citizenDone ? renderMediaViewButton(interview.citizen_recording?.storage_reference) : ''}</p>
     <p>Constable recording: ${constableDone ? 'Submitted' : 'Awaiting constable'} ${constableDone ? renderMediaViewButton(interview.constable_recording?.storage_reference) : ''}</p>
   `;
@@ -268,6 +278,151 @@ function renderRecordingComparison(container, report) {
   `;
 }
 
+async function renderInlineMedia(container, interview) {
+  if (!container || !interview) {
+    return;
+  }
+
+  let holder = container.querySelector('.interview-media-holder');
+  if (!holder) {
+    holder = document.createElement('div');
+    holder.className = 'interview-media-holder';
+    container.appendChild(holder);
+  }
+  holder.innerHTML = '';
+
+  const resolveTranscriptText = (rec) => {
+    if (!rec) {
+      return '';
+    }
+    if (typeof rec.transcript_text === 'string' && rec.transcript_text.trim()) {
+      return rec.transcript_text.trim();
+    }
+    if (rec.transcript && typeof rec.transcript === 'string' && rec.transcript.trim()) {
+      return rec.transcript.trim();
+    }
+    if (rec.transcript && typeof rec.transcript === 'object') {
+      if (typeof rec.transcript.text === 'string' && rec.transcript.text.trim()) {
+        return rec.transcript.text.trim();
+      }
+      if (typeof rec.transcript.content === 'string' && rec.transcript.content.trim()) {
+        return rec.transcript.content.trim();
+      }
+    }
+    return '';
+  };
+
+  const resolveTranscriptError = (rec) => {
+    if (!rec) {
+      return '';
+    }
+
+    const transcript = rec.transcript;
+    if (transcript && typeof transcript === 'object') {
+      const directError = transcript.error || transcript.message;
+      if (typeof directError === 'string' && directError.trim()) {
+        return directError.trim();
+      }
+    }
+
+    const altError = rec.transcript_error || rec.transcript_message || rec.error;
+    if (typeof altError === 'string' && altError.trim()) {
+      return altError.trim();
+    }
+
+    const status = String(rec.transcript_status || '').toUpperCase();
+    if (['BLOCKED', 'FAILED', 'ERROR'].includes(status)) {
+      return 'Transcription could not be completed for this recording.';
+    }
+
+    return '';
+  };
+
+  async function renderRecording(key, label) {
+    const rec = interview[key];
+    const section = document.createElement('section');
+    section.className = 'mini-case-card';
+
+    const title = document.createElement('div');
+    title.className = 'stack-row';
+    title.innerHTML = `<strong>${label}</strong><span>${rec ? (rec.submitted_at || '') : 'No recording'}</span>`;
+    section.appendChild(title);
+
+    if (rec && rec.storage_reference) {
+      const audioEl = document.createElement('audio');
+      audioEl.controls = true;
+      audioEl.setAttribute('preload', 'metadata');
+      section.appendChild(audioEl);
+
+      try {
+        const url = await fetchMediaBlobUrl(`/api/v1/media/${rec.storage_reference}`);
+        audioEl.src = url;
+      } catch (error) {
+        const p = document.createElement('p');
+        p.textContent = 'Unable to load audio.';
+        section.appendChild(p);
+      }
+
+      const transcriptBox = document.createElement('div');
+      transcriptBox.className = 'transcript-box';
+      const transcriptText = resolveTranscriptText(rec);
+      const transcriptError = resolveTranscriptError(rec);
+      const status = rec.transcript_status || (transcriptText ? 'COMPLETED' : 'MISSING');
+      transcriptBox.innerHTML = `<p><strong>Transcript status:</strong> ${status}</p>`;
+
+      if (transcriptText) {
+        const pre = document.createElement('pre');
+        pre.textContent = transcriptText;
+        transcriptBox.appendChild(pre);
+      } else if (transcriptError) {
+        const message = document.createElement('p');
+        message.textContent = transcriptError;
+        transcriptBox.appendChild(message);
+      } else {
+        const btn = document.createElement('button');
+        btn.className = 'secondary-btn small-btn';
+        btn.textContent = 'Generate transcript';
+        btn.addEventListener('click', async () => {
+          try {
+            btn.disabled = true;
+            await fetchJson(`/api/v1/constable/interviews/${interview.interview_id}/transcripts`, { method: 'POST' });
+            const refreshed = await fetchJson(`/api/v1/constable/interviews/${interview.interview_id}`);
+            await renderInlineMedia(container, refreshed);
+            const comparisonBox = document.getElementById('constableRecordingComparison');
+            if (comparisonBox) {
+              try {
+                const report = await fetchJson(`/api/v1/constable/interviews/${interview.interview_id}/recording-comparison`);
+                renderRecordingComparison(comparisonBox, report);
+              } catch (error) {
+                renderRecordingComparison(comparisonBox, {
+                  status: 'COMPARISON_UNAVAILABLE',
+                  error: error.message || 'Unable to load recording comparison.',
+                });
+              }
+            }
+          } catch (error) {
+            showToast(error.message || 'Transcription failed', { type: 'error' });
+          } finally {
+            btn.disabled = false;
+          }
+        });
+        transcriptBox.appendChild(btn);
+      }
+
+      section.appendChild(transcriptBox);
+    } else {
+      const p = document.createElement('p');
+      p.textContent = 'No recording file available.';
+      section.appendChild(p);
+    }
+
+    holder.appendChild(section);
+  }
+
+  await renderRecording('citizen_recording', 'Citizen recording');
+  await renderRecording('constable_recording', 'Constable recording');
+}
+
 async function hydrateInterview(caseReference, interviewId) {
   const panel = document.getElementById('constableInterviewPanel');
   const continueButton = document.getElementById('continueToInterview');
@@ -298,7 +453,7 @@ async function hydrateInterview(caseReference, interviewId) {
       fileInput.disabled = constableDone;
     }
     if (registerButton) {
-      registerButton.disabled = interview.status !== 'COMPLETED';
+      registerButton.disabled = !isInterviewComplete(interview);
     }
     return interview;
   }
@@ -316,7 +471,8 @@ async function hydrateInterview(caseReference, interviewId) {
   }
 
   try {
-    await refreshInterview();
+    const interview = await refreshInterview();
+    await renderInlineMedia(panel, interview);
     await refreshComparisonStatus();
   } catch (error) {
     if (statusBox) {
@@ -337,7 +493,8 @@ async function hydrateInterview(caseReference, interviewId) {
       formData.append('file', file);
       formData.append('recording_type', 'constable_recording');
       await postForm(`/api/v1/constable/interviews/${interviewId}/recording`, formData);
-      await refreshInterview();
+      const interview = await refreshInterview();
+      await renderInlineMedia(panel, interview);
       await refreshComparisonStatus();
       showToast('Recording submitted.');
     } catch (error) {

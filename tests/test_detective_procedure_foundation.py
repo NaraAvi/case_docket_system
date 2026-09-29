@@ -357,14 +357,14 @@ def test_client_cannot_forge_requirement_completion_using_satisfied_payload(app,
     assert forged["satisfied"] is False
 
 
-def test_start_investigation_remains_allowed_before_case_facts_verification_for_registered_cases(app, procedure_service):
+def test_start_investigation_is_blocked_until_case_facts_verification_for_registered_cases(app, procedure_service):
     case_service = app.extensions["case_service"]
     assignment_service = app.extensions["assignment_service"]
     case = case_service.create_case(
         "2200223333111",
         {
             "title": "Case facts gate case",
-            "description": "Opening the investigation remains allowed before the detective verifies the case facts.",
+            "description": "The investigation cannot start until the detective verifies the case facts.",
             "status": "REGISTERED",
             "source_submission_id": "SUB-000206",
             "source_candidate_id": "IC-000206",
@@ -387,20 +387,20 @@ def test_start_investigation_remains_allowed_before_case_facts_verification_for_
         action="start_investigation",
     )
 
-    assert result["allowed"] is True
-    assert result["status"] in {"ALLOWED", "ACTIVE"}
-    assert result["next_permitted_action"] == "Start investigation"
-    assert result["current_stage"] == "CASE_REVIEW"
+    assert result["allowed"] is False
+    assert result["status"] in {"BLOCKED", "REVIEW_REQUIRED"}
+    assert result["next_permitted_action"] == "Verify case facts"
+    assert result["current_stage"] == "CASE_FACTS_VERIFICATION"
 
 
-def test_start_investigation_remains_allowed_before_case_facts_verification(app, procedure_service):
+def test_start_investigation_is_blocked_until_case_facts_verification(app, procedure_service):
     case_service = app.extensions["case_service"]
     assignment_service = app.extensions["assignment_service"]
     case = case_service.create_case(
         "2200223333111",
         {
-            "title": "Investigation start remains allowed before case facts",
-            "description": "The explicit investigation action must remain available without a completed case facts gate.",
+            "title": "Investigation start remains blocked before case facts",
+            "description": "The investigation action must be gated until the detective verifies the incident facts.",
             "status": "REGISTERED",
             "source_submission_id": "SUB-000211",
             "source_candidate_id": "IC-000211",
@@ -423,9 +423,9 @@ def test_start_investigation_remains_allowed_before_case_facts_verification(app,
         action="start_investigation",
     )
 
-    assert result["allowed"] is True
-    assert result["status"] in {"ALLOWED", "ACTIVE"}
-    assert result["next_permitted_action"] == "Start investigation"
+    assert result["allowed"] is False
+    assert result["status"] in {"BLOCKED", "REVIEW_REQUIRED"}
+    assert result["next_permitted_action"] == "Verify case facts"
 
 
 def test_detective_case_facts_verification_allows_missing_incident_time(app, procedure_service):
@@ -811,7 +811,7 @@ def test_detective_case_facts_verification_becomes_active_stage_after_investigat
         "2200223333111",
         {
             "title": "Open investigation facts stage case",
-            "description": "Once opened, the live procedure stage must be Case Facts Verification until the detective records and resolves the facts gate.",
+            "description": "Case facts verification must be completed before an investigation can start.",
             "status": "REGISTERED",
             "source_submission_id": "SUB-000212",
             "source_candidate_id": "IC-000212",
@@ -826,6 +826,35 @@ def test_detective_case_facts_verification_becomes_active_stage_after_investigat
         evidence_ids=["EVD-000212"],
     )
     assignment_service.ensure_initial_detective_assignment(case["case_reference"])
+
+    blocked = procedure_service.evaluate_case(
+        case["case_reference"],
+        actor_id="2200223333115",
+        actor_role="detective",
+        action="start_investigation",
+    )
+    assert blocked["allowed"] is False
+    assert blocked["status"] in {"BLOCKED", "REVIEW_REQUIRED"}
+    assert "required records are missing" in (blocked["blocking_reason"] or "").lower()
+
+    procedure_service.record_case_facts_verification(
+        case["case_reference"],
+        actor_id="2200223333115",
+        actor_role="detective",
+        payload={
+            "facts": {
+                "incident_date": "2026-01-15",
+                "incident_time": "18:30",
+                "location": "Main St",
+                "people_involved": ["Victim", "Suspect"],
+                "witnesses": ["Witness A"],
+                "harm_types": ["assault"],
+                "injury_types": ["bruising"],
+                "police_involvement": False,
+            },
+            "discrepancies": [],
+        },
+    )
 
     investigation = investigation_service.create_investigation(
         case["case_reference"],
@@ -843,6 +872,7 @@ def test_detective_case_facts_verification_becomes_active_stage_after_investigat
 
     assert result["current_stage"] == "INVESTIGATION_OPEN"
     assert result["next_permitted_action"] == "Complete investigation"
+    assert result["current_action"] == "complete_investigation"
     assert result["allowed"] is True
 
     completion = procedure_service.evaluate_case(
@@ -853,6 +883,86 @@ def test_detective_case_facts_verification_becomes_active_stage_after_investigat
     )
     assert completion["allowed"] is False
     assert completion["status"] in {"BLOCKED", "REVIEW_REQUIRED"}
+
+
+def test_detective_procedure_advances_to_findings_ready_after_all_required_actions(app, procedure_service):
+    case_service = app.extensions["case_service"]
+    assignment_service = app.extensions["assignment_service"]
+    investigation_service = app.extensions["investigation_service"]
+
+    case = case_service.create_case(
+        "2200223333111",
+        {
+            "title": "Findings gate case",
+            "description": "Once all six required investigative actions are complete, the detective should advance to the findings gate.",
+            "status": "REGISTERED",
+            "source_submission_id": "SUB-000214",
+            "source_candidate_id": "IC-000214",
+            "evidence": [{"evidence_id": "EVD-000214", "description": "Original evidence"}],
+        },
+    )
+
+    procedure_service.register_case_source(
+        case["case_reference"],
+        source_submission_id="SUB-000214",
+        source_candidate_id="IC-000214",
+        evidence_ids=["EVD-000214"],
+    )
+    assignment_service.ensure_initial_detective_assignment(case["case_reference"])
+    procedure_service.record_case_facts_verification(
+        case["case_reference"],
+        actor_id="2200223333115",
+        actor_role="detective",
+        payload={
+            "facts": {
+                "incident_date": "2026-01-15",
+                "incident_time": "18:30",
+                "location": "Main St",
+                "people_involved": ["Victim", "Suspect"],
+                "witnesses": ["Witness A"],
+                "harm_types": ["assault"],
+                "injury_types": ["bruising"],
+                "police_involvement": False,
+            },
+            "discrepancies": [],
+        },
+    )
+
+    investigation = investigation_service.create_investigation(
+        case["case_reference"],
+        "2200223333115",
+        {"notes": "Investigation opened from the browser workflow."},
+    )
+    for action_type in [
+        "INTERVIEW",
+        "EVIDENCE_REVIEW",
+        "EVIDENCE_COLLECTION",
+        "RECORD_REQUEST",
+        "WITNESS_CONTACT",
+        "SCENE_REVIEW",
+    ]:
+        investigation_service.create_action(
+            investigation["investigation_id"],
+            "2200223333115",
+            {
+                "action_type": action_type,
+                "purpose": f"Required step: {action_type}",
+                "description": f"Completed the {action_type.lower().replace('_', ' ')} step.",
+                "result": "Recorded.",
+            },
+        )
+
+    result = procedure_service.evaluate_case(
+        case["case_reference"],
+        actor_id="2200223333115",
+        actor_role="detective",
+        action="view_preserved_evidence",
+    )
+
+    assert result["current_stage"] == "FINDINGS_READY"
+    assert result["allowed"] is True
+    assert result["next_permitted_action"] == "Document finding"
+    assert result["current_action"] == "record_finding"
 
 
 def test_detective_case_facts_verification_allows_investigation_start_when_complete(app, procedure_service):
@@ -986,7 +1096,7 @@ def test_start_investigation_reconciles_procedure_state_with_open_investigation(
     )
     assert refreshed["current_stage"] == "INVESTIGATION_OPEN"
     assert refreshed["next_permitted_action"] == "Complete investigation"
-    assert refreshed["current_action"] == "verify_case_facts"
+    assert refreshed["current_action"] == "complete_investigation"
 
 
 def test_detective_procedure_blocks_completion_before_backend_gate_permits_it(app, procedure_service):

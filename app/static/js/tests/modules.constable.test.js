@@ -120,6 +120,7 @@ describe('modules/constable.js (integration)', () => {
           <p id="constableRecordingFilePreview" class="hidden"></p>
           <button id="submitConstableRecording"></button>
           <p id="constableRecordingError" class="hidden"></p>
+          <div id="constableRecordingComparison"></div>
           <button id="registerDocketBtn" disabled></button>
         </div>
       </div>
@@ -410,6 +411,122 @@ describe('modules/constable.js (integration)', () => {
     const statusBox = document.getElementById('constableInterviewStatus');
     expect(statusBox.querySelector('[data-view-media="recordings/xyz_citizen.wav"]')).not.toBeNull();
     expect(statusBox.querySelector('[data-view-media="recordings/xyz_constable.wav"]')).not.toBeNull();
+  });
+
+  it('treats both submitted recordings as complete even when the interview status is stale', async () => {
+    document.body.innerHTML = reviewMarkup();
+    setLocation('/constable/dockets/CD-1');
+    const fetchMock = vi.fn((url) => {
+      if (url.endsWith('/interviews/INT-1')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              status: 'AWAITING_AUDIO',
+              citizen_recording: { status: 'SUBMITTED', storage_reference: 'recordings/xyz_citizen.wav' },
+              constable_recording: { status: 'SUBMITTED', storage_reference: 'recordings/xyz_constable.wav' },
+            }),
+        });
+      }
+      if (url.endsWith('/flags')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      if (url.endsWith('/related')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            title: 'Vandalism',
+            status: 'AWAITING_CONSTABLE_REGISTRATION',
+            timeline: [],
+            statements: [],
+            evidence: [],
+            interview_id: 'INT-1',
+          }),
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await hydrateConstableReview();
+
+    expect(document.getElementById('registerDocketBtn').disabled).toBe(false);
+    expect(document.getElementById('constableInterviewStatus').textContent).toContain('Both recordings submitted');
+    expect(document.getElementById('constableInterviewStatus').textContent).toContain('COMPLETED');
+  });
+
+  it('renders inline audio players and the full transcript text for both submitted recordings in the constable interview panel', async () => {
+    document.body.innerHTML = reviewMarkup();
+    setLocation('/constable/dockets/CD-1');
+    const fetchMock = vi.fn((url) => {
+      if (url.endsWith('/interviews/INT-1')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              status: 'COMPLETED',
+              citizen_recording: {
+                status: 'SUBMITTED',
+                storage_reference: 'recordings/citizen.wav',
+                submitted_at: '2024-01-01T00:00:00Z',
+                transcript_status: 'COMPLETED',
+                transcript: { text: 'We met at the station and agreed to the statement.' },
+              },
+              constable_recording: {
+                status: 'SUBMITTED',
+                storage_reference: 'recordings/constable.wav',
+                submitted_at: '2024-01-01T00:00:00Z',
+                transcript_status: 'COMPLETED',
+                transcript: { text: 'We met at the station and agreed to the statement.' },
+              },
+            }),
+        });
+      }
+      if (url.includes('/api/v1/media/')) {
+        return Promise.resolve({
+          ok: true,
+          blob: () => Promise.resolve(new Blob(['audio'], { type: 'audio/wav' })),
+        });
+      }
+      if (url.endsWith('/recording-comparison')) {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              status: 'COMPLETED',
+              overall_similarity: 100,
+              findings: [{ category: 'POTENTIAL_WORDING_VARIANCE', summary: 'Transcript content is materially aligned.' }],
+            }),
+        });
+      }
+      if (url.endsWith('/flags')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      if (url.endsWith('/related')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            title: 'Vandalism',
+            status: 'AWAITING_CONSTABLE_REGISTRATION',
+            timeline: [],
+            statements: [],
+            evidence: [],
+            interview_id: 'INT-1',
+          }),
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('URL.createObjectURL', vi.fn(() => 'blob:mock-audio'));
+
+    await hydrateConstableReview();
+
+    await vi.waitFor(() => expect(document.querySelectorAll('audio').length).toBe(2));
+    expect(document.getElementById('constableRecordingComparison').textContent).toContain('100');
+    expect(document.getElementById('constableInterviewPanel').textContent).toContain('We met at the station and agreed to the statement.');
   });
 
   it('registering the docket redirects to the constable dashboard, not the now-inaccessible detail page', async () => {

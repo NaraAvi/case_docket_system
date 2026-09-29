@@ -258,7 +258,14 @@ class InterviewGate(BaseControlGate):
                 interview_id=interview_id,
                 interview_status=status,
             )
-        if action == "register" and status != "COMPLETED":
+
+        citizen_recording = interview.get("citizen_recording")
+        constable_recording = interview.get("constable_recording")
+        interview_complete = status == "COMPLETED" or (
+            self._recording_state(citizen_recording) in {"SUBMITTED", "ACCEPTED", "VERIFIED"}
+            and self._recording_state(constable_recording) in {"SUBMITTED", "ACCEPTED", "VERIFIED"}
+        )
+        if action == "register" and not interview_complete:
             return ControlGateResult.deny(
                 self.gate_name,
                 "INTERVIEW.INCOMPLETE",
@@ -267,9 +274,6 @@ class InterviewGate(BaseControlGate):
                 interview_id=interview_id,
                 interview_status=status,
             )
-
-        citizen_recording = interview.get("citizen_recording")
-        constable_recording = interview.get("constable_recording")
 
         for label, recording in (("citizen", citizen_recording), ("constable", constable_recording)):
             if recording is None:
@@ -1020,15 +1024,33 @@ class InvestigationCompletionGate(BaseControlGate):
             )
 
         findings = payload.get("findings") or []
+        selected_finding_ids = self._as_list(payload.get("finding_ids") or payload.get("referenced_finding_ids") or [])
         case_evidence = (case or {}).get("evidence") or []
         case_evidence_ids = {str(item.get("evidence_id")) for item in case_evidence if isinstance(item, dict) and item.get("evidence_id")}
 
-        finding_evidence = set()
-        for item in findings:
-            if not isinstance(item, dict):
-                continue
-            for evidence_id in self._as_list(item.get("evidence_ids")):
-                finding_evidence.add(str(evidence_id))
+        if findings and not selected_finding_ids:
+            return ControlGateResult.deny(
+                self.gate_name,
+                "INVESTIGATION.FINDING_REFERENCE_REQUIRED",
+                "At least one supporting finding must be referenced before completion.",
+                case_reference=case_reference,
+                selected_finding_ids=[],
+                findings_count=len(findings),
+            )
+
+        if selected_finding_ids:
+            allowed_finding_ids = {str(item.get("finding_id")) for item in findings if isinstance(item, dict) and item.get("finding_id")}
+            invalid_finding_ids = [finding_id for finding_id in selected_finding_ids if finding_id not in allowed_finding_ids]
+            if invalid_finding_ids:
+                return ControlGateResult.deny(
+                    self.gate_name,
+                    "INVESTIGATION.FINDING_REFERENCE_INVALID",
+                    "Finding references must match findings recorded for this investigation.",
+                    case_reference=case_reference,
+                    selected_finding_ids=selected_finding_ids,
+                    valid_finding_ids=sorted(allowed_finding_ids),
+                    invalid_finding_ids=invalid_finding_ids,
+                )
 
         if case_evidence_ids and not findings:
             return ControlGateResult.deny(
@@ -1037,16 +1059,6 @@ class InvestigationCompletionGate(BaseControlGate):
                 "At least one real finding is required before completion when docket evidence exists.",
                 case_reference=case_reference,
                 required_evidence_ids=sorted(case_evidence_ids),
-            )
-
-        if case_evidence_ids and not finding_evidence.intersection(case_evidence_ids):
-            return ControlGateResult.deny(
-                self.gate_name,
-                "INVESTIGATION.EVIDENCE_LINKAGE_REQUIRED",
-                "All docket evidence must be linked to a finding before completion.",
-                case_reference=case_reference,
-                required_evidence_ids=sorted(case_evidence_ids),
-                linked_evidence_ids=sorted(finding_evidence),
             )
 
         if not case_evidence_ids:

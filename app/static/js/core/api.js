@@ -101,3 +101,21 @@ export async function openMediaFile(url) {
   window.open(blobUrl, '_blank');
   setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
 }
+
+export async function fetchMediaBlobUrl(url) {
+  const headers = {};
+  const token = getToken();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = await fetch(url, { credentials: 'same-origin', headers });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.error || 'Unable to load media.');
+  }
+  const blob = await response.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  // Caller is responsible for revoking the URL when appropriate
+  return blobUrl;
+}

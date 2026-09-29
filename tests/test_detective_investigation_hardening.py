@@ -140,6 +140,109 @@ def test_completion_requires_a_real_finding_and_final_reasoning(app_client, citi
         )
 
 
+def test_completion_requires_selection_of_supporting_findings(app_client, citizen_token, constable_token, detective_token):
+    from tests.conftest import create_case_via_service
+
+    case = create_case_via_service(
+        app_client,
+        VALID_CITIZEN_ID,
+        "Support finding selection case",
+        "Phase 5D completion gate test case",
+        incident_date="2026-01-15",
+        incident_time="10:30",
+        location="Main St",
+        people_involved=["Citizen A", "Witness B"],
+        witnesses=["Witness B"],
+        harm_types=["PROPERTY_DAMAGE"],
+    )
+    case_reference = case["case_reference"]
+
+    statement_response = app_client.post(
+        f"/api/v1/citizen/dockets/{case_reference}/statements",
+        headers={"Authorization": f"Bearer {citizen_token}"},
+        json={"statement_text": "This is the statement that will be reviewed."},
+    )
+    assert statement_response.status_code == 201
+    submit_response = app_client.post(
+        f"/api/v1/citizen/dockets/{case_reference}/submit",
+        headers={"Authorization": f"Bearer {citizen_token}"},
+    )
+    assert submit_response.status_code == 200
+
+    interview_response = app_client.post(
+        f"/api/v1/constable/dockets/{case_reference}/interview",
+        headers={"Authorization": f"Bearer {constable_token}"},
+        json={"status": "STARTED"},
+    )
+    assert interview_response.status_code == 201
+    interview_id = interview_response.get_json()["interview_id"]
+    app_client.post(
+        f"/api/v1/citizen/interviews/{interview_id}/recording",
+        headers={"Authorization": f"Bearer {citizen_token}"},
+        json={
+            "recording_type": "citizen_recording",
+            "storage_reference": "citizen-completion.wav",
+            "filename": "citizen-completion.wav",
+        },
+    )
+    app_client.post(
+        f"/api/v1/constable/interviews/{interview_id}/recording",
+        headers={"Authorization": f"Bearer {constable_token}"},
+        json={
+            "recording_type": "constable_recording",
+            "storage_reference": "constable-completion.wav",
+            "filename": "constable-completion.wav",
+        },
+    )
+    register_response = app_client.post(
+        f"/api/v1/constable/interviews/{interview_id}/register",
+        headers={"Authorization": f"Bearer {constable_token}"},
+    )
+    assert register_response.status_code == 200
+
+    from tests.conftest import assign_detective_to_case
+
+    assign_detective_to_case(app_client, case_reference, VALID_DETECTIVE_ID)
+
+    service = _service(app_client)
+    investigation_id = f"INV-{len(service.repository.list()) + 1:06d}"
+    service.repository.create({
+        "id": len(service.repository.list()) + 1,
+        "investigation_id": investigation_id,
+        "case_reference": case_reference,
+        "detective_id": VALID_DETECTIVE_ID,
+        "status": "OPEN",
+        "notes": "Initial investigation opened.",
+        "created_at": service._utc_now(),
+        "updated_at": service._utc_now(),
+        "timeline": [],
+    })
+    for action_type in service.REQUIRED_ACTION_SEQUENCE:
+        service.create_action(
+            investigation_id,
+            VALID_DETECTIVE_ID,
+            {
+                "action_type": action_type,
+                "purpose": f"Completed required {action_type.lower().replace('_', ' ')} step.",
+                "description": f"Recorded the {action_type.lower().replace('_', ' ')} action.",
+                "result": "Recorded.",
+            },
+        )
+
+    service.create_finding(
+        investigation_id,
+        VALID_DETECTIVE_ID,
+        {"finding_type": "VALID", "notes": "We have evidence supporting the conclusion.", "evidence_ids": []},
+    )
+
+    with pytest.raises(ValueError, match="finding.*support|supporting.*finding|reference.*finding"):
+        service.complete_investigation(
+            investigation_id,
+            VALID_DETECTIVE_ID,
+            {"outcome": "VALID", "final_notes": "The evidence is sufficient."},
+        )
+
+
 def test_completion_succeeds_when_case_evidence_is_linked_to_a_finding(app_client, citizen_token, constable_token, detective_token):
     case_reference = register_case(app_client, citizen_token, constable_token, "Evidence linkage completion case")
     case_service = app_client.application.extensions["case_service"]
@@ -168,6 +271,121 @@ def test_completion_succeeds_when_case_evidence_is_linked_to_a_finding(app_clien
 
     assert result["status"] == "COMPLETED"
     assert result["outcome"] == "VALID"
+
+
+def test_completion_allows_a_referenced_finding_without_linking_every_case_evidence_item(app_client, citizen_token, constable_token, detective_token):
+    case_reference = register_case(app_client, citizen_token, constable_token, "Selective evidence linkage completion case")
+    case_service = app_client.application.extensions["case_service"]
+    case = case_service.get_case(case_reference)
+    case.setdefault("evidence", []).extend([
+        {"evidence_id": "EV-1", "evidence_type": "PHOTO", "description": "Photo from the scene.", "source": "detective", "status": "SUBMITTED"},
+        {"evidence_id": "EV-2", "evidence_type": "STATEMENT", "description": "Witness statement not used in this finding.", "source": "detective", "status": "SUBMITTED"},
+    ])
+    case_service.update_case(case)
+
+    procedure_service = app_client.application.extensions["procedure_service"]
+    procedure_service.record_case_facts_verification(
+        case_reference,
+        VALID_DETECTIVE_ID,
+        actor_role="detective",
+        payload={
+            "facts": {
+                "incident_date": "2026-01-15",
+                "incident_time": "10:30",
+                "location": "Main St",
+                "people_involved": ["Citizen A", "Witness B"],
+                "witnesses": ["Witness B"],
+                "harm_types": ["PROPERTY_DAMAGE"],
+                "injury_types": ["NONE"],
+                "police_involvement": False,
+            },
+            "discrepancies": [],
+        },
+    )
+
+    service = _service(app_client)
+    investigation_id = service.create_investigation(case_reference, VALID_DETECTIVE_ID, {"notes": "Initial investigation opened."})["investigation_id"]
+    for action_type in service.REQUIRED_ACTION_SEQUENCE:
+        service.create_action(
+            investigation_id,
+            VALID_DETECTIVE_ID,
+            {
+                "action_type": action_type,
+                "purpose": f"Completed required {action_type.lower().replace('_', ' ')} step.",
+                "description": f"Recorded the {action_type.lower().replace('_', ' ')} action.",
+                "result": "Recorded.",
+            },
+        )
+
+    action_ids = [action["action_id"] for action in service.list_actions_for_investigation(investigation_id, VALID_DETECTIVE_ID)]
+    finding = service.create_finding(
+        investigation_id,
+        VALID_DETECTIVE_ID,
+        {"finding_type": "VALID", "notes": "The witness contact and review support the conclusion.", "action_ids": action_ids},
+    )
+
+    result = service.complete_investigation(
+        investigation_id,
+        VALID_DETECTIVE_ID,
+        {"outcome": "VALID", "final_notes": "The witness contact and scene review are sufficient.", "finding_ids": [finding["finding_id"]]},
+    )
+
+    assert result["status"] == "COMPLETED"
+    assert result["outcome"] == "VALID"
+
+
+def test_procedure_state_advances_to_findings_ready_after_required_actions_and_finding_recording(app_client, citizen_token, constable_token, detective_token):
+    case_reference = register_case(app_client, citizen_token, constable_token, "Procedure gate reconciliation case")
+    procedure_service = app_client.application.extensions["procedure_service"]
+    procedure_service.record_case_facts_verification(
+        case_reference,
+        VALID_DETECTIVE_ID,
+        actor_role="detective",
+        payload={
+            "facts": {
+                "incident_date": "2026-01-15",
+                "incident_time": "10:30",
+                "location": "Main St",
+                "people_involved": ["Citizen A", "Witness B"],
+                "witnesses": ["Witness B"],
+                "harm_types": ["PROPERTY_DAMAGE"],
+                "injury_types": ["NONE"],
+                "police_involvement": False,
+            },
+            "discrepancies": [],
+        },
+    )
+
+    service = _service(app_client)
+    investigation = service.create_investigation(case_reference, VALID_DETECTIVE_ID, {"notes": "Initial investigation opened."})
+    for action_type in service.REQUIRED_ACTION_SEQUENCE:
+        service.create_action(
+            investigation["investigation_id"],
+            VALID_DETECTIVE_ID,
+            {
+                "action_type": action_type,
+                "purpose": f"Required step: {action_type.lower().replace('_', ' ')}",
+                "description": f"Completed the {action_type.lower().replace('_', ' ')} step.",
+                "result": "Recorded.",
+            },
+        )
+
+    state_after_required_actions = procedure_service.get_case_state(case_reference)
+    assert state_after_required_actions["current_stage"] == "FINDINGS_READY"
+    assert state_after_required_actions["next_permitted_action"] == "Document finding"
+
+    service.create_finding(
+        investigation["investigation_id"],
+        VALID_DETECTIVE_ID,
+        {"finding_type": "VALID", "notes": "The inquiry supports a valid conclusion.", "action_ids": [
+            item["action_id"] for item in service.list_actions_for_investigation(investigation["investigation_id"], VALID_DETECTIVE_ID)
+        ]},
+    )
+
+    state_after_finding = procedure_service.get_case_state(case_reference)
+    assert state_after_finding["current_stage"] == "FINDINGS_READY"
+    assert state_after_finding["next_permitted_action"] == "Document finding"
+    assert state_after_finding["current_action"] == "record_finding"
 
 
 def test_completion_rejects_guilt_or_innocence_outcomes(app_client, citizen_token, constable_token, detective_token):

@@ -2,7 +2,7 @@
  * Citizen dashboard, docket detail timeline, and new-docket submission form.
  */
 
-import { fetchJson, postForm } from '../core/api.js';
+import { fetchJson, postForm, fetchMediaBlobUrl } from '../core/api.js';
 import { bindCaseLinks, bindFilePreview, bindMediaViewButtons, buildStatusBadge, flashToast, renderEvidenceTable, renderMediaViewButton, renderStatementList, renderWorkflowRail, setEmptyState, showToast } from '../core/ui.js';
 
 export function getCitizenCaseReference() {
@@ -776,6 +776,23 @@ async function hydrateCitizenInterview(caseReference, interviewId) {
 
   try {
     await refreshInterview();
+    // Render inline audio players and transcripts for the citizen view
+    try {
+      const interview = await refreshInterview();
+      await renderInlineMedia(panel, interview);
+      // also render comparison if container exists
+      const comparisonBox = document.getElementById('citizenRecordingComparison');
+      if (comparisonBox) {
+        try {
+          const report = await fetchJson(`/api/v1/citizen/interviews/${interviewId}/recording-comparison`);
+          renderRecordingComparison(comparisonBox, report);
+        } catch (err) {
+          renderRecordingComparison(comparisonBox, { status: 'COMPARISON_UNAVAILABLE', error: err.message || 'Unable to load recording comparison.' });
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to render inline media', err);
+    }
   } catch (error) {
     if (statusBox) {
       statusBox.innerHTML = `<p>${error.message || 'Unable to load interview status.'}</p>`;
@@ -790,12 +807,24 @@ async function hydrateCitizenInterview(caseReference, interviewId) {
       errorEl.classList.remove('hidden');
       return;
     }
+    console.log('citizen submit click', { interviewId, filename: file.name, files: fileInput?.files?.length });
     try {
       const formData = new FormData();
       formData.append('file', file);
       formData.append('recording_type', 'citizen_recording');
       await postForm(`/api/v1/citizen/interviews/${interviewId}/recording`, formData);
-      await refreshInterview();
+      const refreshed = await refreshInterview();
+      console.log('citizen refresh after submit', refreshed);
+      await renderInlineMedia(panel, refreshed);
+      const comparisonBox = document.getElementById('citizenRecordingComparison');
+      if (comparisonBox) {
+        try {
+          const report = await fetchJson(`/api/v1/citizen/interviews/${interviewId}/recording-comparison`);
+          renderRecordingComparison(comparisonBox, report);
+        } catch (err) {
+          renderRecordingComparison(comparisonBox, { status: 'COMPARISON_UNAVAILABLE', error: err.message || 'Unable to load recording comparison.' });
+        }
+      }
       showToast('Recording submitted.');
     } catch (error) {
       errorEl.textContent = error.message || 'Unable to submit recording.';
@@ -803,6 +832,169 @@ async function hydrateCitizenInterview(caseReference, interviewId) {
       showToast(error.message || 'Unable to submit recording.', { type: 'error' });
     }
   });
+
+  async function renderInlineMedia(container, interview) {
+    if (!container || !interview) return;
+    console.log('renderInlineMedia', interview);
+    let holder = container.querySelector('.interview-media-holder');
+    if (!holder) {
+      holder = document.createElement('div');
+      holder.className = 'interview-media-holder';
+      container.appendChild(holder);
+    }
+    holder.innerHTML = '';
+
+    const resolveTranscriptText = (rec) => {
+      if (!rec) {
+        return '';
+      }
+      if (typeof rec.transcript_text === 'string' && rec.transcript_text.trim()) {
+        return rec.transcript_text.trim();
+      }
+      if (rec.transcript && typeof rec.transcript === 'string' && rec.transcript.trim()) {
+        return rec.transcript.trim();
+      }
+      if (rec.transcript && typeof rec.transcript === 'object') {
+        if (typeof rec.transcript.text === 'string' && rec.transcript.text.trim()) {
+          return rec.transcript.text.trim();
+        }
+        if (typeof rec.transcript.content === 'string' && rec.transcript.content.trim()) {
+          return rec.transcript.content.trim();
+        }
+      }
+      return '';
+    };
+
+    const resolveTranscriptError = (rec) => {
+      if (!rec) {
+        return '';
+      }
+
+      const transcript = rec.transcript;
+      if (transcript && typeof transcript === 'object') {
+        const directError = transcript.error || transcript.message;
+        if (typeof directError === 'string' && directError.trim()) {
+          return directError.trim();
+        }
+      }
+
+      const altError = rec.transcript_error || rec.transcript_message || rec.error;
+      if (typeof altError === 'string' && altError.trim()) {
+        return altError.trim();
+      }
+
+      const status = String(rec.transcript_status || '').toUpperCase();
+      if (['BLOCKED', 'FAILED', 'ERROR'].includes(status)) {
+        return 'Transcription could not be completed for this recording.';
+      }
+
+      return '';
+    };
+
+    async function renderRecording(key, label) {
+      const rec = interview[key];
+      console.log('renderRecording', key, rec);
+      const section = document.createElement('section');
+      section.className = 'mini-case-card';
+      const title = document.createElement('div');
+      title.className = 'stack-row';
+      title.innerHTML = `<strong>${label}</strong><span>${rec ? (rec.submitted_at || '') : 'No recording'}</span>`;
+      section.appendChild(title);
+      if (rec && rec.storage_reference) {
+        const audioEl = document.createElement('audio');
+        audioEl.controls = true;
+        section.appendChild(audioEl);
+        try {
+          const url = await fetchMediaBlobUrl(`/api/v1/media/${rec.storage_reference}`);
+          audioEl.src = url;
+        } catch (err) {
+          const p = document.createElement('p');
+          p.textContent = 'Unable to load audio.';
+          section.appendChild(p);
+        }
+
+        const transcriptBox = document.createElement('div');
+        transcriptBox.className = 'transcript-box';
+        const transcriptText = resolveTranscriptText(rec);
+        const transcriptError = resolveTranscriptError(rec);
+        const status = rec.transcript_status || (transcriptText ? 'COMPLETED' : 'MISSING');
+        transcriptBox.innerHTML = `<p><strong>Transcript status:</strong> ${status}</p>`;
+        if (transcriptText) {
+          const pre = document.createElement('pre');
+          pre.textContent = transcriptText;
+          transcriptBox.appendChild(pre);
+        } else if (transcriptError) {
+          const message = document.createElement('p');
+          message.textContent = transcriptError;
+          transcriptBox.appendChild(message);
+        } else {
+          const btn = document.createElement('button');
+          btn.className = 'secondary-btn small-btn';
+          btn.textContent = 'Generate transcript';
+          btn.addEventListener('click', async () => {
+            try {
+              btn.disabled = true;
+              await fetchJson(`/api/v1/citizen/interviews/${interview.interview_id}/transcripts`, { method: 'POST' });
+              const refreshed = await refreshInterview();
+              await renderInlineMedia(container, refreshed);
+              // refresh comparison if present
+              const comparisonBox = document.getElementById('citizenRecordingComparison');
+              if (comparisonBox) {
+                try {
+                  const report = await fetchJson(`/api/v1/citizen/interviews/${interview.interview_id}/recording-comparison`);
+                  renderRecordingComparison(comparisonBox, report);
+                } catch (err) {
+                  renderRecordingComparison(comparisonBox, { status: 'COMPARISON_UNAVAILABLE', error: err.message || 'Unable to load recording comparison.' });
+                }
+              }
+            } catch (error) {
+              showToast(error.message || 'Transcription failed', { type: 'error' });
+            } finally {
+              btn.disabled = false;
+            }
+          });
+          transcriptBox.appendChild(btn);
+        }
+        section.appendChild(transcriptBox);
+      } else {
+        const p = document.createElement('p');
+        p.textContent = 'No recording file available.';
+        section.appendChild(p);
+      }
+      holder.appendChild(section);
+    }
+
+    await renderRecording('citizen_recording', 'Your recording');
+    await renderRecording('constable_recording', 'Constable recording');
+  }
+
+          function renderRecordingComparison(container, report) {
+            if (!container) {
+              return;
+            }
+
+            const isWaitingForBoth = report?.status === 'WAITING_FOR_BOTH_TRANSCRIPTS';
+            if (!report || report.status === 'COMPARISON_UNAVAILABLE' || isWaitingForBoth) {
+              const message = isWaitingForBoth
+                ? (report?.error || 'Waiting for both transcripts before comparison can run.')
+                : (report?.error || 'No transcript comparison is available yet.');
+              container.innerHTML = `
+                <strong>Recording consistency check</strong>
+                <p>${message}</p>
+              `;
+              return;
+            }
+
+            const findings = Array.isArray(report.findings) && report.findings.length
+              ? report.findings.map((finding) => `<li><strong>${finding.category}</strong> — ${finding.summary}</li>`).join('')
+              : '<li>No material differences detected in the current transcript comparison.</li>';
+
+            container.innerHTML = `
+              <strong>Recording consistency check</strong>
+              <p>Overall similarity: ${report.overall_similarity ?? 'n/a'}%</p>
+              <ul>${findings}</ul>
+            `;
+          }
 }
 
 function bindCitizenEscalation(caseReference) {
@@ -920,6 +1112,53 @@ async function getCitizenLinkedProceduralCase(caseReference) {
   } catch (error) {
     return null;
   }
+}
+
+async function resolveCitizenInterviewId(caseReference, docket = {}) {
+  if (!caseReference) {
+    return docket?.interview_id || null;
+  }
+
+  const directId = docket?.interview_id || docket?.interview?.interview_id || null;
+  if (directId) {
+    return String(directId);
+  }
+
+  const timelineCandidates = [
+    Array.isArray(docket?.timeline) ? docket.timeline : [],
+    Array.isArray(docket?.event_history) ? docket.event_history : [],
+  ].flat();
+  const timelineId = timelineCandidates
+    .map((event) => event?.details?.interview_id || event?.interview_id || null)
+    .find((value) => value !== null && value !== undefined && String(value).trim());
+  if (timelineId) {
+    return String(timelineId);
+  }
+
+  try {
+    const dockets = await fetchJson('/api/v1/citizen/dockets');
+    const candidates = Array.isArray(dockets) ? dockets : [];
+    const match = candidates.find((entry) => {
+      const caseValue = entry?.case_reference || entry?.docket_reference || '';
+      return String(caseValue).trim() === String(caseReference).trim();
+    });
+    if (match && (match.interview_id || match.interview?.interview_id)) {
+      return String(match.interview_id || match.interview.interview_id);
+    }
+  } catch (error) {
+    // Ignore lookup failures here; the caller can still continue with the
+    // original case flow and render the panel best-effort.
+  }
+
+  const normalizedCaseRef = String(caseReference).trim();
+  if (/^CD-/i.test(normalizedCaseRef)) {
+    const suffix = normalizedCaseRef.replace(/^CD-/i, '').trim();
+    if (suffix) {
+      return `INT-${suffix}`;
+    }
+  }
+
+  return null;
 }
 
 function formatStructuredLabel(value) {
@@ -1258,8 +1497,10 @@ export async function hydrateCitizenDetail() {
     bindCitizenCorrection(caseReference);
     bindCitizenWithdrawal(caseReference);
 
-    if (docket.interview_id) {
-      await hydrateCitizenInterview(caseReference, docket.interview_id);
+    const resolvedInterviewId = docket.interview_id || await resolveCitizenInterviewId(caseReference, docket);
+    if (resolvedInterviewId) {
+      docket.interview_id = resolvedInterviewId;
+      await hydrateCitizenInterview(caseReference, resolvedInterviewId);
     }
 
     bindCitizenEscalation(caseReference);

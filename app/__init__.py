@@ -70,7 +70,11 @@ from app.modules.regulatory_engine.services import RegulatoryRuleService
 import atexit
 
 from app.modules.station_commander_engine.services import StationCommanderService
-from app.modules.transcription_engine.services import RecordingComparisonEngine, TranscriptGenerationService, WhisperXProvider
+from app.modules.transcription_engine.services import (
+    RecordingComparisonEngine,
+    TranscriptGenerationService,
+    WhisperXProvider,
+)
 from app.scheduler import shutdown_sla_scheduler, start_sla_scheduler
 from app.services.case_service import CaseService
 
@@ -312,7 +316,9 @@ def create_app(testing: bool = False, database_uri: str | None = None, upload_st
     else:
         storage_root = os.path.join(app.instance_path, "uploads")
     media_manager = MediaManager(storage_root=storage_root)
-    transcript_service = TranscriptGenerationService(provider=WhisperXProvider())
+    whisper_provider = WhisperXProvider()
+    transcript_provider = whisper_provider
+    transcript_service = TranscriptGenerationService(provider=transcript_provider)
     recording_comparison_engine = RecordingComparisonEngine()
     evidence_service = EvidenceManagementService()
     compliance_service = ComplianceService(

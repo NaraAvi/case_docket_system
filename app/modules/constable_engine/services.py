@@ -686,9 +686,55 @@ class ConstableRegistrationService:
                     "submitted_at": event.get("timestamp"),
                 }
                 interview["citizen_recording"] = recording
+                # Preserve any existing in-memory transcript metadata to avoid
+                # overwriting it with a bare submitted event during
+                # rehydration races.
+                existing = self._recordings.get(recording.get("recording_id"))
+                if existing:
+                    if existing.get("transcript_status"):
+                        recording["transcript_status"] = existing.get("transcript_status")
+                    if existing.get("transcript"):
+                        recording["transcript"] = existing.get("transcript")
+                    if existing.get("transcript_text"):
+                        recording["transcript_text"] = existing.get("transcript_text")
+                    if existing.get("transcript_segments"):
+                        recording["transcript_segments"] = existing.get("transcript_segments")
+                    if existing.get("sha256_hash"):
+                        recording["sha256_hash"] = existing.get("sha256_hash")
                 self._recordings[recording["recording_id"]] = recording
                 if interview["status"] not in {"COMPLETED"}:
                     interview["status"] = "AWAITING_AUDIO"
+            elif event.get("event_type") == "citizen_recording_transcript_generated":
+                details = event.get("details") or {}
+                rid = details.get("recording_id")
+                if interview.get("citizen_recording") is None and rid:
+                    interview["citizen_recording"] = {
+                        "recording_id": rid,
+                        "interview_id": interview_id,
+                        "case_reference": case.get("case_reference"),
+                        "recorder_id": case.get("citizen_id"),
+                        "recorder_role": "citizen",
+                        "recording_type": "citizen_recording",
+                        "status": "SUBMITTED",
+                        "filename": "citizen_recording.wav",
+                        "storage_reference": None,
+                        "content_type": None,
+                        "size_bytes": None,
+                        "sha256_hash": None,
+                        "created_at": event.get("timestamp") or self._utc_now(),
+                        "submitted_at": event.get("timestamp") or self._utc_now(),
+                    }
+                if interview.get("citizen_recording") and interview["citizen_recording"].get("recording_id") == rid:
+                    interview["citizen_recording"]["transcript_status"] = details.get("transcript_status")
+                    if details.get("transcript"):
+                        interview["citizen_recording"]["transcript"] = details.get("transcript")
+                    if details.get("transcript_text"):
+                        interview["citizen_recording"]["transcript_text"] = details.get("transcript_text")
+                    if details.get("transcript_segments"):
+                        interview["citizen_recording"]["transcript_segments"] = details.get("transcript_segments")
+                    if not interview["citizen_recording"].get("status"):
+                        interview["citizen_recording"]["status"] = "SUBMITTED"
+                    self._recordings[interview["citizen_recording"].get("recording_id")] = interview["citizen_recording"]
             elif event.get("event_type") == "constable_recording_submitted":
                 actor = event.get("actor_id")
                 if actor and (interview.get("constable_id") is None or str(interview.get("constable_id") or "") == ""):
@@ -710,9 +756,60 @@ class ConstableRegistrationService:
                     "submitted_at": event.get("timestamp"),
                 }
                 interview["constable_recording"] = recording
+                # Preserve any existing in-memory transcript metadata to avoid
+                # overwriting it with a bare submitted event during
+                # rehydration races.
+                existing = self._recordings.get(recording.get("recording_id"))
+                if existing:
+                    if existing.get("transcript_status"):
+                        recording["transcript_status"] = existing.get("transcript_status")
+                    if existing.get("transcript"):
+                        recording["transcript"] = existing.get("transcript")
+                    if existing.get("transcript_text"):
+                        recording["transcript_text"] = existing.get("transcript_text")
+                    if existing.get("transcript_segments"):
+                        recording["transcript_segments"] = existing.get("transcript_segments")
+                    if existing.get("sha256_hash"):
+                        recording["sha256_hash"] = existing.get("sha256_hash")
                 self._recordings[recording["recording_id"]] = recording
                 if interview["status"] not in {"COMPLETED"}:
                     interview["status"] = "AWAITING_AUDIO"
+            elif event.get("event_type") == "constable_recording_transcript_generated":
+                details = event.get("details") or {}
+                rid = details.get("recording_id")
+                if interview.get("constable_recording") is None and rid:
+                    interview["constable_recording"] = {
+                        "recording_id": rid,
+                        "interview_id": interview_id,
+                        "case_reference": case.get("case_reference"),
+                        "recorder_id": interview.get("constable_id") or case.get("citizen_id"),
+                        "recorder_role": "constable",
+                        "recording_type": "constable_recording",
+                        "status": "SUBMITTED",
+                        "filename": "constable_recording.wav",
+                        "storage_reference": None,
+                        "content_type": None,
+                        "size_bytes": None,
+                        "sha256_hash": None,
+                        "created_at": event.get("timestamp") or self._utc_now(),
+                        "submitted_at": event.get("timestamp") or self._utc_now(),
+                    }
+                if interview.get("constable_recording") and interview["constable_recording"].get("recording_id") == rid:
+                    interview["constable_recording"]["transcript_status"] = details.get("transcript_status")
+                    if details.get("transcript"):
+                        interview["constable_recording"]["transcript"] = details.get("transcript")
+                    if details.get("transcript_text"):
+                        interview["constable_recording"]["transcript_text"] = details.get("transcript_text")
+                    if details.get("transcript_segments"):
+                        interview["constable_recording"]["transcript_segments"] = details.get("transcript_segments")
+                    if not interview["constable_recording"].get("status"):
+                        interview["constable_recording"]["status"] = "SUBMITTED"
+                    self._recordings[interview["constable_recording"].get("recording_id")] = interview["constable_recording"]
+            elif event.get("event_type") == "recording_comparison_generated":
+                details = event.get("details") or {}
+                report = details.get("report") if isinstance(details, dict) else None
+                if isinstance(report, dict):
+                    interview["recording_comparison"] = report
             elif event.get("event_type") == "interview_completed":
                 if self._interview_has_complete_recordings(interview):
                     interview["status"] = "COMPLETED"
@@ -761,6 +858,15 @@ class ConstableRegistrationService:
 
     def get_interview_by_id(self, interview_id):
         interview = self._get_authoritative_interview(interview_id=interview_id)
+        # If authoritative rehydration misses the recording details during a
+        # submit race, fall back to the live in-memory copy.
+        if interview is None or (
+            isinstance(interview, dict)
+            and not any(interview.get(key) for key in ("citizen_recording", "constable_recording"))
+        ):
+            fallback = self._interviews.get(interview_id)
+            if fallback is not None:
+                interview = fallback
         if interview is None:
             return None
         return dict(interview)
@@ -873,7 +979,13 @@ class ConstableRegistrationService:
             f"{recording_type}_submitted",
             actor_id,
             actor_role,
-            {"recording_id": recording["recording_id"], "interview_id": interview_id},
+            {
+                "recording_id": recording["recording_id"],
+                "interview_id": interview_id,
+                "storage_reference": recording.get("storage_reference"),
+                "filename": recording.get("filename"),
+                "sha256_hash": recording.get("sha256_hash"),
+            },
         )
         self.audit_service.log(
             {
@@ -902,11 +1014,191 @@ class ConstableRegistrationService:
                     "details": {"interview_id": interview_id},
                 }
             )
+            # Automatic transcription: when interview completes (both recordings
+            # submitted), attempt to generate and persist transcripts for any
+            # recordings lacking a completed transcript. If the provider is
+            # unavailable or blocked, persist the provider report so the UI can
+            # surface the exact reason.
+            try:
+                # Resolve transcription service and comparison engine from the app.
+                transcript_service = None
+                comparison_engine = None
+                if getattr(self, "app", None):
+                    transcript_service = self.app.extensions.get("transcript_service") or self.app.extensions.get("transcription_service")
+                    comparison_engine = self.app.extensions.get("recording_comparison_engine") or self.app.extensions.get("comparison_engine")
+
+                # For each recording, generate transcript if not already COMPLETED.
+                for key in ("citizen_recording", "constable_recording"):
+                    rec = interview.get(key)
+                    if not rec:
+                        continue
+                    existing_status = rec.get("transcript_status")
+                    if existing_status == "COMPLETED":
+                        continue
+                    if transcript_service is None:
+                        blocked_report = {"status": "BLOCKED", "error": "Transcript service unavailable."}
+                        try:
+                            self.save_transcript_result(interview_id, key, blocked_report)
+                        except Exception:
+                            pass
+                        continue
+                    try:
+                        report = transcript_service.generate_transcript(rec)
+                    except Exception as exc:
+                        report = {"status": "FAILED", "error": str(exc)}
+                    try:
+                        self.save_transcript_result(interview_id, key, report)
+                    except Exception:
+                        pass
+
+                # After ensuring transcripts persisted, run comparison if the
+                # engine is available and both transcripts are present.
+                if comparison_engine is not None:
+                    citizen_rec = next((r for r in self._recordings.values() if r.get("interview_id") == interview_id and r.get("recording_type") == "citizen_recording"), None)
+                    constable_rec = next((r for r in self._recordings.values() if r.get("interview_id") == interview_id and r.get("recording_type") == "constable_recording"), None)
+                    try:
+                        report = comparison_engine.compare(citizen_rec, constable_rec)
+                    except Exception as exc:
+                        report = {"status": "COMPARISON_UNAVAILABLE", "error": str(exc), "overall_similarity": 0.0, "findings": []}
+                    try:
+                        if interview_id not in self._interviews:
+                            self._interviews[interview_id] = {}
+                        self._interviews[interview_id]["recording_comparison"] = report
+                        self._append_timeline_event(case, "recording_comparison_generated", "system", "system", {"interview_id": interview_id, "report": report})
+                        self.case_service.update_case(case)
+                    except Exception:
+                        pass
+            except Exception:
+                # Best-effort automation: do not let background failures stop
+                # the primary submit_recording flow.
+                pass
 
         case["interview_id"] = interview_id
         self.case_service.update_case(case)
         self.evidence_service.add_recording(recording)
         return recording
+
+    def save_transcript_result(self, interview_id, recording_key, transcript_report):
+        """Persist a transcript report into the interview's recording payload.
+
+        `recording_key` is expected to be 'citizen_recording' or 'constable_recording'.
+        The method updates both the interview and the recording index and
+        propagates a case update for any listeners.
+        """
+        interview = self._get_authoritative_interview(interview_id=interview_id)
+        if interview is None:
+            raise ValueError("Interview not found.")
+
+        if recording_key not in ("citizen_recording", "constable_recording"):
+            raise ValueError("Invalid recording key.")
+
+        recording = interview.get(recording_key)
+        # If authoritative interview lacked the recording (race), try to
+        # locate it from the recording index by interview_id + type.
+        if recording is None:
+            for rec in self._recordings.values():
+                if rec.get("interview_id") == interview_id and rec.get("recording_type") == recording_key:
+                    recording = dict(rec)
+                    break
+        if recording is None:
+            # Some transcript workflows can reach this method before the
+            # recording metadata object is fully materialized. Persist the
+            # transcript against a minimal recording record rather than failing.
+            recording = {
+                "recording_id": f"REC-{interview_id}-{recording_key}",
+                "interview_id": interview_id,
+                "case_reference": interview.get("case_reference"),
+                "recording_type": recording_key,
+                "status": "SUBMITTED",
+                "filename": f"{recording_key}.wav",
+                "storage_reference": None,
+                "content_type": None,
+                "size_bytes": None,
+                "sha256_hash": None,
+                "created_at": self._utc_now(),
+                "submitted_at": self._utc_now(),
+            }
+            interview[recording_key] = recording
+            self._recordings[recording["recording_id"]] = recording
+
+        # Attach transcript metadata and transcript object when present.
+        # Keep the raw spoken words in a dedicated flat field so the UI can render
+        # the literal audio text instead of any comparison/summary text.
+        status = transcript_report.get("status") if isinstance(transcript_report, dict) else None
+        if status:
+            recording["transcript_status"] = status
+        if isinstance(transcript_report, dict):
+            transcript_payload = transcript_report.get("transcript")
+            transcript_text = None
+            transcript_segments = []
+
+            if isinstance(transcript_payload, dict):
+                transcript_text = transcript_payload.get("text") or transcript_payload.get("content") or transcript_payload.get("transcript")
+                segments = transcript_payload.get("segments")
+                if isinstance(segments, list):
+                    transcript_segments = segments
+            elif isinstance(transcript_payload, str):
+                transcript_text = transcript_payload
+
+            if transcript_text is None:
+                transcript_text = transcript_report.get("transcript_text") or transcript_report.get("text") or transcript_report.get("content")
+            if isinstance(transcript_report.get("transcript_segments"), list):
+                transcript_segments = transcript_report.get("transcript_segments")
+
+            if transcript_text is not None:
+                recording["transcript_text"] = str(transcript_text)
+                recording["transcript"] = {"text": str(transcript_text), "segments": transcript_segments}
+            elif transcript_payload is not None:
+                recording["transcript"] = transcript_payload
+
+            if transcript_segments:
+                recording["transcript_segments"] = transcript_segments
+                recording.setdefault("transcript", {})["segments"] = transcript_segments
+
+            # Store provider/engine metadata when available
+            if transcript_report.get("provider"):
+                recording.setdefault("transcript", {})["provider"] = transcript_report.get("provider")
+            if transcript_report.get("engine_version"):
+                recording.setdefault("transcript", {})["engine_version"] = transcript_report.get("engine_version")
+            if transcript_report.get("error"):
+                recording.setdefault("transcript", {})["error"] = transcript_report.get("error")
+
+            # If provider computed a source hash, persist it to recording
+            if transcript_report.get("source_hash"):
+                recording["sha256_hash"] = transcript_report.get("source_hash")
+
+        # Update interview and recording index
+        interview[recording_key] = recording
+        interview["updated_at"] = self._utc_now()
+        self._recordings[recording.get("recording_id")] = recording
+
+        # Persist the case update so any case-level views reflect transcript state
+        case = self._get_docket_by_reference(interview.get("case_reference"))
+        if case is not None:
+            # Record a timeline event containing transcript metadata so that
+            # rehydration from the case retains transcript status and content.
+            try:
+                self._append_timeline_event(
+                    case,
+                    f"{recording_key}_transcript_generated",
+                    "system",
+                    "system",
+                    {
+                        "recording_id": recording.get("recording_id"),
+                        "interview_id": interview_id,
+                        "transcript_status": recording.get("transcript_status"),
+                        "transcript": recording.get("transcript"),
+                        "transcript_text": recording.get("transcript_text"),
+                        "transcript_segments": recording.get("transcript_segments"),
+                    },
+                )
+            except Exception:
+                # Timeline event is best-effort — proceed to update case even if it fails
+                pass
+            self.case_service.update_case(case)
+
+        self._interviews[interview_id] = dict(interview)
+        return dict(recording)
 
     def register_docket(self, interview_id, constable_id):
         interview = self._get_authoritative_interview(interview_id=interview_id)
@@ -927,7 +1219,11 @@ class ConstableRegistrationService:
             if case.get("status") != "AWAITING_CONSTABLE_REGISTRATION":
                 raise ValueError("Docket is not awaiting constable registration.")
             self._assert_not_frozen(case.get("case_reference"))
-            if interview.get("status") != "COMPLETED":
+            interview_complete = (interview.get("status") == "COMPLETED") or (
+                self._recording_is_submitted(interview.get("citizen_recording"))
+                and self._recording_is_submitted(interview.get("constable_recording"))
+            )
+            if not interview_complete:
                 raise ValueError("Interview is incomplete.")
             if interview.get("citizen_recording") is None or interview.get("constable_recording") is None:
                 raise ValueError("Both recordings are required before registration.")

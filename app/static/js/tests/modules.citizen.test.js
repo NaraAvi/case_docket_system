@@ -1225,6 +1225,88 @@ describe('modules/citizen.js (integration: module + core/api + core/ui + DOM)', 
       expect(document.getElementById('toastContainer').textContent).toContain('Recording submitted');
       expect(document.getElementById('citizenInterviewStatus').querySelector('[data-view-media="recordings/abc_my_statement.wav"]')).not.toBeNull();
     });
+
+    it('renders the citizen inline audio after a successful recording submission', async () => {
+      document.body.innerHTML = draftDetailMarkup();
+      setLocation('/citizen/dockets/CD-1');
+      let citizenSubmitted = false;
+      const fetchMock = vi.fn((url, options = {}) => {
+        if (url.endsWith('/interviews/INT-1/recording')) {
+          citizenSubmitted = true;
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({ recording_id: 'REC-1' }) });
+        }
+        if (url.includes('/api/v1/media/')) {
+          return Promise.resolve({ ok: true, blob: () => Promise.resolve(new Blob(['audio'], { type: 'audio/wav' })) });
+        }
+        if (url.endsWith('/interviews/INT-1')) {
+          return Promise.resolve({
+            ok: true,
+            json: () =>
+              Promise.resolve({
+                status: citizenSubmitted ? 'AWAITING_AUDIO' : 'STARTED',
+                citizen_recording: citizenSubmitted ? { status: 'SUBMITTED', storage_reference: 'recordings/abc_my_statement.wav' } : null,
+                constable_recording: { status: 'SUBMITTED' },
+              }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ status: 'AWAITING_CONSTABLE_REGISTRATION', timeline: [], statements: [], evidence: [] }),
+        });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      vi.stubGlobal('URL.createObjectURL', vi.fn(() => 'blob:mock-audio'));
+
+      await hydrateCitizenDetail();
+      setFileInputValue('citizenRecordingFile', 'my_statement.wav', 'audio bytes', 'audio/wav');
+      document.getElementById('submitCitizenRecording').click();
+
+      await vi.waitFor(() => expect(document.querySelectorAll('audio').length).toBeGreaterThan(0));
+      expect(document.getElementById('citizenInterviewPanel').textContent).toContain('Your recording');
+    });
+
+    it('renders the raw spoken transcript text instead of the comparison summary text', async () => {
+      document.body.innerHTML = draftDetailMarkup();
+      setLocation('/citizen/dockets/CD-1');
+      const fetchMock = vi.fn((url, options = {}) => {
+        if (url.endsWith('/interviews/INT-1')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              status: 'COMPLETED',
+              citizen_recording: {
+                status: 'SUBMITTED',
+                storage_reference: 'recordings/abc_my_statement.wav',
+                transcript_status: 'COMPLETED',
+                transcript_text: 'The witness said the suspect approached from the north side and entered the storefront before leaving.',
+                transcript: { text: 'The witness said the suspect approached from the north side and entered the storefront before leaving.' },
+                transcript_segments: [{ text: 'The witness said the suspect approached from the north side and entered the storefront before leaving.' }],
+              },
+              constable_recording: {
+                status: 'SUBMITTED',
+                storage_reference: 'recordings/xyz_constable.wav',
+                transcript_status: 'COMPLETED',
+                transcript_text: 'The witness said the suspect approached from the north side and entered the storefront before leaving.',
+                transcript: { text: 'The witness said the suspect approached from the north side and entered the storefront before leaving.' },
+                transcript_segments: [{ text: 'The witness said the suspect approached from the north side and entered the storefront before leaving.' }],
+              },
+            }),
+          });
+        }
+        if (url.includes('/api/v1/media/')) {
+          return Promise.resolve({ ok: true, blob: () => Promise.resolve(new Blob(['audio'], { type: 'audio/wav' })) });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'AWAITING_CONSTABLE_REGISTRATION', timeline: [], statements: [], evidence: [] }) });
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      vi.stubGlobal('URL.createObjectURL', vi.fn(() => 'blob:mock-audio'));
+
+      await hydrateCitizenDetail();
+
+      const panelText = document.getElementById('citizenInterviewPanel').textContent;
+      expect(panelText).toContain('The witness said the suspect approached from the north side and entered the storefront before leaving.');
+      expect(panelText).not.toContain('We agree on the same statement');
+    });
   });
 
   describe('hydrateCitizenForm', () => {

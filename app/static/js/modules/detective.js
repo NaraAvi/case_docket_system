@@ -2,7 +2,7 @@
  * Detective investigation list and individual case workspace.
  */
 
-import { fetchJson } from '../core/api.js';
+import { fetchJson, fetchMediaBlobUrl } from '../core/api.js';
 import { buildStatusBadge, flashToast, populateSelect, renderDocketCardList, renderEvidenceTable, renderStatementList, renderTimelineList, renderWorkflowRail, setEmptyState, showToast } from '../core/ui.js';
 
 const DETECTIVE_EVIDENCE_TYPES = ['PHOTO', 'VIDEO', 'DOCUMENT', 'AUDIO', 'WITNESS_STATEMENT', 'OTHER'];
@@ -57,6 +57,167 @@ function renderProtectedSubmission(container, docket) {
       <dl class="meta-list compact">${entries}</dl>
     </article>
   `;
+}
+
+function resolveTranscriptText(recording) {
+  if (!recording) {
+    return '';
+  }
+  if (typeof recording.transcript_text === 'string' && recording.transcript_text.trim()) {
+    return recording.transcript_text.trim();
+  }
+  if (recording.transcript && typeof recording.transcript === 'string' && recording.transcript.trim()) {
+    return recording.transcript.trim();
+  }
+  if (recording.transcript && typeof recording.transcript === 'object') {
+    if (typeof recording.transcript.text === 'string' && recording.transcript.text.trim()) {
+      return recording.transcript.text.trim();
+    }
+    if (typeof recording.transcript.content === 'string' && recording.transcript.content.trim()) {
+      return recording.transcript.content.trim();
+    }
+  }
+  return '';
+}
+
+function resolveTranscriptError(recording) {
+  if (!recording) {
+    return '';
+  }
+
+  const transcript = recording.transcript;
+  if (transcript && typeof transcript === 'object') {
+    const directError = transcript.error || transcript.message;
+    if (typeof directError === 'string' && directError.trim()) {
+      return directError.trim();
+    }
+  }
+
+  const altError = recording.transcript_error || recording.transcript_message || recording.error;
+  if (typeof altError === 'string' && altError.trim()) {
+    return altError.trim();
+  }
+
+  const status = String(recording.transcript_status || '').toUpperCase();
+  if (['BLOCKED', 'FAILED', 'ERROR'].includes(status)) {
+    return 'Transcription could not be completed for this recording.';
+  }
+
+  return '';
+}
+
+function renderRecordingComparison(container, report) {
+  if (!container) {
+    return;
+  }
+
+  const isWaitingForBoth = report?.status === 'WAITING_FOR_BOTH_TRANSCRIPTS';
+  if (!report || report.status === 'COMPARISON_UNAVAILABLE' || isWaitingForBoth) {
+    const message = isWaitingForBoth
+      ? (report?.error || 'Waiting for both transcripts before comparison can run.')
+      : (report?.error || 'No transcript comparison is available yet.');
+    container.innerHTML = `
+      <strong>Recording consistency check</strong>
+      <p>${message}</p>
+    `;
+    return;
+  }
+
+  const findings = Array.isArray(report.findings) && report.findings.length
+    ? report.findings.map((finding) => `<li><strong>${finding.category}</strong> — ${finding.summary}</li>`).join('')
+    : '<li>No material differences detected in the current transcript comparison.</li>';
+
+  container.innerHTML = `
+    <strong>Recording consistency check</strong>
+    <p>Overall similarity: ${report.overall_similarity ?? 'n/a'}%</p>
+    <ul>${findings}</ul>
+  `;
+}
+
+async function renderDetectiveInterviewDetails(container, docket, interview, comparisonReport = null) {
+  if (!container) {
+    return;
+  }
+
+  container.innerHTML = '';
+  const sectionWrap = document.createElement('div');
+  sectionWrap.className = 'stack-list';
+
+  const hasInterviewRecordings = Boolean(interview && (interview.citizen_recording || interview.constable_recording));
+  if (hasInterviewRecordings) {
+    const mediaHolder = document.createElement('div');
+    mediaHolder.className = 'interview-media-holder';
+
+    const renderRecording = async (key, label) => {
+      const rec = interview?.[key];
+      const block = document.createElement('section');
+      block.className = 'mini-case-card';
+
+      const title = document.createElement('div');
+      title.className = 'stack-row';
+      title.innerHTML = `<strong>${label}</strong><span>${rec ? (rec.submitted_at || rec.created_at || '') : 'No recording'}</span>`;
+      block.appendChild(title);
+
+      if (rec && rec.storage_reference) {
+        const audio = document.createElement('audio');
+        audio.controls = true;
+        audio.preload = 'metadata';
+        block.appendChild(audio);
+
+        try {
+          audio.src = await fetchMediaBlobUrl(`/api/v1/media/${rec.storage_reference}`);
+        } catch (error) {
+          const fallback = document.createElement('p');
+          fallback.textContent = 'Unable to load audio.';
+          block.appendChild(fallback);
+        }
+
+        const transcriptBox = document.createElement('div');
+        transcriptBox.className = 'transcript-box';
+        const transcriptText = resolveTranscriptText(rec);
+        const transcriptError = resolveTranscriptError(rec);
+        const status = rec.transcript_status || (transcriptText ? 'COMPLETED' : 'MISSING');
+        transcriptBox.innerHTML = `<p><strong>Transcript status:</strong> ${status}</p>`;
+
+        if (transcriptText) {
+          const pre = document.createElement('pre');
+          pre.textContent = transcriptText;
+          transcriptBox.appendChild(pre);
+        } else if (transcriptError) {
+          const message = document.createElement('p');
+          message.textContent = transcriptError;
+          transcriptBox.appendChild(message);
+        } else {
+          const message = document.createElement('p');
+          message.textContent = 'No transcript is available for this recording yet.';
+          transcriptBox.appendChild(message);
+        }
+        block.appendChild(transcriptBox);
+      } else {
+        const message = document.createElement('p');
+        message.textContent = 'No recording file available.';
+        block.appendChild(message);
+      }
+
+      mediaHolder.appendChild(block);
+    };
+
+    await renderRecording('citizen_recording', 'Citizen recording');
+    await renderRecording('constable_recording', 'Constable recording');
+    sectionWrap.appendChild(mediaHolder);
+
+    const comparisonBox = document.createElement('div');
+    comparisonBox.className = 'mini-case-card';
+    renderRecordingComparison(comparisonBox, comparisonReport);
+    sectionWrap.appendChild(comparisonBox);
+  }
+
+  const statementsWrap = document.createElement('div');
+  statementsWrap.className = 'statement-list';
+  renderStatementList(statementsWrap, Array.isArray(docket?.statements) ? docket.statements : []);
+  sectionWrap.appendChild(statementsWrap);
+
+  container.appendChild(sectionWrap);
 }
 
 export function getDetectiveCaseReference() {
@@ -386,6 +547,26 @@ function getCompletedRequiredActions(actions = []) {
     completed.add(normalized);
   }
   return completed;
+}
+
+function syncFindingsGateState(investigationId, actions = [], procedureState = {}) {
+  const openButton = document.getElementById('openFindingModal');
+  const proceedButton = document.getElementById('proceedToFindingsButton') || document.querySelector('[data-proceed-to-findings]');
+  const currentStage = String((procedureState?.current_stage || '')).toUpperCase();
+  const nextAction = String((procedureState?.next_permitted_action || '')).trim();
+  const requiredActionsComplete = REQUIRED_ACTION_SEQUENCE.every((actionType) => getCompletedRequiredActions(actions).has(actionType));
+  const findingsUnlocked = Boolean(investigationId) && (requiredActionsComplete || currentStage === 'FINDINGS_READY' || nextAction.toLowerCase() === 'document finding');
+
+  if (openButton) {
+    openButton.hidden = !findingsUnlocked;
+    openButton.disabled = !findingsUnlocked;
+  }
+  if (proceedButton) {
+    proceedButton.hidden = !findingsUnlocked;
+    proceedButton.disabled = !findingsUnlocked;
+  }
+
+  return findingsUnlocked;
 }
 
 function getNextRequiredAction(actions = []) {
@@ -1038,6 +1219,8 @@ function validateActionModalPayload(actionType, payload) {
     if (!payload.record_type) errors.push('Record type is required.');
     if (!payload.record_holder) errors.push('Record holder is required.');
     if (!payload.specific_record_requested) errors.push('Specific record requested is required.');
+    if (!payload.date_range_from && !payload.date_range_to) errors.push('A relevant date or date range is required.');
+    if (!payload.reason_relevant) errors.push('The record\'s relevance is required.');
     if (!payload.date_requested) errors.push('Date requested is required.');
     if (!payload.request_reference) errors.push('Request reference is required.');
     if (!payload.request_method) errors.push('Request method is required.');
@@ -1086,6 +1269,7 @@ function renderInvestigationOrder(container, actions = [], evidenceItems = []) {
         <span class="${findingsLocked ? 'badge badge-warning' : 'badge badge-success'}">${findingsLocked ? 'Findings locked' : 'Findings available'}</span>
       </div>
       <p class="field-hint">${escapeHtml(summaryText)}</p>
+      ${findingsLocked ? '' : '<div class="stack-row" style="justify-content:flex-end; margin-top:10px;"><button type="button" class="primary-btn" data-proceed-to-findings>Proceed to findings</button></div>'}
     </div>
     ${REQUIRED_ACTION_SEQUENCE.map((actionType) => {
       const isCompleted = completed.has(actionType);
@@ -1148,6 +1332,16 @@ function renderInvestigationOrder(container, actions = [], evidenceItems = []) {
       }
     });
   });
+
+  const proceedButton = container.querySelector('[data-proceed-to-findings]');
+  if (proceedButton) {
+    proceedButton.addEventListener('click', () => {
+      const openFindingButton = document.getElementById('openFindingModal');
+      if (openFindingButton) {
+        openFindingButton.click();
+      }
+    });
+  }
 }
 
 function renderInvestigationActions(container, actions) {
@@ -1406,9 +1600,7 @@ function bindFindingModal(investigationId, { onSaved, actions = [] } = {}) {
     return;
   }
 
-  const findingsUnlocked = REQUIRED_ACTION_SEQUENCE.every((actionType) => getCompletedRequiredActions(actions).has(actionType));
-  openButton.disabled = !findingsUnlocked;
-  openButton.hidden = !findingsUnlocked;
+  syncFindingsGateState(investigationId, actions);
 
   if (!modal) {
     return;
@@ -1625,6 +1817,26 @@ function bindActionModal(investigationId, evidenceItems = [], { onSaved, actions
   });
 }
 
+function syncCompletionGateState(investigationId, { findings = [], actions = [] } = {}) {
+  const openButton = document.getElementById('openCompleteInvestigationModal');
+  if (!openButton) {
+    return false;
+  }
+
+  if (!investigationId) {
+    openButton.disabled = true;
+    openButton.hidden = true;
+    return false;
+  }
+
+  const hasRequiredActions = REQUIRED_ACTION_SEQUENCE.every((actionType) => getCompletedRequiredActions(actions).has(actionType));
+  const hasFindings = Array.isArray(findings) && findings.length > 0;
+  const isEnabled = hasRequiredActions && hasFindings;
+  openButton.disabled = !isEnabled;
+  openButton.hidden = !isEnabled;
+  return isEnabled;
+}
+
 function bindCompleteInvestigationModal(investigationId, { onCompleted, findings = [], actions = [] } = {}) {
   const modal = document.getElementById('completeInvestigationModal');
   const openButton = document.getElementById('openCompleteInvestigationModal');
@@ -1645,10 +1857,7 @@ function bindCompleteInvestigationModal(investigationId, { onCompleted, findings
     return;
   }
 
-  const hasRequiredActions = REQUIRED_ACTION_SEQUENCE.every((actionType) => getCompletedRequiredActions(actions).has(actionType));
-  const hasFindings = Array.isArray(findings) && findings.length > 0;
-  openButton.disabled = !hasRequiredActions || !hasFindings;
-  openButton.hidden = !hasRequiredActions || !hasFindings;
+  syncCompletionGateState(investigationId, { findings, actions });
 
   if (!modal) {
     return;
@@ -1966,70 +2175,73 @@ function renderDetectiveWorkflow(docket, investigation, procedureState = {}) {
   const steps = [
     { label: 'Case Review', state: 'complete', detail: 'Reference and case record reviewed' },
     { label: 'Case Facts Verification', state: 'upcoming', detail: 'Confirm core incident facts' },
-    { label: 'Statements & Evidence', state: 'complete', detail: 'Statements and evidence reviewed' },
-    { label: 'Investigation', state: 'upcoming', detail: 'Open the investigation' },
-    { label: 'Findings', state: 'upcoming', detail: 'Investigation Finding' },
-    { label: 'Final Reasoning', state: 'upcoming', detail: 'Final Outcome' },
-    { label: 'Completion', state: 'upcoming', detail: 'Complete investigation' },
+    { label: 'Investigation', state: 'upcoming', detail: 'Complete the six required actions' },
+    { label: 'Findings', state: 'upcoming', detail: 'Document the investigative finding' },
+    { label: 'Final Reasoning', state: 'upcoming', detail: 'Record final outcome' },
+    { label: 'Completion', state: 'upcoming', detail: 'Close the investigation' },
   ];
 
-  if (!hasInvestigation) {
-    if (currentStage === 'CASE_REVIEW') {
-      steps[0].state = 'current';
-      steps[1].state = 'upcoming';
-      steps[2].state = 'upcoming';
-      steps[3].state = 'upcoming';
-    } else if (currentStage === 'CASE_FACTS_VERIFICATION') {
-      steps[0].state = 'complete';
-      steps[1].state = 'current';
-      steps[2].state = 'upcoming';
-      steps[3].state = 'upcoming';
-    } else {
-      steps[0].state = 'complete';
-      steps[1].state = 'complete';
-      steps[2].state = 'complete';
-      steps[3].state = 'current';
-    }
+  if (isCompleted) {
+    steps[0].state = 'complete';
+    steps[1].state = 'complete';
+    steps[2].state = 'complete';
+    steps[3].state = 'complete';
+    steps[4].state = 'complete';
+    steps[5].state = 'complete';
+    steps[0].detail = 'Reference and case record reviewed';
+    steps[1].detail = 'Case facts verified';
+    steps[2].detail = 'Six required investigative actions complete';
+    steps[3].detail = 'Investigative findings documented';
+    steps[4].detail = 'Final reasoning recorded';
+    steps[5].detail = 'Investigation completed';
     return renderWorkflowRail(rail, { title: 'Detective workflow', steps, locked: Boolean(docket.is_frozen) });
   }
 
-  steps[2].state = 'complete';
-  steps[2].detail = 'Investigation opened';
+  const findingsGateOpen = currentStage === 'FINDINGS_READY' || String(procedureState.next_permitted_action || '').trim() === 'Document finding';
 
-  if (currentStage === 'CASE_FACTS_VERIFICATION') {
+  if (currentStage === 'CASE_REVIEW') {
+    steps[0].state = 'current';
+  } else if (currentStage === 'CASE_FACTS_VERIFICATION') {
+    steps[0].state = 'complete';
     steps[1].state = 'current';
-    steps[1].detail = 'Resolve case fact discrepancies';
-    steps[3].state = 'upcoming';
-    steps[3].detail = 'Await Case Facts approval';
+    steps[1].detail = 'Resolve the preserved fact discrepancies';
   } else if (currentStage === 'INVESTIGATION_OPEN') {
+    steps[0].state = 'complete';
     steps[1].state = 'complete';
-    steps[1].detail = 'Case facts verified';
+    if (findingsGateOpen) {
+      steps[2].state = 'complete';
+      steps[2].detail = 'Required investigative actions complete';
+      steps[3].state = 'current';
+      steps[3].detail = 'Document or review the investigation finding';
+    } else {
+      steps[2].state = 'current';
+      steps[2].detail = 'Complete the six required investigative actions';
+    }
+  } else if (currentStage === 'FINDINGS_READY') {
+    steps[0].state = 'complete';
+    steps[1].state = 'complete';
+    steps[2].state = 'complete';
+    steps[2].detail = 'Required investigative actions complete';
     steps[3].state = 'current';
-    steps[3].detail = 'Add Investigation Finding';
+    steps[3].detail = 'Document or review the investigation finding';
   } else if (hasFindings) {
+    steps[0].state = 'complete';
     steps[1].state = 'complete';
-    steps[1].detail = 'Case facts verified';
-    steps[3].state = 'complete';
-    steps[3].detail = 'Investigation Finding recorded';
-    steps[4].state = isCompleted ? 'complete' : 'current';
-    steps[4].detail = isCompleted ? 'Final Outcome recorded' : 'Prepare the Final Outcome';
-  } else {
-    steps[1].state = 'complete';
-    steps[1].detail = 'Case facts verified';
+    steps[2].state = 'complete';
     steps[3].state = 'current';
-    steps[3].detail = 'Add Investigation Finding';
+    steps[3].detail = 'Review and finalise the investigation finding';
+  } else {
+    steps[0].state = 'complete';
+    steps[1].state = 'complete';
+    steps[2].state = 'current';
+    steps[2].detail = 'Complete the six required investigative actions';
   }
 
-  if (isCompleted) {
-    steps[4].state = 'complete';
-    steps[4].detail = 'Final Outcome recorded';
-    steps[5].state = 'complete';
-    steps[5].detail = 'Final Reasoning recorded';
-    steps[6].state = 'complete';
-    steps[6].detail = 'Investigation completed';
-  } else if (hasFindings && currentStage !== 'INVESTIGATION_OPEN' && currentStage !== 'CASE_FACTS_VERIFICATION') {
-    steps[5].state = 'upcoming';
-    steps[6].state = 'upcoming';
+  if (hasFindings && currentStage !== 'CASE_FACTS_VERIFICATION' && !isCompleted) {
+    steps[2].state = 'complete';
+    steps[2].detail = 'Required investigative actions complete';
+    steps[3].state = 'current';
+    steps[3].detail = 'Prepare the final investigation finding';
   }
 
   renderWorkflowRail(rail, { title: 'Detective workflow', steps, locked: Boolean(docket.is_frozen) });
@@ -2114,6 +2326,9 @@ export async function hydrateDetectiveCase() {
     if (deposition) {
       deposition.innerHTML = `<p>${docket.description || 'No incident description was provided.'}</p>`;
     }
+    const stageName = String((procedureState.current_stage || 'CASE_REVIEW')).toUpperCase();
+    const shouldRevealInvestigationStage = Boolean(investigation) && ['INVESTIGATION_OPEN', 'FINDINGS_READY', 'INVESTIGATION_COMPLETE'].includes(stageName);
+
     if (investigationStateText) {
       const normalizedStatus = investigation ? String(investigation.status || '').toUpperCase() : '';
       investigationStateText.textContent = normalizedStatus === 'COMPLETED'
@@ -2121,18 +2336,49 @@ export async function hydrateDetectiveCase() {
         : (investigation ? 'Investigation is active.' : 'Investigation has not started.');
     }
     if (investigationPanels) {
-      investigationPanels.classList.toggle('hidden', !investigation);
+      investigationPanels.classList.toggle('hidden', !shouldRevealInvestigationStage);
     }
     if (investigationActions) {
-      investigationActions.classList.toggle('hidden', !investigation);
+      investigationActions.classList.toggle('hidden', !shouldRevealInvestigationStage);
     }
-    const refreshStatements = () => renderStatementList(statementsList, Array.isArray(docket.statements) ? docket.statements : []);
-    refreshStatements();
+    let interview = null;
+    let comparisonReport = null;
+    if (docket.interview_id) {
+      try {
+        interview = await fetchJson(`/api/v1/constable/interviews/${docket.interview_id}`);
+        try {
+          comparisonReport = await fetchJson(`/api/v1/constable/interviews/${docket.interview_id}/recording-comparison`);
+        } catch (comparisonError) {
+          comparisonReport = {
+            status: 'COMPARISON_UNAVAILABLE',
+            error: comparisonError.message || 'Unable to load recording comparison.',
+          };
+        }
+      } catch (interviewError) {
+        showToast(interviewError.message || 'Unable to load interview recordings.', { type: 'error' });
+      }
+    }
+
+    const refreshStatements = async () => {
+      const refreshed = await fetchJson(`/api/v1/detective/dockets/${caseReference}`);
+      let refreshedInterview = null;
+      let refreshedComparison = null;
+      if (refreshed.interview_id) {
+        try {
+          refreshedInterview = await fetchJson(`/api/v1/constable/interviews/${refreshed.interview_id}`);
+          refreshedComparison = await fetchJson(`/api/v1/constable/interviews/${refreshed.interview_id}/recording-comparison`);
+        } catch (error) {
+          refreshedComparison = {
+            status: 'COMPARISON_UNAVAILABLE',
+            error: error.message || 'Unable to load interview data.',
+          };
+        }
+      }
+      await renderDetectiveInterviewDetails(statementsList, refreshed, refreshedInterview, refreshedComparison);
+    };
+    await renderDetectiveInterviewDetails(statementsList, docket, interview, comparisonReport);
     bindStatementModal(caseReference, {
-      onSaved: async () => {
-        const refreshed = await fetchJson(`/api/v1/detective/dockets/${caseReference}`);
-        renderStatementList(statementsList, Array.isArray(refreshed.statements) ? refreshed.statements : []);
-      },
+      onSaved: refreshStatements,
     });
     renderTimelineList(timeline, docket.timeline, { titleKey: 'event_type', fallbackTitle: 'Case Event' });
     const evidenceItems = Array.isArray(docket.citizen_evidence) && docket.citizen_evidence.length
@@ -2157,16 +2403,16 @@ export async function hydrateDetectiveCase() {
       document.getElementById('openStatementModal').disabled = true;
     }
     if (document.getElementById('openNoteEntryModal')) {
-      document.getElementById('openNoteEntryModal').hidden = !investigation;
-      document.getElementById('openNoteEntryModal').disabled = !investigation;
+      document.getElementById('openNoteEntryModal').hidden = !shouldRevealInvestigationStage;
+      document.getElementById('openNoteEntryModal').disabled = !shouldRevealInvestigationStage;
     }
     if (document.getElementById('openFindingModal')) {
-      document.getElementById('openFindingModal').hidden = !investigation;
-      document.getElementById('openFindingModal').disabled = !investigation;
+      document.getElementById('openFindingModal').hidden = !shouldRevealInvestigationStage;
+      document.getElementById('openFindingModal').disabled = !shouldRevealInvestigationStage;
     }
     if (document.getElementById('openCompleteInvestigationModal')) {
-      document.getElementById('openCompleteInvestigationModal').hidden = !investigation;
-      document.getElementById('openCompleteInvestigationModal').disabled = !investigation;
+      document.getElementById('openCompleteInvestigationModal').hidden = !shouldRevealInvestigationStage;
+      document.getElementById('openCompleteInvestigationModal').disabled = !shouldRevealInvestigationStage;
     }
     // Findings/notes/completion can still be *viewed* once an investigation
     // is COMPLETED, but not mutated further -- gate the write controls on a
@@ -2176,9 +2422,8 @@ export async function hydrateDetectiveCase() {
     bindNoteSaving(mutableInvestigationId);
 
     const openCompleteInvestigationModal = document.getElementById('openCompleteInvestigationModal');
-    const stageName = String((procedureState.current_stage || 'CASE_REVIEW')).toUpperCase();
     const canStartInvestigation = !investigation;
-    const canCompleteInvestigation = Boolean(investigation) && investigation.status !== 'COMPLETED' && stageName === 'INVESTIGATION_OPEN';
+    const canCompleteInvestigation = Boolean(investigation) && investigation.status !== 'COMPLETED' && ['INVESTIGATION_OPEN', 'FINDINGS_READY'].includes(stageName);
     const startIsBlocked = Boolean(procedureState && procedureState.allowed === false);
 
     const caseFactsPanel = document.getElementById('caseFactsVerificationPanel');
@@ -2194,7 +2439,9 @@ export async function hydrateDetectiveCase() {
     if (caseFactsPanel) {
       const isCaseFactsStage = String((procedureState.current_stage || 'CASE_REVIEW')).toUpperCase() === 'CASE_FACTS_VERIFICATION';
       caseFactsPanel.classList.toggle('hidden', !investigation && !isCaseFactsStage);
-      caseFactsStatusBadge.textContent = isCaseFactsStage ? 'Pending' : (factsRecord.verified ? 'Verified' : 'Open');
+      if (caseFactsStatusBadge) {
+        caseFactsStatusBadge.textContent = isCaseFactsStage ? 'Pending' : (factsRecord.verified ? 'Verified' : 'Open');
+      }
     }
 
     if (caseFactsComparisonResults) {
@@ -2339,42 +2586,76 @@ export async function hydrateDetectiveCase() {
       openCompleteInvestigationModal.disabled = !canCompleteInvestigation;
     }
 
+    let actionsSnapshot = [];
+    let findingsSnapshot = [];
+    const refreshProcedureState = async () => {
+      if (!caseReference) {
+        return procedureState;
+      }
+      try {
+        const refreshedProcedureState = await fetchJson(`/api/v1/detective/dockets/${caseReference}/procedure-state`);
+        procedureState = refreshedProcedureState;
+        renderProcedureBoard(procedureBoard, refreshedProcedureState, { caseReference });
+        renderDetectiveWorkflow(docket, investigation, refreshedProcedureState);
+        syncFindingsGateState(investigation?.investigation_id || null, actionsSnapshot || [], refreshedProcedureState);
+        syncCompletionGateState(investigation?.investigation_id || null, { findings: findingsSnapshot || [], actions: actionsSnapshot || [] });
+        return refreshedProcedureState;
+      } catch (error) {
+        console.warn('Unable to refresh detective procedure state.', error);
+        return procedureState;
+      }
+    };
+
     const refreshInvestigationActions = async () => {
       if (!investigation) {
         renderInvestigationOrder(document.getElementById('detectiveInvestigationOrder'), []);
         renderInvestigationActions(document.getElementById('detectiveActionList'), []);
+        syncFindingsGateState(null, [], procedureState);
         return;
       }
       try {
         const actions = await fetchJson(`/api/v1/detective/investigations/${investigation.investigation_id}/actions`);
+        actionsSnapshot = actions;
         renderInvestigationOrder(document.getElementById('detectiveInvestigationOrder'), actions, evidenceItems);
         renderInvestigationActions(document.getElementById('detectiveActionList'), actions);
+        syncFindingsGateState(investigation.investigation_id, actions, procedureState);
+        await refreshProcedureState();
         return actions;
       } catch (error) {
         renderInvestigationOrder(document.getElementById('detectiveInvestigationOrder'), [], evidenceItems);
         setEmptyState(document.getElementById('detectiveActionList'), error.message || 'Unable to load investigative actions.');
+        syncFindingsGateState(investigation?.investigation_id || null, [], procedureState);
         return [];
       }
     };
-    const actionsSnapshot = await refreshInvestigationActions();
+    actionsSnapshot = await refreshInvestigationActions() || [];
+    syncFindingsGateState(investigation?.investigation_id, actionsSnapshot || [], procedureState);
     bindActionModal(mutableInvestigationId, evidenceItems, { onSaved: refreshInvestigationActions, actions: actionsSnapshot || [] });
 
     const refreshFindings = async () => {
       if (!investigation) {
         renderFindings(findingsList, []);
+        findingsSnapshot = [];
         return [];
       }
       try {
         const findings = await fetchJson(`/api/v1/detective/investigations/${investigation.investigation_id}/findings`);
+        findingsSnapshot = findings;
         renderFindings(findingsList, findings);
+        if (investigation) {
+          investigation.findings = findings;
+        }
+        syncCompletionGateState(investigation?.investigation_id || null, { findings: findingsSnapshot || [], actions: actionsSnapshot || [] });
+        await refreshProcedureState();
         return findings;
       } catch (error) {
         setEmptyState(findingsList, error.message || 'Unable to load findings.');
+        findingsSnapshot = [];
         return [];
       }
     };
     bindFindingModal(mutableInvestigationId, { onSaved: refreshFindings, actions: actionsSnapshot || [] });
-    const findingsSnapshot = await refreshFindings();
+    findingsSnapshot = await refreshFindings();
 
     bindCompleteInvestigationModal(mutableInvestigationId, {
       onCompleted: () => window.location.reload(),

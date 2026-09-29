@@ -533,6 +533,68 @@ def test_evidence_review_and_collection_can_repeat_as_independent_action_records
     assert {item["action_type"] for item in actions} == {"EVIDENCE_REVIEW", "EVIDENCE_COLLECTION"}
 
 
+def test_detective_evidence_collection_is_added_as_case_evidence(app_client, citizen_token, constable_token, detective_token):
+    case_service = app_client.application.extensions["case_service"]
+    assignment_service = app_client.application.extensions["assignment_service"]
+    service = app_client.application.extensions["investigation_service"]
+
+    case = case_service.create_case(
+        VALID_CITIZEN_ID,
+        {
+            "title": "Evidence collection case",
+            "description": "Detective evidence should be attached to the docket.",
+            "status": "REGISTERED",
+        },
+    )
+    case_reference = case["case_reference"]
+    assignment_service.create_assignment(
+        case_reference,
+        VALID_DETECTIVE_ID,
+        officer_role="detective",
+        assigned_by=VALID_CONSTABLE_ID,
+        assigned_by_role="constable",
+        reason="Detective assignment for evidence collection regression test.",
+        override_authority=True,
+    )
+    investigation = {
+        "id": 1,
+        "investigation_id": "INV-000001",
+        "case_reference": case_reference,
+        "detective_id": VALID_DETECTIVE_ID,
+        "status": "OPEN",
+        "notes": "Manual investigation for evidence persistence regression test.",
+        "created_at": "2026-09-26T10:00:00Z",
+        "updated_at": "2026-09-26T10:00:00Z",
+        "timeline": [],
+    }
+    service.repository.create(investigation)
+
+    service.create_action(
+        investigation["investigation_id"],
+        VALID_DETECTIVE_ID,
+        {
+            "action_type": "EVIDENCE_COLLECTION",
+            "evidence_type": "PHOTO",
+            "description": "Recovered scene still from the rear gate.",
+            "source": "Property manager",
+            "date_time_obtained": "2026-09-26T15:30:00Z",
+            "provider": "Property manager",
+            "collection_method": "PHOTOGRAPH_VIDEO",
+            "result": "OBTAINED",
+            "uploads": [{"filename": "rear-gate.jpg", "storage_reference": "uploads/rear-gate.jpg", "content_type": "image/jpeg"}],
+        },
+    )
+
+    case = service._get_case(case_reference)
+    collected = [item for item in case.get("evidence", []) if item.get("description") == "Recovered scene still from the rear gate."]
+    assert len(collected) == 1
+    assert collected[0]["submitted_by"] == VALID_DETECTIVE_ID
+    assert collected[0]["submitted_by_role"] == "detective"
+    assert collected[0]["case_reference"] == case_reference
+    assert collected[0]["evidence_type"] == "PHOTO"
+    assert collected[0]["provenance"]["actor_role"] == "detective"
+
+
 def test_interview_requires_recording_or_notes_and_invalid_contract_rejected(app_client, citizen_token, constable_token, detective_token):
     case_reference, investigation_id = open_investigation(app_client, citizen_token, constable_token, detective_token)
 

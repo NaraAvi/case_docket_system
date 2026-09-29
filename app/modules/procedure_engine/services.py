@@ -572,6 +572,7 @@ class ProcedureGateEngine(BaseControlGate):
             "review_case": "Review case continuity",
             "verify_case_facts": "Verify case facts",
             "start_investigation": "Start investigation",
+            "record_finding": "Document finding",
             "complete_investigation": "Complete investigation",
             "view_case": "Review case",
         }
@@ -585,11 +586,27 @@ class ProcedureGateEngine(BaseControlGate):
             "review_case": "CASE_REVIEW",
             "verify_case_facts": "CASE_FACTS_VERIFICATION",
             "start_investigation": "INVESTIGATION_OPEN",
+            "record_finding": "FINDINGS_READY",
             "complete_investigation": "INVESTIGATION_COMPLETE",
             "view_case": "CASE_REVIEW",
         }
         normalized = str(action or "view_preserved_evidence").strip().lower()
         return stage_map.get(normalized, "CASE_REVIEW")
+
+    def _required_investigation_actions_complete(self, investigation):
+        if investigation is None:
+            return False
+        investigation_id = str((investigation or {}).get("investigation_id") or "").strip()
+        if not investigation_id:
+            return False
+        service = None
+        if self.app is not None and hasattr(self.app, "extensions"):
+            service = self.app.extensions.get("investigation_service")
+        if service is None or not hasattr(service, "REQUIRED_ACTION_SEQUENCE") or not hasattr(service, "_completed_required_actions"):
+            return False
+        completed = set(service._completed_required_actions(investigation_id))
+        required = list(getattr(service, "REQUIRED_ACTION_SEQUENCE", []))
+        return bool(required) and all(action_type in completed for action_type in required)
 
     def _get_active_investigation(self, case_reference):
         if not str(case_reference or "").strip():
@@ -644,11 +661,23 @@ class ProcedureGateEngine(BaseControlGate):
             return self.get_case_state(case_reference)
 
         case = self._load_case(case_reference)
-        current_stage = "INVESTIGATION_OPEN"
-        next_permitted_action = "Complete investigation"
-        current_action = "complete_investigation"
+        case_facts_verified = bool(case and self._case_facts_verified(case))
+        required_actions_complete = self._required_investigation_actions_complete(active or latest)
+        if case_facts_verified:
+            if required_actions_complete:
+                current_stage = "FINDINGS_READY"
+                next_permitted_action = "Document finding"
+                current_action = "record_finding"
+            else:
+                current_stage = "INVESTIGATION_OPEN"
+                next_permitted_action = "Complete investigation"
+                current_action = "complete_investigation"
+        else:
+            current_stage = "CASE_FACTS_VERIFICATION"
+            next_permitted_action = "Verify case facts"
+            current_action = "verify_case_facts"
         requirements = self._build_rule_requirements(case, current_action, actor_id=actor_id, actor_role=actor_role)
-        if not any(str(item.get("rule_code") or "").upper() == "PROCEDURE.CASE_FACTS_VERIFICATION" for item in requirements):
+        if not case_facts_verified and not any(str(item.get("rule_code") or "").upper() == "PROCEDURE.CASE_FACTS_VERIFICATION" for item in requirements):
             requirements.append({
                 "rule_code": "PROCEDURE.CASE_FACTS_VERIFICATION",
                 "title": "Case facts verification",
@@ -961,10 +990,14 @@ class ProcedureGateEngine(BaseControlGate):
                 continue
             rule_code = rule.get("rule_code")
             persisted = persisted_requirements.get(rule_code)
-            if persisted is not None:
-                state = self._normalize_requirement_state(persisted.get("state") or ("COMPLETED" if persisted.get("satisfied") else "NOT_STARTED"))
-                satisfied = state in {"COMPLETED", "NOT_APPLICABLE"}
-            else:
+            dynamic_rule_codes = {
+                "PROCEDURE.SOURCE_CHAIN",
+                "PROCEDURE.EVIDENCE_PRESERVED",
+                "PROCEDURE.CASE_FACTS_VERIFICATION",
+                "PROCEDURE.ROLE_DETECTIVE",
+                "PROCEDURE.FORGED_COMPLETION_BLOCKED",
+            }
+            if rule_code in dynamic_rule_codes:
                 satisfied = True
                 if rule_code == "PROCEDURE.SOURCE_CHAIN":
                     satisfied = bool(source_summary["has_protected_source"])
@@ -977,6 +1010,12 @@ class ProcedureGateEngine(BaseControlGate):
                 elif rule_code == "PROCEDURE.FORGED_COMPLETION_BLOCKED":
                     satisfied = action != "complete_investigation" or str(actor_role or "").lower() == "detective"
                 state = "COMPLETED" if satisfied else "NOT_STARTED"
+            elif persisted is not None:
+                state = self._normalize_requirement_state(persisted.get("state") or ("COMPLETED" if persisted.get("satisfied") else "NOT_STARTED"))
+                satisfied = state in {"COMPLETED", "NOT_APPLICABLE"}
+            else:
+                satisfied = True
+                state = "COMPLETED"
             required_records = list(rule.get("required_records") or [])
             blocking_reason = None
             if not satisfied:
@@ -1018,8 +1057,10 @@ class ProcedureGateEngine(BaseControlGate):
             next_candidate = "verify_case_facts"
         investigation_open = self._is_investigation_open(case_reference)
         case_facts_verified = bool(case and self._case_facts_verified(case))
-        if investigation_open:
+        if investigation_open and case_facts_verified:
             next_candidate = "complete_investigation"
+        elif not case_facts_verified:
+            next_candidate = "verify_case_facts"
         state_payload = {
             "state_id": f"CPS-{str(case_reference).upper()}-{len(self.state_repository.list_for_case(case_reference)) + 1:04d}",
             "case_reference": str(case_reference),
@@ -1047,9 +1088,12 @@ class ProcedureGateEngine(BaseControlGate):
             "created_at": self._utc_now(),
             "updated_at": self._utc_now(),
         }
-        if investigation_open:
+        if investigation_open and case_facts_verified:
             state_payload["current_action"] = action or "complete_investigation"
             state_payload["next_permitted_action"] = "Complete investigation"
+        elif not case_facts_verified:
+            state_payload["current_action"] = action or "verify_case_facts"
+            state_payload["next_permitted_action"] = "Verify case facts"
         if existing is not None:
             state_payload["state_id"] = existing["state_id"]
             persisted = self.state_repository.update(existing["state_id"], state_payload)
@@ -1309,15 +1353,14 @@ class ProcedureGateEngine(BaseControlGate):
             return {**result.__dict__, "requirements": [], "status": result.status, "allowed": result.allowed, "gate": result.gate}
 
         requirements = self._build_rule_requirements(case, action, actor_id=actor_id, actor_role=actor_role)
-        if action_name == "start_investigation" and (active_investigation is None or str((active_investigation or {}).get("status") or "").upper() not in {"OPEN", "IN_PROGRESS"}):
-            requirements = [
-                item
-                for item in requirements
-                if str(item.get("rule_code") or "").upper() not in {"PROCEDURE.CASE_FACTS_VERIFICATION", "PROCEDURE.SOURCE_CHAIN", "PROCEDURE.EVIDENCE_PRESERVED"}
-            ]
         failed = [item for item in requirements if not item.get("satisfied")]
 
-        if active_investigation is not None and str((active_investigation or {}).get("status") or "").upper() in {"OPEN", "IN_PROGRESS"} and action_name not in {"verify_case_facts", "complete_investigation"}:
+        if (
+            active_investigation is not None
+            and str((active_investigation or {}).get("status") or "").upper() in {"OPEN", "IN_PROGRESS"}
+            and self._case_facts_verified(case)
+            and action_name not in {"verify_case_facts", "complete_investigation"}
+        ):
             failed = [
                 item for item in failed if str(item.get("rule_code") or "").upper() != "PROCEDURE.CASE_FACTS_VERIFICATION"
             ]
@@ -1332,7 +1375,7 @@ class ProcedureGateEngine(BaseControlGate):
                 active_phase_ready = True
             prior_stage_ready = (
                 str((latest_state or {}).get("status") or "").upper() in {"ACTIVE", "COMPLETED"}
-                and str((latest_state or {}).get("current_stage") or "").upper() in {"INVESTIGATION_OPEN", "INVESTIGATION_COMPLETE"}
+                and str((latest_state or {}).get("current_stage") or "").upper() in {"INVESTIGATION_OPEN", "FINDINGS_READY", "INVESTIGATION_COMPLETE"}
                 and str((latest_state or {}).get("current_action") or "").lower() in {"start_investigation", "complete_investigation"}
             )
             if not prior_stage_ready and active_phase_ready:
@@ -1340,7 +1383,7 @@ class ProcedureGateEngine(BaseControlGate):
                 latest_state = procedural_stage or self.get_case_state(case_reference) or {}
                 prior_stage_ready = (
                     str((latest_state or {}).get("status") or "").upper() in {"ACTIVE", "COMPLETED"}
-                    and str((latest_state or {}).get("current_stage") or "").upper() in {"INVESTIGATION_OPEN", "INVESTIGATION_COMPLETE"}
+                    and str((latest_state or {}).get("current_stage") or "").upper() in {"INVESTIGATION_OPEN", "FINDINGS_READY", "INVESTIGATION_COMPLETE"}
                     and str((latest_state or {}).get("current_action") or "").lower() in {"start_investigation", "complete_investigation"}
                 )
             if not prior_stage_ready and not active_phase_ready:
@@ -1359,6 +1402,31 @@ class ProcedureGateEngine(BaseControlGate):
                     "source_reference": "detective procedure state",
                     "rule_classification": "SYSTEM_CONTROL",
                 })
+
+            if active_investigation is not None and str((active_investigation or {}).get("status") or "").upper() in {"OPEN", "IN_PROGRESS"}:
+                investigation_service = None
+                if self.app is not None and hasattr(self.app, "extensions"):
+                    investigation_service = self.app.extensions.get("investigation_service")
+                if investigation_service is not None and hasattr(investigation_service, "REQUIRED_ACTION_SEQUENCE") and hasattr(investigation_service, "_completed_required_actions"):
+                    completed_actions = set(investigation_service._completed_required_actions(str((active_investigation or {}).get("investigation_id") or "")))
+                    required_actions = list(getattr(investigation_service, "REQUIRED_ACTION_SEQUENCE", []))
+                    missing_actions = [action_name for action_name in required_actions if action_name not in completed_actions]
+                    if missing_actions:
+                        failed.append({
+                            "rule_code": "PROCEDURE.INVESTIGATION_ACTIONS_REQUIRED",
+                            "title": "All required investigative actions must be complete",
+                            "version": "v1",
+                            "category": "CONTROL_BOUNDARY",
+                            "description": "Completion is blocked until the six required investigative actions have been recorded for this case.",
+                            "required_action": "complete_investigation",
+                            "required_records": missing_actions,
+                            "satisfied": False,
+                            "requires_review": True,
+                            "blocking_reason": "The investigation cannot be completed until every required investigative action is recorded: " + ", ".join(missing_actions) + ".",
+                            "trigger": "procedure gate",
+                            "source_reference": "investigation action ledger",
+                            "rule_classification": "SYSTEM_CONTROL",
+                        })
 
         source_summary = self._case_protected_source_summary(case)
         if action_name != "start_investigation" and action != "view_preserved_evidence" and not source_summary["has_protected_source"]:
@@ -1467,9 +1535,15 @@ class ProcedureGateEngine(BaseControlGate):
             item.get("blocking_reason") or item.get("description") or item.get("title") or item.get("rule_code")
             for item in blocking_requirements
         )
+        current_stage = "CASE_REVIEW"
+        current_action = action
+        next_permitted_action = self._format_action_label(action)
         next_action = next((item.get("required_action") for item in requirements if not item.get("satisfied") and item.get("required_action")), action)
         if active_investigation is not None and str((active_investigation or {}).get("status") or "").upper() in {"OPEN", "IN_PROGRESS"}:
-            next_action = "verify_case_facts"
+            if self._case_facts_verified(case):
+                next_action = "record_finding" if self._required_investigation_actions_complete(active_investigation or latest_investigation) else "complete_investigation"
+            else:
+                next_action = "verify_case_facts"
         elif not allowed and any(str(item.get("rule_code") or "").upper() == "PROCEDURE.CASE_FACTS_VERIFICATION" for item in requirements):
             next_action = "verify_case_facts"
         procedure_status = "ACTIVE" if allowed else ("REVIEW_REQUIRED" if any(item.get("requires_review") for item in requirements if not item.get("satisfied")) else "BLOCKED")
@@ -1488,14 +1562,30 @@ class ProcedureGateEngine(BaseControlGate):
             next_permitted_action = "Investigation completed"
             procedure_status = "COMPLETED"
         elif active_investigation is not None and str((active_investigation or {}).get("status") or "").upper() in {"OPEN", "IN_PROGRESS"}:
-            current_stage = "INVESTIGATION_OPEN"
-            next_permitted_action = "Complete investigation"
+            if self._case_facts_verified(case):
+                required_actions_complete = self._required_investigation_actions_complete(active_investigation or latest_investigation)
+                if required_actions_complete:
+                    current_stage = "FINDINGS_READY"
+                    next_permitted_action = "Document finding"
+                    current_action = "record_finding"
+                    next_action = "record_finding"
+                else:
+                    current_stage = "INVESTIGATION_OPEN"
+                    next_permitted_action = "Complete investigation"
+                    current_action = "complete_investigation"
+                    next_action = "complete_investigation"
+            else:
+                current_stage = "CASE_FACTS_VERIFICATION"
+                next_permitted_action = "Verify case facts"
+                current_action = "verify_case_facts"
+                next_action = "verify_case_facts"
         elif not allowed and any(str(item.get("rule_code") or "").upper() == "PROCEDURE.CASE_FACTS_VERIFICATION" for item in requirements):
             current_stage = "CASE_FACTS_VERIFICATION"
         else:
             current_stage = "CASE_REVIEW"
 
-        current_action = next_action if next_action is not None else action
+        if current_action is None:
+            current_action = next_action if next_action is not None else action
         if latest_investigation is not None and str((latest_investigation or {}).get("status") or "").upper() == "COMPLETED":
             current_action = "complete_investigation"
         return {

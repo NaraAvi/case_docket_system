@@ -1315,13 +1315,26 @@ def start_constable_interview(case_reference):
 @jwt_required()
 def get_constable_interview(interview_id):
     claims = get_jwt()
-    if claims.get("role") != "constable":
+    role = claims.get("role")
+    if role not in {"constable", "detective"}:
         return jsonify({"error": "Forbidden."}), 403
 
-    constable_id = get_jwt_identity()
-    interview = get_constable_registration_service().get_interview_for_constable(constable_id, interview_id)
+    actor_id = get_jwt_identity()
+    if role == "constable":
+        interview = get_constable_registration_service().get_interview_for_constable(actor_id, interview_id)
+        if interview is None:
+            return jsonify({"error": "Interview not found."}), 404
+        return jsonify(interview)
+
+    interview = get_constable_registration_service().get_interview_by_id(interview_id)
     if interview is None:
         return jsonify({"error": "Interview not found."}), 404
+    case_reference = interview.get("case_reference")
+    try:
+        get_investigation_service().get_docket_for_detective(case_reference, actor_id)
+    except ValueError as exc:
+        status = 404 if "not found" in str(exc).lower() else 400
+        return jsonify({"error": str(exc)}), status
     return jsonify(interview)
 
 
@@ -1374,24 +1387,45 @@ def get_citizen_interview(interview_id):
 @jwt_required()
 def get_constable_interview_transcripts(interview_id):
     claims = get_jwt()
-    if claims.get("role") != "constable":
+    role = claims.get("role")
+    if role not in {"constable", "detective"}:
         return jsonify({"error": "Forbidden."}), 403
 
-    constable_id = get_jwt_identity()
-    interview = get_constable_registration_service().get_interview_for_constable(constable_id, interview_id)
+    actor_id = get_jwt_identity()
+    if role == "constable":
+        interview = get_constable_registration_service().get_interview_for_constable(actor_id, interview_id)
+    else:
+        interview = get_constable_registration_service().get_interview_by_id(interview_id)
+        if interview is None:
+            return jsonify({"error": "Interview not found."}), 404
+        try:
+            get_investigation_service().get_docket_for_detective(interview.get("case_reference"), actor_id)
+        except ValueError as exc:
+            status = 404 if "not found" in str(exc).lower() else 400
+            return jsonify({"error": str(exc)}), status
     if interview is None:
         return jsonify({"error": "Interview not found."}), 404
 
-    service = get_transcription_service()
+    # Read-only: return persisted transcript data/status without invoking provider
     transcripts = {}
     for key in ("citizen_recording", "constable_recording"):
-        transcripts[key] = service.generate_transcript(interview.get(key)) if service is not None else {"status": "FAILED", "error": "Transcript service unavailable."}
+        rec = interview.get(key) or {}
+        transcript = rec.get("transcript") if isinstance(rec.get("transcript"), dict) else {}
+        transcript_text = rec.get("transcript_text") or (transcript.get("text") if isinstance(transcript, dict) else None) or (rec.get("text") if isinstance(rec.get("text"), str) else None)
+        transcript_segments = rec.get("transcript_segments") if isinstance(rec.get("transcript_segments"), list) else (transcript.get("segments") if isinstance(transcript, dict) and isinstance(transcript.get("segments"), list) else [])
+        transcripts[key] = {
+            "status": rec.get("transcript_status") or ("MISSING" if not rec else "PENDING"),
+            "transcript": transcript or None,
+            "transcript_text": transcript_text,
+            "transcript_segments": transcript_segments,
+            "recording": {"recording_id": rec.get("recording_id"), "storage_reference": rec.get("storage_reference")},
+        }
     return jsonify({"interview_id": interview_id, "transcripts": transcripts})
 
 
-@api_v1_bp.get("/constable/interviews/<interview_id>/recording-comparison")
+@api_v1_bp.post("/constable/interviews/<interview_id>/transcripts")
 @jwt_required()
-def get_constable_recording_comparison(interview_id):
+def post_constable_interview_transcripts(interview_id):
     claims = get_jwt()
     if claims.get("role") != "constable":
         return jsonify({"error": "Forbidden."}), 403
@@ -1401,11 +1435,155 @@ def get_constable_recording_comparison(interview_id):
     if interview is None:
         return jsonify({"error": "Interview not found."}), 404
 
+    service = get_transcription_service()
+    if service is None:
+        return jsonify({"error": "Transcript service unavailable."}), 503
+
+    results = {}
+    constable_service = get_constable_registration_service()
+    for key in ("citizen_recording", "constable_recording"):
+        recording = interview.get(key)
+        if not recording:
+            results[key] = {"status": "MISSING", "error": "No recording present."}
+            continue
+        # Avoid re-running completed transcripts
+        existing_status = recording.get("transcript_status")
+        if existing_status == "COMPLETED":
+            results[key] = {"status": "SKIPPED", "reason": "Already completed."}
+            continue
+
+        report = service.generate_transcript(recording)
+        try:
+            constable_service.save_transcript_result(interview_id, key, report)
+        except Exception as exc:
+            return jsonify({"error": "Failed to persist transcript result.", "detail": str(exc), "provider_report": report}), 500
+        results[key] = report
+
+    return jsonify({"interview_id": interview_id, "transcripts": results})
+
+
+@api_v1_bp.get("/citizen/interviews/<interview_id>/transcripts")
+@jwt_required()
+def get_citizen_interview_transcripts(interview_id):
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    citizen_id = get_jwt_identity()
+    interview = get_constable_registration_service().get_interview_for_citizen(citizen_id, interview_id)
+    if interview is None:
+        return jsonify({"error": "Interview not found."}), 404
+
+    transcripts = {}
+    for key in ("citizen_recording", "constable_recording"):
+        rec = interview.get(key) or {}
+        transcript = rec.get("transcript") if isinstance(rec.get("transcript"), dict) else {}
+        transcript_text = rec.get("transcript_text") or (transcript.get("text") if isinstance(transcript, dict) else None) or (rec.get("text") if isinstance(rec.get("text"), str) else None)
+        transcript_segments = rec.get("transcript_segments") if isinstance(rec.get("transcript_segments"), list) else (transcript.get("segments") if isinstance(transcript, dict) and isinstance(transcript.get("segments"), list) else [])
+        transcripts[key] = {
+            "status": rec.get("transcript_status") or ("MISSING" if not rec else "PENDING"),
+            "transcript": transcript or None,
+            "transcript_text": transcript_text,
+            "transcript_segments": transcript_segments,
+        }
+    return jsonify({"interview_id": interview_id, "transcripts": transcripts})
+
+
+@api_v1_bp.post("/citizen/interviews/<interview_id>/transcripts")
+@jwt_required()
+def post_citizen_interview_transcripts(interview_id):
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    citizen_id = get_jwt_identity()
+    interview = get_constable_registration_service().get_interview_for_citizen(citizen_id, interview_id)
+    if interview is None:
+        return jsonify({"error": "Interview not found."}), 404
+
+    service = get_transcription_service()
+    if service is None:
+        return jsonify({"error": "Transcript service unavailable."}), 503
+
+    results = {}
+    constable_service = get_constable_registration_service()
+    for key in ("citizen_recording", "constable_recording"):
+        recording = interview.get(key)
+        if not recording:
+            results[key] = {"status": "MISSING", "error": "No recording present."}
+            continue
+        existing_status = recording.get("transcript_status")
+        if existing_status == "COMPLETED":
+            results[key] = {"status": "SKIPPED", "reason": "Already completed."}
+            continue
+        report = service.generate_transcript(recording)
+        try:
+            constable_service.save_transcript_result(interview_id, key, report)
+        except Exception as exc:
+            return jsonify({"error": "Failed to persist transcript result.", "detail": str(exc), "provider_report": report}), 500
+        results[key] = report
+
+    return jsonify({"interview_id": interview_id, "transcripts": results})
+
+
+@api_v1_bp.get("/citizen/interviews/<interview_id>/recording-comparison")
+@jwt_required()
+def get_citizen_recording_comparison(interview_id):
+    claims = get_jwt()
+    if claims.get("role") != "citizen":
+        return jsonify({"error": "Forbidden."}), 403
+
+    citizen_id = get_jwt_identity()
+    interview = get_constable_registration_service().get_interview_for_citizen(citizen_id, interview_id)
+    if interview is None:
+        return jsonify({"error": "Interview not found."}), 404
+
     engine = get_recording_comparison_engine()
     if engine is None:
         return jsonify({"status": "COMPARISON_UNAVAILABLE", "overall_similarity": 0.0, "findings": [], "error": "Comparison engine unavailable."})
 
-    report = engine.compare(interview.get("citizen_recording"), interview.get("constable_recording"))
+    # Prefer the current in-memory recording index to avoid rehydration races.
+    service = get_constable_registration_service()
+    recordings_index = getattr(service, "_recordings", {})
+    citizen_rec = next((r for r in recordings_index.values() if r.get("interview_id") == interview_id and r.get("recording_type") == "citizen_recording"), None)
+    constable_rec = next((r for r in recordings_index.values() if r.get("interview_id") == interview_id and r.get("recording_type") == "constable_recording"), None)
+    report = engine.compare(citizen_rec, constable_rec)
+    return jsonify(report)
+
+
+@api_v1_bp.get("/constable/interviews/<interview_id>/recording-comparison")
+@jwt_required()
+def get_constable_recording_comparison(interview_id):
+    claims = get_jwt()
+    role = claims.get("role")
+    if role not in {"constable", "detective"}:
+        return jsonify({"error": "Forbidden."}), 403
+
+    actor_id = get_jwt_identity()
+    if role == "constable":
+        interview = get_constable_registration_service().get_interview_for_constable(actor_id, interview_id)
+    else:
+        interview = get_constable_registration_service().get_interview_by_id(interview_id)
+        if interview is None:
+            return jsonify({"error": "Interview not found."}), 404
+        try:
+            get_investigation_service().get_docket_for_detective(interview.get("case_reference"), actor_id)
+        except ValueError as exc:
+            status = 404 if "not found" in str(exc).lower() else 400
+            return jsonify({"error": str(exc)}), status
+    if interview is None:
+        return jsonify({"error": "Interview not found."}), 404
+
+    engine = get_recording_comparison_engine()
+    if engine is None:
+        return jsonify({"status": "COMPARISON_UNAVAILABLE", "overall_similarity": 0.0, "findings": [], "error": "Comparison engine unavailable."})
+
+    # Prefer the current in-memory recording index to avoid rehydration races.
+    service = get_constable_registration_service()
+    recordings_index = getattr(service, "_recordings", {})
+    citizen_rec = next((r for r in recordings_index.values() if r.get("interview_id") == interview_id and r.get("recording_type") == "citizen_recording"), None)
+    constable_rec = next((r for r in recordings_index.values() if r.get("interview_id") == interview_id and r.get("recording_type") == "constable_recording"), None)
+    report = engine.compare(citizen_rec, constable_rec)
     return jsonify(report)
 
 

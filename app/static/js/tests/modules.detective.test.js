@@ -39,6 +39,400 @@ describe('modules/detective.js (integration)', () => {
     expect(html).not.toContain('Add Victim Statement');
   });
 
+  it('shows a proceed-to-findings action once all six required investigative actions are complete', async () => {
+    document.body.innerHTML = `
+      <div id="detectiveProcedureBoard"></div>
+      <div id="detectiveWorkflowRail"></div>
+      <dl id="detectiveCaseMeta"></dl>
+      <span id="detectiveStatusBadge"></span>
+      <div id="detectiveProtectedSubmission"></div>
+      <div id="detectiveDeposition"></div>
+      <div id="detectiveCaseEvidence"></div>
+      <div id="detectiveStatementsList"></div>
+      <ul id="detectiveCaseTimeline"></ul>
+      <div id="detectiveFindingsList"></div>
+      <div id="detectiveInvestigationActions" class="panel-card wide-card"></div>
+      <div id="detectiveInvestigationOrder"></div>
+      <p id="detectiveInvestigationStateText"></p>
+      <div id="detectiveInvestigationTimer"></div>
+      <div id="detectiveNoteEntriesList"></div>
+      <div id="detectiveRelatedCases"></div>
+      <button id="startInvestigation"></button>
+      <button id="openFindingModal" hidden>Record Finding</button>
+      <div id="caseFactsVerificationPanel"></div>
+    `;
+    setLocation('/detective/dockets/CD-8');
+
+    vi.stubGlobal('fetch', vi.fn((url) => {
+      if (url === '/api/v1/detective/dockets/CD-8') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            case_reference: 'CD-8',
+            status: 'REGISTERED',
+            description: 'Incident narrative',
+            location: 'Main St',
+            incident_date: '2026-09-29',
+            statements: [],
+            evidence: [{ evidence_id: 'EVD-1', description: 'Original evidence' }],
+            citizen_evidence: [{ evidence_id: 'EVD-1', description: 'Original evidence' }],
+            timeline: [],
+            investigation: { investigation_id: 'INV-8', detective_id: 'DET-1', status: 'IN_PROGRESS', notes: 'Investigation active.' },
+            is_frozen: false,
+            citizen_submission: {},
+            citizen_assertions: [],
+            citizen_claims: [],
+            incident_candidate: null,
+            relationships: [],
+          }),
+        });
+      }
+      if (url === '/api/v1/detective/dockets/CD-8/procedure-state') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            current_stage: 'FINDINGS_READY',
+            allowed: true,
+            procedure_status: 'ACTIVE',
+            requirements: [],
+            blocking_requirements: [],
+            next_permitted_action: 'Document finding',
+          }),
+        });
+      }
+      if (url === '/api/v1/detective/investigations/INV-8/actions') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([
+            { action_type: 'INTERVIEW' },
+            { action_type: 'EVIDENCE_REVIEW' },
+            { action_type: 'EVIDENCE_COLLECTION' },
+            { action_type: 'RECORD_REQUEST' },
+            { action_type: 'WITNESS_CONTACT' },
+            { action_type: 'SCENE_REVIEW' },
+          ]),
+        });
+      }
+      if (url.endsWith('/findings')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      if (url.endsWith('/flags') || url.endsWith('/related') || url.endsWith('/note-entries')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+    }));
+
+    await hydrateDetectiveCase();
+
+    expect(document.getElementById('detectiveInvestigationOrder').textContent).toContain('Proceed to findings');
+    expect(document.getElementById('openFindingModal').hidden).toBe(false);
+    expect(document.getElementById('openFindingModal').disabled).toBe(false);
+  });
+
+  it('keeps the six-step investigation panel hidden while case facts are still being verified', async () => {
+    document.body.innerHTML = `
+      <div id="detectiveProcedureBoard"></div>
+      <div id="detectiveWorkflowRail"></div>
+      <dl id="detectiveCaseMeta"></dl>
+      <span id="detectiveStatusBadge"></span>
+      <div id="detectiveProtectedSubmission"></div>
+      <div id="detectiveDeposition"></div>
+      <div id="detectiveCaseEvidence"></div>
+      <div id="detectiveStatementsList"></div>
+      <ul id="detectiveCaseTimeline"></ul>
+      <div id="detectiveFindingsList"></div>
+      <div id="detectiveInvestigationActions" class="panel-card wide-card"></div>
+      <p id="detectiveInvestigationStateText"></p>
+      <div id="detectiveInvestigationTimer"></div>
+      <div id="detectiveNoteEntriesList"></div>
+      <div id="detectiveRelatedCases"></div>
+      <button id="startInvestigation"></button>
+      <div id="caseFactsVerificationPanel"></div>
+    `;
+    setLocation('/detective/dockets/CD-7');
+
+    vi.stubGlobal('fetch', vi.fn((url) => {
+      if (url === '/api/v1/detective/dockets/CD-7') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            case_reference: 'CD-7',
+            status: 'REGISTERED',
+            description: 'Incident narrative',
+            location: 'Main St',
+            incident_date: '2026-09-29',
+            interview_id: 'INT-7',
+            statements: [],
+            evidence: [],
+            timeline: [],
+            citizen_evidence: [],
+            investigation: { investigation_id: 'INV-7', detective_id: 'DET-1', status: 'OPEN', notes: 'Opened for review' },
+            is_frozen: false,
+            citizen_submission: {},
+            citizen_assertions: [],
+            citizen_claims: [],
+            incident_candidate: null,
+            relationships: [],
+          }),
+        });
+      }
+      if (url === '/api/v1/detective/dockets/CD-7/procedure-state') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            current_stage: 'CASE_FACTS_VERIFICATION',
+            current_stage_name: 'CASE_FACTS_VERIFICATION',
+            allowed: true,
+            procedure_status: 'ACTIVE',
+            requirements: [],
+            blocking_requirements: [],
+            next_permitted_action: 'Verify case facts',
+          }),
+        });
+      }
+      if (url === '/api/v1/constable/interviews/INT-7') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ interview_id: 'INT-7', case_reference: 'CD-7', status: 'COMPLETED', citizen_recording: null, constable_recording: null }) });
+      }
+      if (url === '/api/v1/constable/interviews/INT-7/recording-comparison') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'COMPARISON_UNAVAILABLE', error: 'No comparison data' }) });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+    }));
+
+    await hydrateDetectiveCase();
+
+    expect(document.getElementById('detectiveInvestigationActions').classList.contains('hidden')).toBe(true);
+  });
+
+  it('renders the submitted interview recordings, transcript text, and similarity in the detective statements panel', async () => {
+    document.body.innerHTML = `
+      <div id="detectiveProcedureBoard"></div>
+      <div id="detectiveWorkflowRail"></div>
+      <dl id="detectiveCaseMeta"></dl>
+      <span id="detectiveStatusBadge"></span>
+      <div id="detectiveProtectedSubmission"></div>
+      <div id="detectiveDeposition"></div>
+      <div id="detectiveCaseEvidence"></div>
+      <div id="detectiveStatementsList"></div>
+      <ul id="detectiveCaseTimeline"></ul>
+      <div id="detectiveFindingsList"></div>
+      <div id="detectiveInvestigationActions"></div>
+      <p id="detectiveInvestigationStateText"></p>
+      <div id="detectiveInvestigationTimer"></div>
+      <div id="detectiveNoteEntriesList"></div>
+      <div id="detectiveRelatedCases"></div>
+      <button id="startInvestigation"></button>
+      <div id="caseFactsVerificationPanel"></div>
+    `;
+    setLocation('/detective/dockets/CD-1');
+
+    const fetchMock = vi.fn((url) => {
+      if (url === '/api/v1/detective/dockets/CD-1') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            case_reference: 'CD-1',
+            status: 'REGISTERED',
+            description: 'Incident narrative',
+            location: 'Main St',
+            incident_date: '2026-09-29',
+            interview_id: 'INT-1',
+            statements: [{ statement_text: 'Witness statement.' }],
+            evidence: [],
+            timeline: [],
+            citizen_evidence: [],
+            investigation: null,
+            is_frozen: false,
+            citizen_submission: {},
+            citizen_assertions: [],
+            citizen_claims: [],
+            incident_candidate: null,
+            relationships: [],
+          }),
+        });
+      }
+      if (url === '/api/v1/detective/dockets/CD-1/procedure-state') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            current_stage: 'CASE_REVIEW',
+            current_stage_name: 'CASE_REVIEW',
+            allowed: true,
+            procedure_status: 'ACTIVE',
+            requirements: [],
+            blocking_requirements: [],
+            next_permitted_action: 'Continue review',
+          }),
+        });
+      }
+      if (url === '/api/v1/constable/interviews/INT-1') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            interview_id: 'INT-1',
+            case_reference: 'CD-1',
+            status: 'COMPLETED',
+            citizen_recording: {
+              recording_id: 'REC-1',
+              storage_reference: 'recordings/citizen.wav',
+              transcript_status: 'COMPLETED',
+              transcript_text: 'The witness saw the suspect near the alley.',
+            },
+            constable_recording: {
+              recording_id: 'REC-2',
+              storage_reference: 'recordings/constable.wav',
+              transcript_status: 'COMPLETED',
+              transcript_text: 'The witness saw the suspect near the alley.',
+            },
+          }),
+        });
+      }
+      if (url === '/api/v1/constable/interviews/INT-1/recording-comparison') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            status: 'COMPLETED',
+            overall_similarity: 98,
+            findings: [{ category: 'ALIGNMENT', summary: 'The witness statements align closely.' }],
+          }),
+        });
+      }
+      if (url === '/api/v1/media/recordings/citizen.wav' || url === '/api/v1/media/recordings/constable.wav') {
+        return Promise.resolve({
+          ok: true,
+          blob: () => Promise.resolve(new Blob(['audio'], { type: 'audio/wav' })),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await hydrateDetectiveCase();
+
+    const statementsList = document.getElementById('detectiveStatementsList');
+    expect(statementsList.textContent).toContain('Citizen recording');
+    expect(statementsList.textContent).toContain('Constable recording');
+    expect(statementsList.textContent).toContain('The witness saw the suspect near the alley.');
+    expect(statementsList.textContent).toContain('Overall similarity: 98%');
+  });
+
+  it('surfaces transcript-blocking errors in the detective recordings panel instead of showing a blank transcript', async () => {
+    document.body.innerHTML = `
+      <div id="detectiveProcedureBoard"></div>
+      <div id="detectiveWorkflowRail"></div>
+      <dl id="detectiveCaseMeta"></dl>
+      <span id="detectiveStatusBadge"></span>
+      <div id="detectiveProtectedSubmission"></div>
+      <div id="detectiveDeposition"></div>
+      <div id="detectiveCaseEvidence"></div>
+      <div id="detectiveStatementsList"></div>
+      <ul id="detectiveCaseTimeline"></ul>
+      <div id="detectiveFindingsList"></div>
+      <div id="detectiveInvestigationActions"></div>
+      <p id="detectiveInvestigationStateText"></p>
+      <div id="detectiveInvestigationTimer"></div>
+      <div id="detectiveNoteEntriesList"></div>
+      <div id="detectiveRelatedCases"></div>
+      <button id="startInvestigation"></button>
+      <div id="caseFactsVerificationPanel"></div>
+    `;
+    setLocation('/detective/dockets/CD-2');
+
+    const fetchMock = vi.fn((url) => {
+      if (url === '/api/v1/detective/dockets/CD-2') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            case_reference: 'CD-2',
+            status: 'REGISTERED',
+            description: 'Incident narrative',
+            location: 'Main St',
+            incident_date: '2026-09-29',
+            interview_id: 'INT-2',
+            statements: [],
+            evidence: [],
+            timeline: [],
+            citizen_evidence: [],
+            investigation: null,
+            is_frozen: false,
+            citizen_submission: {},
+            citizen_assertions: [],
+            citizen_claims: [],
+            incident_candidate: null,
+            relationships: [],
+          }),
+        });
+      }
+      if (url === '/api/v1/detective/dockets/CD-2/procedure-state') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            current_stage: 'CASE_REVIEW',
+            current_stage_name: 'CASE_REVIEW',
+            allowed: true,
+            procedure_status: 'ACTIVE',
+            requirements: [],
+            blocking_requirements: [],
+            next_permitted_action: 'Continue review',
+          }),
+        });
+      }
+      if (url === '/api/v1/constable/interviews/INT-2') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            interview_id: 'INT-2',
+            case_reference: 'CD-2',
+            status: 'COMPLETED',
+            citizen_recording: {
+              recording_id: 'REC-3',
+              storage_reference: 'recordings/citizen.wav',
+              transcript_status: 'BLOCKED',
+              transcript: {
+                error: 'WhisperX transcription is blocked because the required model and ffmpeg runtime are not installed in this environment.',
+                provider: 'WhisperX',
+              },
+            },
+            constable_recording: {
+              recording_id: 'REC-4',
+              storage_reference: 'recordings/constable.wav',
+              transcript_status: 'BLOCKED',
+              transcript: {
+                error: 'WhisperX transcription is blocked because the required model and ffmpeg runtime are not installed in this environment.',
+                provider: 'WhisperX',
+              },
+            },
+          }),
+        });
+      }
+      if (url === '/api/v1/constable/interviews/INT-2/recording-comparison') {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            status: 'WAITING_FOR_BOTH_TRANSCRIPTS',
+            error: 'Waiting for both transcripts before comparison can run.',
+            overall_similarity: 0,
+            findings: [],
+          }),
+        });
+      }
+      if (url === '/api/v1/media/recordings/citizen.wav' || url === '/api/v1/media/recordings/constable.wav') {
+        return Promise.resolve({
+          ok: true,
+          blob: () => Promise.resolve(new Blob(['audio'], { type: 'audio/wav' })),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await hydrateDetectiveCase();
+
+    const statementsList = document.getElementById('detectiveStatementsList');
+    expect(statementsList.textContent).toContain('Transcript status: BLOCKED');
+    expect(statementsList.textContent).toContain('WhisperX transcription is blocked because the required model and ffmpeg runtime are not installed in this environment.');
+  });
+
   it('exposes the six required investigative actions in the required display order with no generic dropdown', () => {
     const templatePath = path.join(process.cwd(), 'app', 'templates', 'detective_case_workspace.html');
     const html = fs.readFileSync(templatePath, 'utf8');
@@ -675,6 +1069,97 @@ describe('modules/detective.js (integration)', () => {
     });
   });
 
+  it('blocks record requests until the date range and relevance are provided', async () => {
+    document.body.innerHTML = `
+      <div id="detectiveProcedureBoard"></div>
+      <div id="detectiveWorkflowRail"></div>
+      <dl id="detectiveCaseMeta"></dl>
+      <span id="detectiveStatusBadge"></span>
+      <div id="detectiveDeposition"></div>
+      <div id="detectiveCaseEvidence"></div>
+      <div id="detectiveStatementsList"></div>
+      <ul id="detectiveCaseTimeline"></ul>
+      <div id="detectiveFindingsList"></div>
+      <div id="detectiveFlagsList"></div>
+      <div id="detectiveRelatedCases"></div>
+      <div id="detectiveNoteEntriesList"></div>
+      <p id="detectiveInvestigationStateText"></p>
+      <div id="detectiveInvestigationActions"></div>
+      <div id="detectiveInvestigationOrder"></div>
+      <button id="startInvestigation"></button>
+      <div id="actionModal" class="reauth-modal hidden">
+        <div id="actionModalContext"></div>
+        <div id="actionModalFields"></div>
+        <p id="actionModalError" class="inline-error hidden"></p>
+        <button id="closeActionModal"></button>
+        <button id="submitActionModal"></button>
+      </div>
+    `;
+    setLocation('/detective/dockets/CD-1');
+
+    const fetchMock = vi.fn((url, options) => {
+      if (url.endsWith('/procedure-state')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            current_stage: 'INVESTIGATION_OPEN',
+            next_permitted_action: 'Continue investigation',
+            allowed: true,
+            procedure_status: 'ACTIVE',
+            requirements: [{ rule_code: 'PROCEDURE.INVESTIGATION_ACTIVE', satisfied: true, title: 'Investigation active', description: 'Investigation remains active.', required_action: 'continue_investigation' }],
+            blocking_requirements: [],
+          }),
+        });
+      }
+      if (url.endsWith('/actions') && options && options.method === 'POST') {
+        throw new Error('unexpected POST to create a record request without the required fields');
+      }
+      if (url.endsWith('/findings') || url.endsWith('/flags') || url.endsWith('/related') || url.endsWith('/note-entries')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      if (url.endsWith('/actions')) {
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve([]),
+        });
+      }
+
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({
+          case_reference: 'CD-1',
+          status: 'REGISTERED',
+          location: 'Main St',
+          timeline: [],
+          evidence: [],
+          statements: [],
+          investigation: { investigation_id: 'INV-1', detective_id: 'DET-1', status: 'IN_PROGRESS', notes: 'Active.' },
+        }),
+      });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await hydrateDetectiveCase();
+    const recordRequestButton = document.querySelector('[data-required-action-type="RECORD_REQUEST"]');
+    expect(recordRequestButton).not.toBeNull();
+    recordRequestButton.click();
+
+    document.querySelector('[data-action-field="record_type"]').value = 'CCTV';
+    document.querySelector('[data-action-field="record_holder"]').value = 'Local authority';
+    document.querySelector('[data-action-field="specific_record_requested"]').value = 'CCTV footage for the alley entry';
+    document.querySelector('[data-action-field="date_requested"]').value = '2026-09-27';
+    document.querySelector('[data-action-field="request_reference"]').value = 'REQ-1001';
+    document.querySelector('[data-action-field="request_method"]').value = 'EMAIL';
+    document.querySelector('[data-action-field="response"]').value = 'PENDING';
+
+    document.getElementById('submitActionModal').click();
+
+    await vi.waitFor(() => {
+      expect(document.getElementById('actionModalError').textContent).toContain('date range');
+    });
+    expect(fetchMock.mock.calls.some(([url, options]) => url.endsWith('/actions') && options && options.method === 'POST')).toBe(false);
+  });
+
   it('hydrateDetectiveDashboard filters to REGISTERED cases only', async () => {
     document.body.innerHTML = '<div id="detectiveInvestigationList"></div>';
     setLocation('/detective');
@@ -766,12 +1251,13 @@ describe('modules/detective.js (integration)', () => {
 
     const rail = document.getElementById('detectiveWorkflowRail');
     expect(rail.textContent).toContain('Case Review');
-    expect(rail.textContent).toContain('Statements & Evidence');
+    expect(rail.textContent).not.toContain('Statements & Evidence');
+    expect(rail.textContent).toContain('Case Facts Verification');
     expect(rail.textContent).toContain('Investigation');
     expect(rail.textContent).toContain('Findings');
     expect(rail.textContent).toContain('Final Reasoning');
     expect(rail.textContent).toContain('Completion');
-    expect(rail.textContent).toContain('Investigation Finding');
+    expect(rail.textContent).toContain('Investigation');
     expect(rail.querySelectorAll('.workflow-step.current').length).toBeGreaterThan(0);
   });
 
@@ -1265,8 +1751,9 @@ describe('modules/detective.js (integration)', () => {
     await hydrateDetectiveCase();
 
     const workflowSteps = Array.from(document.getElementById('detectiveWorkflowRail').querySelectorAll('.workflow-step'));
-    expect(workflowSteps[6].classList.contains('complete')).toBe(true);
-    expect(workflowSteps[6].textContent).toContain('Completion');
+    const completionStep = workflowSteps[workflowSteps.length - 1];
+    expect(completionStep.classList.contains('complete')).toBe(true);
+    expect(completionStep.textContent).toContain('Completion');
     expect(document.getElementById('detectiveInvestigationStateText').textContent).toContain('complete');
     expect(document.getElementById('detectiveNoteEntriesList').textContent).toContain('The evidence remains consistent across the case.');
     expect(document.getElementById('openCompleteInvestigationModal').disabled).toBe(true);

@@ -67,6 +67,9 @@ class InvestigationService:
         self.related_case_repository = related_case_repository or RelatedCaseRepository(app=app)
         self.freeze_service = freeze_service
         self.assignment_service = assignment_service
+        self.evidence_service = None
+        if app is not None and hasattr(app, "extensions"):
+            self.evidence_service = app.extensions.get("evidence_service")
         if self.assignment_service is None and app is not None and hasattr(app, "extensions"):
             self.assignment_service = app.extensions.get("assignment_service")
         # M4.4: wired after construction (see ConflictOfInterestService).
@@ -361,7 +364,15 @@ class InvestigationService:
             return {}
         source = evidence.get("source")
         if not source:
-            source = evidence.get("submitted_by") and "citizen" or evidence.get("recorder_role") or "citizen"
+            role = str(evidence.get("submitted_by_role") or evidence.get("actor_role") or evidence.get("created_by_role") or "").lower()
+            if role == "detective":
+                source = "detective"
+            elif role == "constable":
+                source = "constable"
+            elif evidence.get("submitted_by"):
+                source = "citizen"
+            else:
+                source = evidence.get("recorder_role") or "citizen"
         sanitized = {
             "evidence_id": evidence.get("evidence_id"),
             "evidence_type": evidence.get("evidence_type"),
@@ -425,6 +436,118 @@ class InvestigationService:
             raise ValueError("The active assignment for this docket is not held by a detective.")
         if str(current_assignment.get("officer_id") or "") != str(detective_id):
             raise ValueError("Detective is not the assigned officer for this docket.")
+
+    def _persist_detective_collected_evidence(self, case, detective_id, record_data):
+        if not isinstance(case, dict) or not isinstance(record_data, dict):
+            return []
+
+        collected_items = self._as_list(record_data.get("collected_evidence_items") or record_data.get("evidence_items") or record_data.get("items") or [record_data])
+        evidence_records = []
+
+        if not collected_items:
+            return []
+
+        existing = case.get("evidence") or []
+        existing_ids = {
+            str(item.get("evidence_id"))
+            for item in existing
+            if isinstance(item, dict) and item.get("evidence_id") is not None
+        }
+        next_index = len(existing) + 1
+        case_reference = str(case.get("case_reference") or "CASE-UNSPECIFIED").upper()
+        for item in collected_items:
+            if not isinstance(item, dict):
+                continue
+            evidence_type = self._normalize_evidence_type(item.get("evidence_type") or record_data.get("evidence_type") or "")
+            description = str(item.get("description") or record_data.get("description") or "").strip()
+            if not evidence_type or not description:
+                continue
+
+            source = str(item.get("source") or record_data.get("source") or "").strip() or "detective"
+            provider = str(item.get("provider") or item.get("person_institution_providing_it") or record_data.get("provider") or record_data.get("person_institution_providing_it") or source).strip()
+            obtained_at = str(item.get("date_time_obtained") or item.get("obtained_at") or record_data.get("date_time_obtained") or record_data.get("obtained_at") or "").strip()
+            collection_method = str(item.get("collection_method") or record_data.get("collection_method") or "").strip().upper()
+            result = str(item.get("result") or record_data.get("result") or "").strip().upper()
+            explanation = str(item.get("explanation") or item.get("reason") or record_data.get("explanation") or record_data.get("reason") or "").strip() or None
+            upload_entries = self._as_list(item.get("uploads") or item.get("upload") or item.get("evidence_uploads") or record_data.get("uploads") or record_data.get("upload") or record_data.get("evidence_uploads"))
+            file_payload = upload_entries[0] if upload_entries else {}
+            filename = ""
+            storage_reference = ""
+            content_type = None
+            size_bytes = None
+            if isinstance(file_payload, dict):
+                filename = str(file_payload.get("filename") or file_payload.get("name") or "").strip()
+                storage_reference = str(file_payload.get("storage_reference") or file_payload.get("path") or file_payload.get("url") or "").strip()
+                content_type = file_payload.get("content_type") or file_payload.get("mime_type")
+                size_bytes = file_payload.get("size_bytes") or file_payload.get("bytes") or file_payload.get("content_length")
+            elif file_payload not in (None, ""):
+                filename = str(file_payload).strip()
+                storage_reference = filename
+
+            while True:
+                evidence_id = f"EVD-{case_reference}-{next_index:04d}"
+                if evidence_id not in existing_ids:
+                    break
+                next_index += 1
+
+            evidence = {
+                "evidence_id": evidence_id,
+                "case_reference": case.get("case_reference"),
+                "submitted_by": detective_id,
+                "submitted_by_role": "detective",
+                "evidence_type": evidence_type,
+                "description": description,
+                "filename": filename or None,
+                "storage_reference": storage_reference or None,
+                "content_type": content_type,
+                "size_bytes": size_bytes,
+                "source": source,
+                "provider": provider or None,
+                "date_time_obtained": obtained_at or None,
+                "collection_method": collection_method or None,
+                "result": result or None,
+                "explanation": explanation,
+                "status": "SUBMITTED",
+                "provenance": {
+                    "actor_id": str(detective_id),
+                    "actor_role": "detective",
+                    "source": "detective_evidence_collection",
+                    "created_at": self._utc_now(),
+                    "server_controlled": True,
+                },
+                "created_at": self._utc_now(),
+            }
+            existing_ids.add(evidence_id)
+            next_index += 1
+            evidence_records.append(evidence)
+
+        if not evidence_records:
+            return []
+
+        existing_evidence = case.setdefault("evidence", [])
+        existing_evidence.extend(evidence_records)
+        if self.evidence_service is not None:
+            for evidence in evidence_records:
+                self.evidence_service.add_evidence(dict(evidence))
+        case.setdefault("timeline", []).append(
+            CaseService._timeline_event(
+                "evidence_added",
+                detective_id,
+                "detective",
+                {"evidence_ids": [item["evidence_id"] for item in evidence_records], "source": "detective_evidence_collection"},
+            )
+        )
+        self.case_service.update_case(case)
+        self.audit_service.log(
+            {
+                "actor_id": detective_id,
+                "actor_role": "detective",
+                "action": "detective_evidence_collected",
+                "case_reference": case.get("case_reference"),
+                "details": {"evidence_ids": [item["evidence_id"] for item in evidence_records], "count": len(evidence_records)},
+            }
+        )
+        return evidence_records
 
     def _investigation_gate(self):
         return InvestigationGate(
@@ -1129,6 +1252,14 @@ class InvestigationService:
                 "details": {"investigation_id": investigation_id, "finding_type": finding_type, "evidence_ids": structured_evidence_ids, "claim_ids": claim_ids},
             }
         )
+        procedure_service = self._get_procedure_service()
+        if procedure_service is not None and hasattr(procedure_service, "reconcile_investigation_state"):
+            procedure_service.reconcile_investigation_state(
+                investigation.get("case_reference"),
+                actor_id=detective_id,
+                actor_role="detective",
+                investigation=investigation,
+            )
         return dict(created)
 
     def _finding_gate(self):
@@ -1766,6 +1897,9 @@ class InvestigationService:
             "updated_at": now,
         }
         created = self.action_repository.create(action)
+        if action_type == "EVIDENCE_COLLECTION":
+            self._persist_detective_collected_evidence(case, detective_id, record_data)
+
         serialized = dict(created)
         serialized["result_observation"] = serialized.get("result")
         if "record_data" not in serialized:
@@ -1785,6 +1919,14 @@ class InvestigationService:
                 },
             }
         )
+        procedure_service = self._get_procedure_service()
+        if procedure_service is not None and hasattr(procedure_service, "reconcile_investigation_state"):
+            procedure_service.reconcile_investigation_state(
+                investigation.get("case_reference"),
+                actor_id=detective_id,
+                actor_role="detective",
+                investigation=investigation,
+            )
         return serialized
 
     @staticmethod
@@ -1870,7 +2012,9 @@ class InvestigationService:
         if not existing_findings and case_evidence_ids:
             raise ValueError("A real finding is required before the investigation can be completed when docket evidence exists.")
 
-        referenced_finding_ids = self._normalize_string_list(payload.get("finding_ids"))
+        referenced_finding_ids = self._normalize_string_list(payload.get("finding_ids") or payload.get("referenced_finding_ids"))
+        if existing_findings and not referenced_finding_ids:
+            raise ValueError("At least one supporting finding must be referenced before completion.")
         if referenced_finding_ids:
             existing_finding_ids = {str(item.get("finding_id")) for item in existing_findings if isinstance(item, dict) and item.get("finding_id")}
             invalid_finding_ids = [finding_id for finding_id in referenced_finding_ids if finding_id not in existing_finding_ids]
