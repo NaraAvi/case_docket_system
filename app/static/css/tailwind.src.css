@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@source "../../templates";
+
+@theme {
+  --font-sans: "Public Sans", system-ui, sans-serif;
+  --font-heading: "Public Sans", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-background: #ffffff;
+  --color-foreground: #0a1530;
+  --color-card: #ffffff;
+  --color-card-foreground: #0a1530;
+  --color-popover: #ffffff;
+  --color-popover-foreground: #0a1530;
+  --color-primary: #1082ff;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #f1f4f8;
+  --color-secondary-foreground: #0a1530;
+  --color-muted: #f6f8fa;
+  --color-muted-foreground: #5a6478;
+  --color-accent: #f1f4f8;
+  --color-accent-foreground: #0a1530;
+  --color-destructive: #c4332b;
+  --color-destructive-foreground: #ffffff;
+  --color-border: #e3e7ee;
+  --color-input: #d7dde7;
+  --color-ring: #1082ff;
+  --color-brand: #0e8a5f;
+  --color-brand-foreground: #ffffff;
+  --color-chart-1: #1082ff;
+  --color-chart-2: #0e8a5f;
+  --color-chart-3: #b08010;
+  --color-chart-4: #0a1530;
+  --color-chart-5: #6b8bb8;
+
+  /* SAPS Navy — toned down from the harsh official blue for a modern, sleek feel. */
+  --color-saps-50: #f2f6fa;
+  --color-saps-100: #e3ebf3;
+  --color-saps-200: #c6d6e6;
+  --color-saps-300: #9db6d1;
+  --color-saps-400: #6d8fb4;
+  --color-saps-500: #4a6f98;
+  --color-saps-600: #395a80;
+  --color-saps-700: #2e4869;
+  --color-saps-800: #253a55;
+  --color-saps-900: #1a2a3f;
+  --color-saps-950: #101c2c;
+
+  --color-sidebar: #ffffff;
+  --color-sidebar-foreground: #0a1530;
+  --color-sidebar-primary: #1082ff;
+  --color-sidebar-primary-foreground: #ffffff;
+  --color-sidebar-accent: #f1f4f8;
+  --color-sidebar-accent-foreground: #0a1530;
+  --color-sidebar-border: #e3e7ee;
+  --color-sidebar-ring: #1082ff;
+
+  --radius-sm: 0.375rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.375rem;
+  --radius-xl: 0.375rem;
+  --radius-2xl: 0.375rem;
+  --radius-3xl: 0.375rem;
+  --radius-4xl: 0.375rem;
+}

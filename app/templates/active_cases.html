@@ -2,19 +2,30 @@
 {% from 'components/_docket_card.html' import docket_list_skeleton %}
 
 {% block content %}
-  <section class="page-hero">
-    <div>
-      <p class="eyebrow">Operational Overview</p>
-      <h1>Cases</h1>
-    </div>
-  </section>
+  <div class="flex flex-col gap-6">
+    <section class="flex flex-wrap items-end justify-between gap-4">
+      <div class="flex max-w-2xl flex-col gap-1.5">
+        <span class="font-mono text-[11px] font-medium tracking-widest text-muted-foreground uppercase">{% if role == 'constable' %}Constable Workspace{% elif role == 'detective' %}Detective Workspace{% elif role == 'station_commander' %}Station Commander Workspace{% elif role == 'ipid' %}IPID Workspace{% else %}Operational Workspace{% endif %}</span>
+        <h1 class="text-2xl! font-semibold! leading-tight tracking-tight text-balance text-foreground md:text-3xl!">
+          Manage Case Dockets
+        </h1>
+        <p class="max-w-[62ch] text-sm leading-relaxed text-gray-500">
+          Active and completed dockets across the station, with the same status and audit trail used throughout the governance workflow.
+        </p>
+      </div>
+    </section>
 
-  <section class="panel-block">
-    <div class="panel-head">
-      <h2>Case inventory</h2>
-      <span class="badge badge-muted">Live docket inventory</span>
-    </div>
+    <section class="overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm">
+      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+        <h2 class="font-heading text-base font-medium text-foreground">Case inventory</h2>
+        <span class="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground">
+          <span class="size-1.5 rounded-full bg-brand"></span>Live docket inventory
+        </span>
+      </div>
 
-    {{ docket_list_skeleton('activeCaseList', 'case-grid', 'Loading case inventory…') }}
-  </section>
+      <div class="p-5 [&_.stack-list]:mt-0! [&_.stack-list]:flex [&_.stack-list]:flex-col [&_.stack-list]:gap-3 [&_.panel-head]:mb-0 [&_.panel-head_h3]:font-heading [&_.panel-head_h3]:text-base [&_.panel-head_h3]:font-medium [&_.panel-head_h3]:text-foreground [&_.empty-state]:rounded-xl [&_.empty-state]:border [&_.empty-state]:border-dashed [&_.empty-state]:border-border [&_.empty-state]:bg-muted/30 [&_.empty-state]:py-8 [&_.empty-state]:text-center [&_.empty-state]:text-sm [&_.empty-state]:text-gray-500 [&_.docket-card]:rounded-xl [&_.docket-card]:border [&_.docket-card]:border-border [&_.docket-card]:bg-card [&_.docket-card]:p-4 [&_.docket-card]:shadow-sm [&_.docket-card_.secondary-btn]:rounded-lg [&_.docket-card_.secondary-btn]:border-0 [&_.docket-card_.secondary-btn]:bg-saps-900 [&_.docket-card_.secondary-btn]:text-white [&_.docket-card_.secondary-btn:hover]:bg-saps-800">
+        {{ docket_list_skeleton('activeCaseList', 'grid grid-cols-1 gap-6 lg:grid-cols-2', 'Loading case inventory…') }}
+      </div>
+    </section>
+  </div>
 {% endblock %}

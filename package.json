@@ -5,11 +5,17 @@
   "type": "module",
   "description": "Frontend unit/integration/system tests for the PDAS Milestone 2 ES6 module split.",
   "scripts": {
+    "dev": "concurrently \"flask run\" \"npm run watch:css\"",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:css": "tailwindcss -i app/static/css/tailwind.src.css -o app/static/css/tailwind.css --minify",
+    "watch:css": "tailwindcss -i app/static/css/tailwind.src.css -o app/static/css/tailwind.css --watch"
   },
   "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "concurrently": "^10.0.5",
     "jsdom": "^29.1.1",
+    "tailwindcss": "^4.3.3",
     "vitest": "^5.0.0"
   }
 }

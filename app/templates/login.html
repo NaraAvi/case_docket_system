@@ -1,41 +1,73 @@
 {% extends 'base.html' %}
 
 {% block content %}
-  <div class="login-screen">
-    <div class="login-panel">
-      <div class="login-head">
-        <span class="brand-mini">PDAS</span>
-        <span>Secure Access</span>
-      </div>
-      <h1>Sign in to PDAS</h1>
-      <p>Use the synthetic test ID issued to the selected role.</p>
+  <div class="flex min-h-screen flex-col items-center justify-center gap-4 bg-muted/40 px-4 py-10 font-sans! text-foreground!">
+    <a
+      href="{{ url_for('ui.index') }}"
+      class="inline-flex items-center gap-1.5 text-sm text-gray-500 transition-colors hover:text-gray-900"
+    >
+      <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" /></svg>
+      Return to SAPS Public Portal
+    </a>
 
-      <form id="loginForm" class="login-form">
-        <label for="testId">Test Identity Number</label>
-        <input id="testId" name="test_id" type="text" inputmode="numeric" placeholder="2200223333111" maxlength="13" />
-        <button class="primary-btn full-width" type="submit">Access Portal</button>
+    <div class="w-full max-w-md rounded-xl border border-border bg-card p-7 text-card-foreground shadow-sm">
+      <div class="flex items-center gap-3">
+        <img
+          src="{{ url_for('static', filename='img/saps-badge.svg') }}"
+          alt="South African Police Service badge"
+          class="h-10 w-10 shrink-0 object-contain"
+        />
+        <div class="flex flex-col leading-tight">
+          <span class="font-heading text-sm font-semibold tracking-tight text-foreground">SAPS Docket System</span>
+          <span class="font-mono text-[10px] tracking-widest text-muted-foreground uppercase">Secure Access</span>
+        </div>
+      </div>
+
+      <h1 class="mt-6 text-2xl! font-semibold! text-gray-900! md:text-3xl!">Sign in to SAPS Docket System</h1>
+      <p class="mt-2 text-sm leading-relaxed text-gray-500">Use the synthetic test ID issued to the selected role.</p>
+
+      <form id="loginForm" class="mt-6 flex flex-col gap-3">
+        <label for="testId" class="font-mono text-[11px] font-medium tracking-widest text-muted-foreground uppercase">Test Identity Number</label>
+        <input
+          id="testId"
+          name="test_id"
+          type="text"
+          inputmode="numeric"
+          placeholder="2200223333111"
+          maxlength="13"
+          class="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm text-foreground transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20"
+        />
+        <button
+          class="mt-1 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-transparent bg-saps-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-saps-800"
+          type="submit"
+        >
+          Access Portal
+        </button>
       </form>
 
-      <div class="seed-list">
-        <strong>Example identities</strong>
-        <div class="seed-row">
-          <span>Citizen</span><code>2200223333111</code>
-        </div>
-        <div class="seed-row">
-          <span>Constable</span><code>2200223333114</code>
-        </div>
-        <div class="seed-row">
-          <span>Detective</span><code>2200223333115</code>
-        </div>
-        <div class="seed-row">
-          <span>Station Commander</span><code>2200223333116</code>
-        </div>
-        <div class="seed-row">
-          <span>IPID</span><code>2200223333117</code>
+      <div class="mt-6 border-t border-border pt-5">
+        <strong class="font-mono text-[11px] font-medium tracking-widest text-muted-foreground uppercase">Example identities</strong>
+        <div class="mt-3 flex flex-col gap-2">
+          <div class="seed-row flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
+            <span class="text-muted-foreground">Citizen</span><code class="font-mono text-xs text-foreground">2200223333111</code>
+          </div>
+          <div class="seed-row flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
+            <span class="text-muted-foreground">Constable</span><code class="font-mono text-xs text-foreground">2200223333114</code>
+          </div>
+          <div class="seed-row flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
+            <span class="text-muted-foreground">Detective</span><code class="font-mono text-xs text-foreground">2200223333115</code>
+          </div>
+          <div class="seed-row flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
+            <span class="text-muted-foreground">Station Commander</span><code class="font-mono text-xs text-foreground">2200223333116</code>
+          </div>
+          <div class="seed-row flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
+            <span class="text-muted-foreground">IPID</span><code class="font-mono text-xs text-foreground">2200223333117</code>
+          </div>
         </div>
       </div>
 
-      <div id="loginError" class="form-error hidden" role="alert"></div>
+      <div id="loginError" class="mt-4 hidden rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert"></div>
     </div>
   </div>
 {% endblock %}
+

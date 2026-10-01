@@ -187,7 +187,7 @@ describe('modules/citizen.js (integration: module + core/api + core/ui + DOM)', 
 
       await hydrateCitizenDashboard();
 
-      expect(document.getElementById('citizenDockets').textContent).toContain('No submissions yet');
+      expect(document.getElementById('citizenDockets').textContent).toContain('No dockets registered yet');
     });
 
     it('shows an error message when the API call fails', async () => {

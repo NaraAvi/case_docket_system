@@ -2,22 +2,46 @@
 {% from 'components/_docket_card.html' import docket_list_skeleton %}
 
 {% block content %}
-  <section class="page-hero">
-    <div>
-      <p class="eyebrow">Constable Queue</p>
-      <h1>Review and register dockets awaiting operational triage.</h1>
-    </div>
-  </section>
-
-  <section class="panel-block">
-    <div class="panel-head">
-      <h2>Unregistered Dockets</h2>
-      <div class="table-tools">
-        <input id="constableSearch" type="search" placeholder="Search docket reference or location" />
-        <button class="secondary-btn" type="button" id="constableSearchBtn">Search</button>
+  <div class="flex flex-col gap-6">
+    <section class="flex flex-wrap items-end justify-between gap-4">
+      <div class="flex max-w-2xl flex-col gap-1.5">
+        <span class="font-mono text-[11px] font-medium tracking-widest text-muted-foreground uppercase">Constable Workspace</span>
+        <h1 class="text-2xl! font-semibold! leading-tight tracking-tight text-balance text-foreground md:text-3xl!">
+          Manage Depositions and Register Dockets.
+        </h1>
+        <p class="max-w-[62ch] text-sm leading-relaxed text-gray-500">
+          Review protected victim depositions and formally register dockets to initiate the 72-hour SLA tracking.
+        </p>
       </div>
-    </div>
+    </section>
 
-    {{ docket_list_skeleton('constableQueueState', 'stack-list', 'Loading triage queue…') }}
-  </section>
+    <section class="overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm">
+      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-5 py-4">
+        <h2 class="font-heading text-base font-medium text-foreground">Unregistered Dockets</h2>
+        <span class="inline-flex items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-xs font-medium text-secondary-foreground">
+          <span class="size-1.5 rounded-full bg-brand"></span>Triage queue
+        </span>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2 px-5 py-4">
+        <input
+          id="constableSearch"
+          type="search"
+          placeholder="Search docket reference or location"
+          class="w-full min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/20 sm:max-w-md"
+        />
+        <button
+          class="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-transparent bg-saps-900 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-saps-800"
+          type="button"
+          id="constableSearchBtn"
+        >
+          Search
+        </button>
+      </div>
+
+      <div class="px-5 pb-5 [&_.empty-state]:rounded-xl [&_.empty-state]:border [&_.empty-state]:border-dashed [&_.empty-state]:border-border [&_.empty-state]:bg-muted/30 [&_.empty-state]:py-8 [&_.empty-state]:text-center [&_.empty-state]:text-sm [&_.empty-state]:text-gray-500 [&_.docket-card]:rounded-xl [&_.docket-card]:border [&_.docket-card]:border-border [&_.docket-card]:bg-card [&_.docket-card]:p-4 [&_.docket-card]:shadow-sm [&_.docket-card_.secondary-btn]:rounded-lg [&_.docket-card_.secondary-btn]:border-0 [&_.docket-card_.secondary-btn]:bg-saps-900 [&_.docket-card_.secondary-btn]:text-white [&_.docket-card_.secondary-btn:hover]:bg-saps-800">
+        {{ docket_list_skeleton('constableQueueState', 'stack-list', 'Loading triage queue…') }}
+      </div>
+    </section>
+  </div>
 {% endblock %}

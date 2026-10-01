@@ -24,7 +24,7 @@ export async function hydrateCitizenDashboard() {
       .map((entry) => [String(entry.source_submission_id || entry.source_submission), entry]));
 
     if (!submissions.length) {
-      setEmptyState(container, 'No submissions yet. Create your first protected report to begin the workflow.');
+      setEmptyState(container, 'No dockets registered yet. Submit your first deposition to begin the workflow and generate a tracking number.');
       return;
     }
 

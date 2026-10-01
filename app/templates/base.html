@@ -5,81 +5,170 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{{ page_title or 'PDAS' }}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/pdas.css') }}" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/tailwind.css') }}" />
   </head>
-  <body data-role="{{ role or '' }}" data-page="{{ page_title or '' }}">
+  <body class="bg-background font-sans! text-foreground! antialiased" data-role="{{ role or '' }}" data-page="{{ page_title or '' }}">
+    {% macro nav_icon(name) %}
+      {%- if name == 'dashboard' -%}
+        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75" /></svg>
+      {%- elif name == 'plus' -%}
+        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+      {%- elif name == 'cases' -%}
+        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+      {%- elif name == 'evidence' -%}
+        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" /></svg>
+      {%- else -%}
+        <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.57-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" /></svg>
+      {%- endif -%}
+    {% endmacro %}
+
     {% macro nav_link(href, label, icon) %}
-      <a class="nav-item{{ ' active' if request.path == href or (href != '/' and request.path.startswith(href ~ '/')) else '' }}" href="{{ href }}" title="{{ label }}"><span class="nav-icon" aria-hidden="true">{{ icon }}</span><span class="nav-label">{{ label }}</span></a>
+      {% set is_active = request.path == href or (href != '/' and request.path.startswith(href ~ '/')) %}
+      <a
+        href="{{ href }}"
+        title="{{ label }}"
+        class="group flex items-center gap-3 rounded-md px-2.5 py-2 text-sm font-medium transition-colors [.nav-collapsed_&]:justify-center [.nav-collapsed_&]:px-2 {{ 'bg-sidebar-accent text-sidebar-accent-foreground' if is_active else 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground' }}"
+      >
+        <span class="grid size-5 shrink-0 place-items-center" aria-hidden="true">{{ nav_icon(icon) }}</span>
+        <span class="nav-label truncate [.nav-collapsed_&]:hidden">{{ label }}</span>
+      </a>
     {% endmacro %}
 
     {% if role %}
-      <div class="pdas-shell">
-        <aside class="pdas-sidebar">
-          <div class="brand-block">
-            <div class="brand-mark">PDAS</div>
-            <div class="brand-copy">
-              <strong>PDAS Admin</strong>
-              <span>Accountability Portal</span>
+      <div class="pdas-shell flex w-full min-h-screen min-w-0 flex-col overflow-x-hidden bg-muted/40">
+        <div class="flex w-full min-w-0 flex-1 flex-col lg:flex-row">
+          <aside class="flex w-full min-w-0 shrink-0 flex-col border-b border-sidebar-border bg-sidebar px-3 py-3 lg:sticky lg:top-0 lg:h-screen lg:w-72 lg:border-r lg:border-b-0 lg:py-4 lg:transition-[width] lg:duration-200 [.nav-collapsed_&]:lg:w-[76px]">
+          <div class="flex w-full items-center gap-2.5 px-1.5 lg:mb-6">
+            <img
+              src="{{ url_for('static', filename='img/saps-badge.svg') }}"
+              alt="South African Police Service badge"
+              class="h-9 w-9 shrink-0 object-contain"
+            />
+            <div class="flex min-w-0 flex-col">
+              <strong class="font-heading text-sm font-semibold text-foreground">SAPS Docket System</strong>
+              <span class="truncate font-mono text-[10px] tracking-wide text-muted-foreground uppercase">Secure system</span>
             </div>
-            <button type="button" class="nav-toggle" id="navToggle" aria-label="Collapse navigation" aria-expanded="true" title="Collapse navigation">&#9776;</button>
+            <button type="button" class="ml-auto grid size-8 shrink-0 place-items-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground lg:hidden" id="navToggle" aria-label="Toggle navigation" aria-expanded="false" title="Toggle navigation">
+              <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg>
+            </button>
           </div>
 
-          <nav class="nav-list">
-            {% if role == 'citizen' %}
-              {{ nav_link('/citizen', 'Dashboard', 'D') }}
-              {{ nav_link('/citizen/dockets/new', 'Submit New Submission', '+') }}
-            {% elif role == 'constable' %}
-              {{ nav_link('/constable', 'Dashboard', 'D') }}
-              {{ nav_link('/active-cases', 'Cases', 'C') }}
-              {{ nav_link('/evidence-vault', 'Evidence Vault', 'E') }}
-            {% elif role == 'detective' %}
-              {{ nav_link('/detective', 'Dashboard', 'D') }}
-              {{ nav_link('/active-cases', 'Cases', 'C') }}
-              {{ nav_link('/evidence-vault', 'Evidence Vault', 'E') }}
-            {% elif role == 'station_commander' %}
-              {{ nav_link('/station-commander', 'Dashboard', 'D') }}
-              {{ nav_link('/active-cases', 'Cases', 'C') }}
-              {{ nav_link('/evidence-vault', 'Evidence Vault', 'E') }}
-            {% elif role == 'ipid' %}
-              {{ nav_link('/ipid', 'Dashboard', 'D') }}
-              {{ nav_link('/active-cases', 'Cases', 'C') }}
-              {{ nav_link('/evidence-vault', 'Evidence Vault', 'E') }}
-            {% endif %}
-            {{ nav_link('/accountability', 'Accountability', 'A') }}
+          <nav class="flex w-full min-w-0 flex-1 flex-col gap-5 overflow-y-auto pt-2 lg:flex-none lg:pt-0 [.nav-collapsed_&]:hidden lg:[.nav-collapsed_&]:flex" aria-label="Primary">
+            <div class="flex flex-col gap-1">
+              <span class="px-2.5 pb-1 font-mono text-[10px] font-medium tracking-widest text-muted-foreground uppercase [.nav-collapsed_&]:hidden">Workspace</span>
+              {% if role == 'citizen' %}
+                {{ nav_link('/citizen', 'Dashboard', 'dashboard') }}
+                {{ nav_link('/citizen/dockets/new', 'Submit Deposition', 'plus') }}
+              {% elif role == 'constable' %}
+                {{ nav_link('/constable', 'Dashboard', 'dashboard') }}
+                {{ nav_link('/active-cases', 'Cases', 'cases') }}
+                {{ nav_link('/evidence-vault', 'Evidence Vault', 'evidence') }}
+              {% elif role == 'detective' %}
+                {{ nav_link('/detective', 'Dashboard', 'dashboard') }}
+                {{ nav_link('/active-cases', 'Cases', 'cases') }}
+                {{ nav_link('/evidence-vault', 'Evidence Vault', 'evidence') }}
+              {% elif role == 'station_commander' %}
+                {{ nav_link('/station-commander', 'Dashboard', 'dashboard') }}
+                {{ nav_link('/active-cases', 'Cases', 'cases') }}
+                {{ nav_link('/evidence-vault', 'Evidence Vault', 'evidence') }}
+              {% elif role == 'ipid' %}
+                {{ nav_link('/ipid', 'Dashboard', 'dashboard') }}
+                {{ nav_link('/active-cases', 'Cases', 'cases') }}
+                {{ nav_link('/evidence-vault', 'Evidence Vault', 'evidence') }}
+              {% endif %}
+            </div>
+
+            <div class="flex flex-col gap-1">
+              <span class="px-2.5 pb-1 font-mono text-[10px] font-medium tracking-widest text-muted-foreground uppercase [.nav-collapsed_&]:hidden">Oversight</span>
+              {{ nav_link('/accountability', 'Accountability', 'accountability') }}
+            </div>
           </nav>
 
-          <div class="nav-footer">
-            <button class="nav-logout" id="logoutButton" type="button">Logout</button>
+          <div class="mt-4 border-t border-sidebar-border pt-3 [.nav-collapsed_&]:hidden lg:[.nav-collapsed_&]:block">
+            <button class="flex w-full items-center justify-center gap-2 rounded-md border border-border bg-background px-2.5 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted [.nav-collapsed_&]:lg:px-2" id="logoutButton" type="button">
+              <svg class="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M18.75 15l3-3m0 0l-3-3m3 3h-9" /></svg>
+              <span class="[.nav-collapsed_&]:hidden">Logout</span>
+            </button>
           </div>
         </aside>
 
-        <div class="pdas-main">
-          <header class="pdas-topbar">
-            <div class="topbar-left">
-              <div class="page-crumb">PDAS</div>
-              <div class="title-line">{{ page_title }}</div>
+        <div class="flex w-full min-w-0 flex-1 flex-col">
+          <header class="sticky top-0 z-20 flex items-center justify-between gap-4 border-b border-border bg-background/90 px-6 py-3 backdrop-blur">
+            <div class="flex flex-col gap-0.5">
+              <span class="font-heading text-lg font-medium tracking-tight text-foreground">{{ page_title }}</span>
             </div>
-            <div class="topbar-right">
-              <div class="status-pill">Secure System</div>
-              <div class="user-badge" id="userBadge">Authenticated User</div>
+            <div class="flex items-center gap-3">
+              <span class="hidden items-center gap-1.5 rounded-full bg-brand/10 px-2.5 py-1 text-xs font-medium text-brand sm:inline-flex">
+                <span class="size-1.5 rounded-full bg-brand"></span>Secure
+              </span>
+              <span class="inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground" id="userBadge">Authenticated User</span>
             </div>
           </header>
 
-          <main class="content-wrap">
+          <main class="mx-auto flex w-full min-w-0 max-w-7xl flex-1 flex-col px-4 py-6 sm:px-6 lg:px-8">
             {% block content %}{% endblock %}
           </main>
+        </div>
+        </div>
 
-          <footer class="pdas-footer">
-            <div class="footer-brand">PDAS SECURE ACCOUNTABILITY SYSTEM</div>
-            <div class="footer-disclaimer">Informational only, not legal advice.</div>
-            <div class="footer-links">
-              <a href="#">Privacy Policy</a>
-              {{ law_note('popia_act') }}
-              <a href="#">Audit Protocols</a>
-              <a href="#">Help Desk</a>
+        <footer class="w-full bg-saps-950 text-white">
+          <div class="mx-auto grid w-full max-w-6xl gap-8 px-4 py-10 sm:px-6 lg:grid-cols-[1.6fr_1fr_1fr] lg:gap-16 lg:px-8">
+              <div class="flex flex-col gap-4">
+                <div class="flex items-center gap-3">
+                  <img
+                    src="{{ url_for('static', filename='img/saps-badge.svg') }}"
+                    alt="South African Police Service badge"
+                    class="h-11 w-11 shrink-0 object-contain"
+                  />
+                  <div class="flex flex-col leading-tight">
+                    <span class="font-heading text-sm font-semibold tracking-tight text-white">SAPS Digital Docket Governance System</span>
+                    <span class="font-mono text-[10px] tracking-widest text-white/60 uppercase">Digital accountability</span>
+                  </div>
+                </div>
+                <p class="max-w-sm text-sm leading-relaxed text-white/70">
+                  Processed under POPIA (Act 4 of 2013). Published records remain the authoritative account; this system is informational and not legal advice.
+                </p>
+                <p class="max-w-sm text-sm leading-relaxed text-white/70">
+                  <span class="font-medium text-white">Emergency:</span> If you are in immediate physical danger, dial 10111.
+                </p>
+                <p class="max-w-sm text-sm leading-relaxed text-white/70">
+                  Head Office: Telkom Towers Building, 152 Johannes Ramokhoase Street, Pretoria
+                </p>
+              </div>
+
+              <div class="flex flex-col gap-3">
+                <span class="font-mono text-[11px] tracking-widest text-white/50 uppercase">explore</span>
+                <nav class="flex flex-col gap-2" aria-label="Explore">
+                  <a href="#how-it-works" class="text-sm text-white/70 transition-colors hover:text-white">How it Works</a>
+                  <a href="#rights" class="text-sm text-white/70 transition-colors hover:text-white">Your Rights</a>
+                  <a href="#faq" class="text-sm text-white/70 transition-colors hover:text-white">FAQ</a>
+                </nav>
+              </div>
+
+              <div class="flex flex-col gap-3">
+                <span class="font-mono text-[11px] tracking-widest text-white/50 uppercase">support</span>
+                <nav class="flex flex-col gap-2" aria-label="Support">
+                  <a href="#" class="text-sm text-white/70 transition-colors hover:text-white">Help Desk</a>
+                  <a href="#" class="text-sm text-white/70 transition-colors hover:text-white">Audit Protocols</a>
+                  <span class="inline-flex items-center gap-1.5 text-sm text-white/70">
+                    POPIA (Act 4 of 2013): Personal information here is processed under POPIA.
+                    <span class="grid size-4 shrink-0 place-items-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground" aria-hidden="true">i</span>
+                  </span>
+                </nav>
+              </div>
+            </div>
+
+            <div class="border-t border-white/10">
+              <div class="mx-auto flex w-full max-w-6xl flex-col gap-2 px-4 py-6 sm:flex-row sm:items-center sm:justify-between sm:px-6 lg:px-8">
+                <span class="font-mono text-[10px] tracking-widest text-white/50 uppercase">South African Police Service</span>
+                <span class="text-xs text-white/50">Immutable docket trail · IPID escalation · 72-hour service standard</span>
+              </div>
             </div>
           </footer>
-        </div>
       </div>
     {% else %}
       <main class="plain-layout">

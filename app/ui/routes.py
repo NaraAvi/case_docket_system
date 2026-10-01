@@ -36,8 +36,9 @@ def require_ui_role(*allowed_roles):
 
 
 @ui_bp.route("/")
+@ui_bp.route("/home")
 def index():
-    return redirect(url_for("ui.login"))
+    return render_template("homepage.html")
 
 
 @ui_bp.route("/login")
